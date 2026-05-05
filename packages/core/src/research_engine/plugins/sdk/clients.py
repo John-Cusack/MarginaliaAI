@@ -1,0 +1,80 @@
+"""Scoped service clients injected at load time for plugins."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+
+class CorpusClient(Protocol):
+    """Read-only access to corpus. Always granted."""
+
+    async def find_passages(self, query: str, filters: dict | None = None, k: int = 20) -> list: ...
+    async def get_document(self, document_id: UUID) -> dict | None: ...
+    async def get_passage_context(
+        self, passage_id: UUID, before: int = 0, after: int = 0
+    ) -> dict: ...
+
+
+class ExtractionClient(Protocol):
+    """Run extractions or query cached extraction records."""
+
+    async def extract(
+        self, passage_ids: list[UUID], schema: str, options: dict | None = None
+    ) -> dict: ...
+    async def query_records(
+        self, record_type: str, filters: dict | None = None, k: int = 100
+    ) -> list: ...
+
+
+class LLMClient(Protocol):
+    """Direct LLM invocation — requires permissions.llm = True."""
+
+    async def complete(self, messages: list[dict], model: str | None = None, **opts: Any) -> str: ...
+    async def structured(
+        self, messages: list[dict], schema: dict, model: str | None = None
+    ) -> dict: ...
+
+
+class HttpClient(Protocol):
+    """HTTP fetches — requires permissions.network != none."""
+
+    async def get(self, url: str) -> bytes: ...
+    async def post(self, url: str, json: Any = None) -> bytes: ...
+
+
+class EntityClient(Protocol):
+    """Create/update entities."""
+
+    async def upsert(self, entity: dict) -> dict: ...
+    async def resolve(self, name: str, entity_type: str | None = None) -> list: ...
+
+
+class EventClient(Protocol):
+    """Create/query events."""
+
+    async def create(self, event: dict) -> dict: ...
+    async def query(self, filters: dict, k: int = 1000) -> list: ...
+
+
+class IngestionClient(Protocol):
+    """Trigger core ingestion pipeline — requires permissions.ingest = True."""
+
+    async def ingest_paths(self, paths: list, hint: str | None = None) -> dict: ...
+
+    async def ingest_drafts(
+        self,
+        title: str,
+        document_type: str,
+        passage_drafts: list,
+        *,
+        source: str = "",
+        metadata: dict | None = None,
+        language: str | None = None,
+    ) -> dict: ...
+
+    async def find_existing(
+        self, *, source: str | None = None, source_pattern: str | None = None
+    ) -> list[dict]: ...

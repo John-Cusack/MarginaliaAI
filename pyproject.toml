@@ -1,0 +1,26 @@
+[project]
+name = "research-engine-workspace"
+version = "0.2.0"
+description = "Corpus Engine workspace root"
+requires-python = ">=3.11"
+dependencies = [
+    "research-engine",
+    "research-engine-sdk",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[tool.uv.workspace]
+members = ["packages/core", "packages/sdk"]
+
+[tool.uv.sources]
+research-engine = { workspace = true }
+research-engine-sdk = { workspace = true }
