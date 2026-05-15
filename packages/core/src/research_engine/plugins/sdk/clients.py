@@ -7,15 +7,26 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from research_engine.domain.passages import SearchQuery, SearchResult
+
 
 class CorpusClient(Protocol):
-    """Read-only access to corpus. Always granted."""
+    """Read-only access to corpus. Always granted.
 
-    async def find_passages(self, query: str, filters: dict | None = None, k: int = 20) -> list: ...
-    async def get_document(self, document_id: UUID) -> dict | None: ...
+    Implemented by ``adapters.corpus_client.CorpusServiceAdapter``. The simple
+    ``find_passages(query, filters=, k=)`` surface covers the common case;
+    ``find_passages_advanced`` is the escape hatch for plugins that need
+    fusion mode, rerank, or k_vec/k_kw control.
+    """
+
+    async def find_passages(
+        self, query: str, *, filters: dict[str, Any] | None = None, k: int = 20
+    ) -> SearchResult: ...
+    async def find_passages_advanced(self, query: SearchQuery) -> SearchResult: ...
+    async def get_document(self, document_id: UUID) -> dict[str, Any] | None: ...
     async def get_passage_context(
-        self, passage_id: UUID, before: int = 0, after: int = 0
-    ) -> dict: ...
+        self, passage_id: UUID, *, before: int = 0, after: int = 0
+    ) -> dict[str, Any]: ...
 
 
 class ExtractionClient(Protocol):
