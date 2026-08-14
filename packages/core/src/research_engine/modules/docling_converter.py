@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine.services.text.sections import sections_from_markdown
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -323,6 +325,10 @@ class DoclingModule:
             "char_count": len(full_text),
             "parser": "docling",
             "ocr_applied": needs_ocr,
+            # Docling's headings survive the markdown export, so the structure
+            # is recoverable from the canonical text itself — no second pass
+            # over the DoclingDocument, and offsets exact by construction.
+            "sections": sections_from_markdown(full_text),
         }
         if total_pages:
             metadata["page_count"] = total_pages
