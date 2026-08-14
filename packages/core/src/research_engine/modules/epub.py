@@ -11,12 +11,18 @@ import structlog
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from bs4 import BeautifulSoup
+
 logger = structlog.get_logger()
 
 
 class EPUBModule:
     id = "epub"
-    version = "1.0"
+    # 2.0: follows the spine for reading order, excludes the navigation
+    # document, and emits structural sections with offsets into the canonical
+    # text. Documents parsed by 1.0 have a different canonical text and must be
+    # re-ingested, not re-chunked.
+    version = "2.0"
     supported_extensions = {".epub"}
     supported_mime_types = {"application/epub+zip"}
 
@@ -60,11 +66,13 @@ class EPUBModule:
 
     @staticmethod
     def _extract(source_path: Path) -> tuple[str, str, dict]:
-        import ebooklib
         from bs4 import BeautifulSoup
         from ebooklib import epub
 
-        book = epub.read_epub(str(source_path), options={"ignore_ncx": True})
+        # ebooklib defaults to ignore_ncx=True, which discards the EPUB2 table
+        # of contents. We want it: the NCX carries the book's own chapter
+        # titles, and EPUB3's nav document is not always present.
+        book = epub.read_epub(str(source_path), options={"ignore_ncx": False})
 
         # Extract title
         title = book.get_metadata("DC", "title")
@@ -78,21 +86,58 @@ class EPUBModule:
         languages = book.get_metadata("DC", "language")
         language = languages[0][0] if languages else ""
 
-        # Extract text from document items
+        toc = _flatten_toc(book.toc)
+
+        # Walk the spine, not the manifest. The manifest is a bag of files in
+        # packaging order; only the spine states reading order, and the two
+        # routinely disagree. Concatenating in manifest order yields a canonical
+        # text whose chapters are shuffled, which silently corrupts every
+        # passage offset addressed against it.
+        separator = "\n\n"
         chapters: list[str] = []
-        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+        sections: list[dict] = []
+        cursor = 0
+
+        for idref, _linear in book.spine:
+            item = book.get_item_with_id(idref)
+            if item is None or isinstance(item, epub.EpubNav):
+                # The navigation document is apparatus, not prose. Ingesting it
+                # adds a phantom chapter whose text is the table of contents.
+                continue
+
             html_content = item.get_content().decode("utf-8", errors="replace")
             soup = BeautifulSoup(html_content, "html.parser")
             text = soup.get_text(separator="\n", strip=True)
-            if text.strip():
-                chapters.append(text)
+            if not text.strip():
+                continue
 
-        full_text = "\n\n".join(chapters)
+            href = item.get_name()
+            heading, level = toc.get(href, (None, None))
+            if heading is None:
+                heading, level = _heading_from_markup(soup)
+
+            section: dict = {"char_start": cursor, "char_end": cursor + len(text)}
+            if heading:
+                section["heading"] = heading
+            if level:
+                section["level"] = level
+            if href:
+                section["href"] = href
+            sections.append(section)
+
+            chapters.append(text)
+            cursor += len(text) + len(separator)
+
+        full_text = separator.join(chapters)
 
         metadata: dict = {
             "chapter_count": len(chapters),
             "char_count": len(full_text),
             "file_name": source_path.name,
+            # Boundaries only — never the section text. These address into the
+            # canonical text the same way passages do, so they cost nothing to
+            # store and survive re-chunking.
+            "sections": sections,
         }
         if author:
             metadata["author"] = author
@@ -106,3 +151,43 @@ class EPUBModule:
                 metadata[f"dc_{field}"] = values[0][0]
 
         return full_text, title, metadata
+
+
+def _flatten_toc(entries: object, depth: int = 1) -> dict[str, tuple[str, int]]:
+    """Map each table-of-contents target to its ``(title, depth)``.
+
+    ``book.toc`` mixes bare ``Link`` entries with ``(Section, children)`` tuples
+    and nests to arbitrary depth. Fragments are discarded — the spine addresses
+    whole files, so ``c1.xhtml#part2`` and ``c1.xhtml`` name the same target
+    here. The shallowest entry for a target wins, which keeps a chapter titled
+    by its chapter heading rather than by its first subsection.
+    """
+    flat: dict[str, tuple[str, int]] = {}
+    for entry in entries or ():
+        if isinstance(entry, (list, tuple)):
+            node = entry[0]
+            children = entry[1] if len(entry) > 1 else ()
+        else:
+            node, children = entry, ()
+
+        href = getattr(node, "href", None)
+        title = getattr(node, "title", None)
+        if href and title:
+            flat.setdefault(href.split("#", 1)[0], (title, depth))
+
+        for key, value in _flatten_toc(children, depth + 1).items():
+            flat.setdefault(key, value)
+    return flat
+
+
+def _heading_from_markup(soup: BeautifulSoup) -> tuple[str | None, int | None]:
+    """Fall back to the document's own first heading tag and its level.
+
+    Used when the table of contents has nothing to say about a spine item,
+    which is common for front matter and for books with a sparse NCX.
+    """
+    for level in range(1, 7):
+        element = soup.find(f"h{level}")
+        if element is not None and (text := element.get_text(strip=True)):
+            return text, level
+    return None, None

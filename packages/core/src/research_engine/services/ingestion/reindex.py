@@ -91,6 +91,9 @@ class ReindexReport:
     documents_reindexed: int = 0
     documents_up_to_date: int = 0
     documents_without_text: list[UUID] = field(default_factory=list)
+    #: Structurally chunked documents, which cannot be re-chunked from canonical
+    #: text alone — their section decomposition lives on the document, not here.
+    documents_needing_reingest: list[UUID] = field(default_factory=list)
     documents_failed: dict[str, str] = field(default_factory=dict)
     passages_before: int = 0
     passages_after: int = 0
@@ -215,6 +218,16 @@ class ReindexService:
             return
 
         chunker_id = old_passages[0].chunker
+        if chunker_id == "structural":
+            # Structural chunking is driven by the parser's section table, which
+            # is stored on the document rather than reachable from here. Without
+            # it `run_chunking` would silently fall back to prose windows and
+            # quietly demote the document out of structural chunking — losing
+            # its headings, and with them every pin-cite built on them. Refusing
+            # and naming the document is the only honest option.
+            report.documents_needing_reingest.append(document_id)
+            return
+
         new_drafts = await run_chunking(canonical_text, chunker_id)
         if not new_drafts:
             report.documents_failed[str(document_id)] = "chunker produced no passages"

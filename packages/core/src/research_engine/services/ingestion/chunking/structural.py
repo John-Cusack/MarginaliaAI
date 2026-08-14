@@ -27,13 +27,18 @@ class StructuralChunker:
         each section's text is located within it, scanning forward so that
         repeated headings resolve to successive occurrences rather than all to
         the first.
+
+        A section that records offsets may omit ``text`` entirely; it is read
+        back from *full_text*. That lets a parser hand over a section table of
+        pure boundaries, which can be stored on the document without keeping a
+        second copy of its prose.
         """
         chunks: list[PassageDraft] = []
         cursor = 0
         position = 0
 
         for section in sections:
-            raw = section.get("text", "")
+            raw = self._section_text(section, full_text)
             if not raw.strip():
                 continue
 
@@ -68,6 +73,16 @@ class StructuralChunker:
             position += 1
 
         return chunks
+
+    @staticmethod
+    def _section_text(section: dict, full_text: str | None) -> str:
+        """The section's prose, read back from *full_text* when not carried."""
+        if (text := section.get("text")) is not None:
+            return text
+        start, end = section.get("char_start"), section.get("char_end")
+        if full_text is not None and start is not None and end is not None:
+            return full_text[start:end]
+        return ""
 
     @staticmethod
     def _locate(
