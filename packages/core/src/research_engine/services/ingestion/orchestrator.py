@@ -12,6 +12,7 @@ import structlog
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.domain.documents import DocumentDraft
 from research_engine.domain.errors import IngestionError
+from research_engine.domain.nodes import build_node_tree
 from research_engine.services.ingestion.pipeline import build_document_draft, run_chunking
 from research_engine.services.search.langconfig import pg_config
 
@@ -44,8 +45,13 @@ class IngestionOrchestrator:
         embedding_batch_size: int = 32,
         default_language: str | None = None,
         document_texts: DocumentTextRepo | None = None,
+        document_nodes: object | None = None,
     ) -> None:
         self._document_texts = document_texts
+        #: Optional like ``document_texts``: a corpus ingested before the node
+        #: table existed is still a valid corpus, and structure is an addition
+        #: to retrieval rather than a precondition for it.
+        self._document_nodes = document_nodes
         self._docs = docs
         self._passages = passages
         self._embedding = embedding
@@ -288,6 +294,19 @@ class IngestionOrchestrator:
                 if self._document_texts is not None:
                     await self._document_texts.put(
                         tx, doc.id, full_text, module.id, module.version
+                    )
+                # Structure lands with the text it addresses, in the same
+                # transaction and for the same reason as passages: a tree whose
+                # spans point into text that is not there is worse than no tree.
+                if self._document_nodes is not None:
+                    await self._document_nodes.insert_many(
+                        tx,
+                        doc.id,
+                        build_node_tree(
+                            metadata.get("sections") or [],
+                            text_length=len(full_text),
+                            title=title,
+                        ),
                     )
                 saved_passages = await self._passages.insert_many(tx, doc.id, passage_drafts)
 

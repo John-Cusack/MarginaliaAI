@@ -19,6 +19,7 @@ from research_engine.adapters.reranker.local_bge import LocalBGEReranker
 from research_engine.adapters.reranker.noop import NoopReranker
 from research_engine.adapters.storage.postgres.engine import build_engine, transaction
 from research_engine.adapters.storage.postgres.repositories import (
+    PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
     PGEdgeRepo,
@@ -56,6 +57,7 @@ class Container:
     clock: Any
     docs: PGDocumentRepo
     document_texts: PGDocumentTextRepo
+    document_nodes: PGDocumentNodeRepo
     passages: PGPassageRepo
     entities: PGEntityRepo
     mentions: PGMentionRepo
@@ -146,6 +148,7 @@ async def build_container(settings: Settings) -> Container:
     # Repositories
     docs = PGDocumentRepo(sql_engine)
     document_texts_repo = PGDocumentTextRepo(sql_engine)
+    document_nodes_repo = PGDocumentNodeRepo(sql_engine)
     passages_repo = PGPassageRepo(sql_engine, ef_search=settings.hnsw_ef_search)
     entities_repo = PGEntityRepo(sql_engine)
     mentions_repo = PGMentionRepo(sql_engine)
@@ -272,6 +275,7 @@ async def build_container(settings: Settings) -> Container:
         embedding_batch_size=settings.embedding_batch_size,
         default_language=settings.default_language,
         document_texts=document_texts_repo,
+        document_nodes=document_nodes_repo,
     )
 
     # Plugin-facing client adapters. Built here (not in the Container) because
@@ -310,6 +314,7 @@ async def build_container(settings: Settings) -> Container:
         clock=clock,
         docs=docs,
         document_texts=document_texts_repo,
+        document_nodes=document_nodes_repo,
         passages=passages_repo,
         entities=entities_repo,
         mentions=mentions_repo,

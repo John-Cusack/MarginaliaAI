@@ -12,6 +12,9 @@ from research_engine.adapters.storage.postgres.repositories.extractions import (
     PGExtractionSchemaRepo,
 )
 from research_engine.adapters.storage.postgres.repositories.mentions import PGMentionRepo
+from research_engine.adapters.storage.postgres.repositories.nodes import (
+    PGDocumentNodeRepo,
+)
 from research_engine.adapters.storage.postgres.repositories.passages import PGPassageRepo
 from research_engine.adapters.storage.postgres.repositories.plugins import PGInstalledPluginRepo
 from research_engine.adapters.storage.postgres.repositories.provenance import (
@@ -21,6 +24,7 @@ from research_engine.adapters.storage.postgres.repositories.provenance import (
 
 __all__ = [
     "PGDocumentRepo",
+    "PGDocumentNodeRepo",
     "PGDocumentTextRepo",
     "PGEdgeRepo",
     "PGEntityRepo",

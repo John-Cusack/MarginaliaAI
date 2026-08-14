@@ -8,6 +8,21 @@ from sqlalchemy import MetaData
 
 metadata = MetaData(schema="core")
 
+
+class Ltree(sa.types.UserDefinedType):
+    """Minimal `ltree` binding: correct DDL, values as plain strings.
+
+    SQLAlchemy ships no ltree type. Subtree tests use the `<@` and `@>`
+    operators through `sa.text`, so nothing here needs to model them — this
+    exists so `metadata.create_all` emits `ltree` rather than `text`, and so the
+    declared schema matches what migration 007 builds.
+    """
+
+    cache_ok = True
+
+    def get_col_spec(self, **kw: object) -> str:  # noqa: ARG002
+        return "ltree"
+
 # --- Documents & Passages ---
 
 documents = sa.Table(
@@ -78,6 +93,45 @@ document_texts = sa.Table(
     sa.Column("parser", sa.Text, nullable=False),
     sa.Column("parser_version", sa.Text, nullable=False),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+)
+
+# The document's structural tree: parts, chapters, sections as the author wrote
+# them. Like passages, nodes are spans into `document_texts.text` and carry no
+# prose of their own, so the tree survives re-chunking and costs only its
+# skeleton. `path` is an ltree value — see domain/nodes.py for the label scheme.
+document_nodes = sa.Table(
+    "document_nodes",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "document_id", sa.Uuid, sa.ForeignKey("core.documents.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "parent_id", sa.Uuid, sa.ForeignKey("core.document_nodes.id", ondelete="CASCADE")
+    ),
+    sa.Column("path", Ltree(), nullable=False),
+    sa.Column("depth", sa.Integer, nullable=False),
+    sa.Column("position", sa.Integer, nullable=False),
+    sa.Column("node_type", sa.Text, nullable=False),
+    sa.Column("title", sa.Text),
+    sa.Column("char_start", sa.Integer, nullable=False),
+    sa.Column("char_end", sa.Integer, nullable=False),
+    sa.Column("metadata", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint("char_end >= char_start", name="document_nodes_span_ck"),
+    sa.UniqueConstraint("document_id", "path"),
+)
+
+sa.Index("document_nodes_document_idx", document_nodes.c.document_id)
+sa.Index("document_nodes_parent_idx", document_nodes.c.parent_id)
+# Containment lookups — "which node holds this passage" — probe by span within
+# one document, which is the hot path joining the passage layer to the tree.
+sa.Index(
+    "document_nodes_span_idx",
+    document_nodes.c.document_id,
+    document_nodes.c.char_start,
+    document_nodes.c.char_end,
 )
 
 passage_embeddings = sa.Table(
