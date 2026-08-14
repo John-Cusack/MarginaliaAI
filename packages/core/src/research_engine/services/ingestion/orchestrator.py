@@ -12,7 +12,7 @@ import structlog
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.domain.documents import DocumentDraft
 from research_engine.domain.errors import IngestionError
-from research_engine.domain.nodes import build_node_tree
+from research_engine.domain.nodes import attach_nodes, build_node_tree
 from research_engine.services.ingestion.pipeline import build_document_draft, run_chunking
 from research_engine.services.search.langconfig import pg_config
 
@@ -299,7 +299,7 @@ class IngestionOrchestrator:
                 # transaction and for the same reason as passages: a tree whose
                 # spans point into text that is not there is worse than no tree.
                 if self._document_nodes is not None:
-                    await self._document_nodes.insert_many(
+                    stored_nodes = await self._document_nodes.insert_many(
                         tx,
                         doc.id,
                         build_node_tree(
@@ -308,6 +308,10 @@ class IngestionOrchestrator:
                             title=title,
                         ),
                     )
+                    # Nodes first, so their ids exist to be pointed at. A
+                    # chunker cannot do this itself: it runs long before the
+                    # tree is written.
+                    passage_drafts = attach_nodes(passage_drafts, stored_nodes)
                 saved_passages = await self._passages.insert_many(tx, doc.id, passage_drafts)
 
                 # Embed in batches

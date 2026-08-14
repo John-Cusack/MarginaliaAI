@@ -25,6 +25,9 @@ class Passage(BaseModel):
     chunker: str
     chunker_version: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    #: The structural node containing this passage, when the document has a
+    #: tree. None for corpora ingested before nodes existed.
+    node_id: UUID | None = None
     content_hash: bytes
     created_at: datetime
 
@@ -52,6 +55,9 @@ class PassageDraft(BaseModel):
     chunker: str
     chunker_version: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    #: Resolved after the document tree is written, since node ids do not
+    #: exist while a chunker is running.
+    node_id: UUID | None = None
 
     @model_validator(mode="after")
     def _span_is_well_formed(self) -> PassageDraft:

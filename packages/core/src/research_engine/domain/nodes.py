@@ -14,11 +14,14 @@ ltree labels admit only alphanumerics and underscores, which rules out UUIDs.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
+
+from research_engine.domain.passages import PassageDraft
 
 #: Label of the synthetic root every document tree carries. The root spans the
 #: whole canonical text, which gives ancestor queries a uniform terminus and
@@ -145,6 +148,48 @@ def build_node_tree(
 
     _widen_parents_to_cover_children(drafts)
     return drafts
+
+
+def deepest_containing(
+    nodes: Sequence[DocumentNode], char_start: int, char_end: int
+) -> DocumentNode | None:
+    """The innermost node whose span encloses ``[char_start, char_end)``.
+
+    Deepest, because every span is enclosed by the root and only the most
+    specific answer is useful: the section a passage sits in, not the document
+    it belongs to. A passage straddling two chapters legitimately resolves to
+    their common ancestor — it is contained by nothing narrower.
+    """
+    best: DocumentNode | None = None
+    for node in nodes:
+        encloses = node.char_start <= char_start and char_end <= node.char_end
+        if encloses and (best is None or node.depth > best.depth):
+            best = node
+    return best
+
+
+def attach_nodes(
+    drafts: list[PassageDraft], nodes: Sequence[DocumentNode]
+) -> list[PassageDraft]:
+    """Resolve each passage's containing node, in memory.
+
+    Node ids do not exist while a chunker runs, so this happens after the tree
+    is written and before the passages are. Resolving here rather than with a
+    range query per passage matters: a book is thousands of passages over a few
+    hundred nodes, and that is a round trip per passage for data already in hand.
+    """
+    if not nodes:
+        return drafts
+    return [
+        draft.model_copy(
+            update={
+                "node_id": node.id
+                if (node := deepest_containing(nodes, draft.char_start, draft.char_end))
+                else None
+            }
+        )
+        for draft in drafts
+    ]
 
 
 def _widen_parents_to_cover_children(drafts: list[DocumentNodeDraft]) -> None:

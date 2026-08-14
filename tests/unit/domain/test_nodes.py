@@ -141,3 +141,71 @@ def test_a_reversed_span_is_rejected():
             path="r.n0", parent_path="r", depth=1, position=0,
             char_start=10, char_end=4,
         )
+
+
+class _Node:
+    """A stored node's shape, without needing a database to make one."""
+
+    def __init__(self, node_id, depth, char_start, char_end):
+        self.id = node_id
+        self.depth = depth
+        self.char_start = char_start
+        self.char_end = char_end
+
+
+def test_deepest_containing_prefers_the_innermost_node():
+    from research_engine.domain.nodes import deepest_containing
+
+    root = _Node("root", 0, 0, 100)
+    chapter = _Node("chapter", 1, 0, 60)
+    section = _Node("section", 2, 10, 40)
+
+    found = deepest_containing([root, chapter, section], 15, 20)
+
+    assert found.id == "section"
+
+
+def test_a_passage_straddling_siblings_resolves_to_their_ancestor():
+    from research_engine.domain.nodes import deepest_containing
+
+    root = _Node("root", 0, 0, 100)
+    first = _Node("first", 1, 0, 40)
+    second = _Node("second", 1, 40, 80)
+
+    assert deepest_containing([root, first, second], 30, 50).id == "root"
+
+
+def test_a_span_outside_every_node_resolves_to_nothing():
+    from research_engine.domain.nodes import deepest_containing
+
+    assert deepest_containing([_Node("n", 1, 0, 10)], 50, 60) is None
+
+
+def test_attach_nodes_stamps_each_draft_with_its_container():
+    from research_engine.domain.nodes import attach_nodes
+    from research_engine.domain.passages import PassageDraft
+
+    def draft(start, end):
+        return PassageDraft(
+            position=0, char_start=start, char_end=end, text="x" * (end - start),
+            chunker="structural", chunker_version="3.0",
+        )
+
+    nodes = [_Node("root", 0, 0, 100), _Node("inner", 1, 0, 50)]
+    stamped = attach_nodes([draft(0, 10), draft(60, 70)], nodes)
+
+    assert [d.node_id for d in stamped] == ["inner", "root"]
+
+
+def test_attach_nodes_is_a_no_op_without_a_tree():
+    from research_engine.domain.nodes import attach_nodes
+    from research_engine.domain.passages import PassageDraft
+
+    drafts = [
+        PassageDraft(
+            position=0, char_start=0, char_end=3, text="abc",
+            chunker="prose_window", chunker_version="2.0",
+        )
+    ]
+
+    assert attach_nodes(drafts, []) == drafts

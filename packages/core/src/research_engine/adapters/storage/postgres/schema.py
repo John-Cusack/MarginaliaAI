@@ -71,11 +71,18 @@ passages = sa.Table(
     sa.Column("chunker_version", sa.Text, nullable=False),
     sa.Column("metadata", sa.JSON, nullable=False, server_default="{}"),
     sa.Column("content_hash", sa.LargeBinary, nullable=False),
+    # The structural node this passage sits in. SET NULL, not CASCADE:
+    # rebuilding a document's tree must not take its passages with it.
+    sa.Column(
+        "node_id", sa.Uuid,
+        sa.ForeignKey("core.document_nodes.id", ondelete="SET NULL"),
+    ),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     sa.UniqueConstraint("document_id", "position", "chunker", "chunker_version"),
 )
 
 sa.Index("passages_document_idx", passages.c.document_id)
+sa.Index("passages_node_idx", passages.c.node_id)
 sa.Index("passages_doc_span_idx", passages.c.document_id, passages.c.char_start, passages.c.char_end)
 
 # The canonical text a document's passage offsets address. Kept out of

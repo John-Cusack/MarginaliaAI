@@ -222,6 +222,7 @@ class PGPassageRepo:
                 "chunker_version": draft.chunker_version,
                 "metadata": draft.metadata,
                 "content_hash": content_hash,
+                "node_id": draft.node_id,
             }
             await tx.conn.execute(passages.insert().values(**values))
             row = (
@@ -242,6 +243,35 @@ class PGPassageRepo:
             result = await conn.execute(
                 passages.select()
                 .where(passages.c.document_id == document_id)
+                .order_by(passages.c.position)
+            )
+            return [self._to_domain(row) for row in result]
+
+    async def get_by_node(
+        self, node_id: UUID, *, include_descendants: bool = False
+    ) -> list[Passage]:
+        """Passages inside a node, in document order.
+
+        With *include_descendants*, the node's whole subtree — reading a
+        chapter means reading its sections too, and the ltree containment
+        operator resolves that in one scan rather than one query per level.
+        """
+        if include_descendants:
+            stmt = sa.text(
+                "SELECT p.* FROM core.passages p "
+                "JOIN core.document_nodes c ON c.id = p.node_id "
+                "JOIN core.document_nodes n ON n.id = :node_id "
+                "WHERE c.document_id = n.document_id AND c.path <@ n.path "
+                "ORDER BY p.position"
+            )
+            async with self._engine.connect() as conn:
+                rows = await conn.execute(stmt, {"node_id": node_id})
+                return [self._to_domain(row) for row in rows]
+
+        async with self._engine.connect() as conn:
+            result = await conn.execute(
+                passages.select()
+                .where(passages.c.node_id == node_id)
                 .order_by(passages.c.position)
             )
             return [self._to_domain(row) for row in result]
@@ -545,6 +575,7 @@ class PGPassageRepo:
             chunker=row.chunker,
             chunker_version=row.chunker_version,
             metadata=row.metadata or {},
+            node_id=row.node_id,
             content_hash=bytes(row.content_hash),
             created_at=row.created_at,
         )

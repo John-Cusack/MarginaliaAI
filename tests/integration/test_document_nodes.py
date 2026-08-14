@@ -160,3 +160,133 @@ async def test_deleting_the_document_takes_the_tree_with_it(
 
     assert removed == len(SECTIONS) + 1
     assert await repo.get_tree(doc_id) == []
+
+
+async def test_passages_are_stamped_with_their_containing_node(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """The join behind bottom-up entry: a hit, then the section it argues in."""
+    from research_engine.adapters.storage.postgres.repositories.passages import (
+        PGPassageRepo,
+    )
+    from research_engine.domain.nodes import attach_nodes
+    from research_engine.domain.passages import PassageDraft
+
+    doc_id = await corpus.add_document()
+    nodes_repo = PGDocumentNodeRepo(engine)
+    passages_repo = PGPassageRepo(engine)
+
+    async with transaction(engine) as tx:
+        stored = await nodes_repo.insert_many(
+            tx, doc_id, build_node_tree(SECTIONS, text_length=TEXT_LENGTH)
+        )
+
+    by_title = {node.title: node for node in stored}
+    drafts = [
+        # Inside "Chapter One".
+        PassageDraft(
+            position=0, char_start=10, char_end=30, text="x" * 20,
+            chunker="structural", chunker_version="3.0",
+        ),
+        # Inside the deepest node, "Two, Second, a".
+        PassageDraft(
+            position=1, char_start=410, char_end=430, text="y" * 20,
+            chunker="structural", chunker_version="3.0",
+        ),
+    ]
+
+    async with transaction(engine) as tx:
+        saved = await passages_repo.insert_many(
+            tx, doc_id, attach_nodes(drafts, stored)
+        )
+
+    assert saved[0].node_id == by_title["Chapter One"].id
+    assert saved[1].node_id == by_title["Two, Second, a"].id
+
+    # And it survives the round trip, rather than only living on the draft.
+    reloaded = await passages_repo.get(saved[1].id)
+    assert reloaded is not None
+    assert reloaded.node_id == by_title["Two, Second, a"].id
+
+
+async def test_reading_a_node_gathers_its_passages(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    from research_engine.adapters.storage.postgres.repositories.passages import (
+        PGPassageRepo,
+    )
+    from research_engine.domain.nodes import attach_nodes
+    from research_engine.domain.passages import PassageDraft
+
+    doc_id = await corpus.add_document()
+    nodes_repo = PGDocumentNodeRepo(engine)
+    passages_repo = PGPassageRepo(engine)
+
+    async with transaction(engine) as tx:
+        stored = await nodes_repo.insert_many(
+            tx, doc_id, build_node_tree(SECTIONS, text_length=TEXT_LENGTH)
+        )
+    by_title = {node.title: node for node in stored}
+
+    # One passage in each of Chapter Two's descendants, plus its own prose.
+    spans = [(110, 130), (210, 230), (310, 330), (410, 430)]
+    drafts = [
+        PassageDraft(
+            position=index, char_start=start, char_end=end, text="z" * (end - start),
+            chunker="structural", chunker_version="3.0",
+        )
+        for index, (start, end) in enumerate(spans)
+    ]
+    async with transaction(engine) as tx:
+        await passages_repo.insert_many(tx, doc_id, attach_nodes(drafts, stored))
+
+    chapter_two = by_title["Chapter Two"]
+
+    direct = await passages_repo.get_by_node(chapter_two.id)
+    assert len(direct) == 1  # only the chapter's own prose
+
+    whole = await passages_repo.get_by_node(chapter_two.id, include_descendants=True)
+    assert len(whole) == 4  # the chapter and everything beneath it
+    assert [p.position for p in whole] == [0, 1, 2, 3]
+
+
+async def test_rebuilding_the_tree_does_not_take_the_passages(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """SET NULL, not CASCADE — re-parsing must not destroy the passage layer."""
+    from research_engine.adapters.storage.postgres.repositories.passages import (
+        PGPassageRepo,
+    )
+    from research_engine.domain.nodes import attach_nodes
+    from research_engine.domain.passages import PassageDraft
+
+    doc_id = await corpus.add_document()
+    nodes_repo = PGDocumentNodeRepo(engine)
+    passages_repo = PGPassageRepo(engine)
+
+    async with transaction(engine) as tx:
+        stored = await nodes_repo.insert_many(
+            tx, doc_id, build_node_tree(SECTIONS, text_length=TEXT_LENGTH)
+        )
+        saved = await passages_repo.insert_many(
+            tx,
+            doc_id,
+            attach_nodes(
+                [
+                    PassageDraft(
+                        position=0, char_start=10, char_end=30, text="x" * 20,
+                        chunker="structural", chunker_version="3.0",
+                    )
+                ],
+                stored,
+            ),
+        )
+    assert saved[0].node_id is not None
+
+    async with transaction(engine) as tx:
+        await nodes_repo.delete_for_document(tx, doc_id)
+
+    survivor = await passages_repo.get(saved[0].id)
+    assert survivor is not None
+    assert survivor.text == "x" * 20
+    assert survivor.node_id is None
