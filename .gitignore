@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project-local working files
+#   scratch/ holds ad-hoc ingest scripts and their inputs, including large
+#   media blobs that must never enter history.
+scratch/
+#   Browser session dumps from the Playwright MCP server; regenerated per run.
+.playwright-mcp/

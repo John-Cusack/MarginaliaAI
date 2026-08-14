@@ -36,7 +36,6 @@ class CorpusServiceAdapter:
     async def find_passages(
         self,
         query: str,
-        *,
         filters: dict[str, Any] | None = None,
         k: int = 20,
     ) -> SearchResult:
@@ -75,7 +74,7 @@ class CorpusServiceAdapter:
         }
 
     async def get_passage_context(
-        self, passage_id: UUID, *, before: int = 0, after: int = 0
+        self, passage_id: UUID, before: int = 0, after: int = 0
     ) -> dict[str, Any]:
         before_p, target, after_p = await self._passages.get_context(
             passage_id, before=before, after=after

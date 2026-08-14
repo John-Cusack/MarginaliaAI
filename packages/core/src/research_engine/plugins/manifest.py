@@ -39,6 +39,10 @@ class PluginPermissions(BaseModel):
     network_allowlist: list[str] = Field(default_factory=list)
     llm: bool = False
     ingest: bool = False
+    # Write access to the derived graph (edges). Gates the EdgeClient so a
+    # plugin can record relations (e.g. citation `cites` edges) in the core
+    # corpus graph.
+    write: bool = False
     filesystem: FilesystemPerm = FilesystemPerm.default
     subprocess: bool = False
 

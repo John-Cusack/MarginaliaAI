@@ -119,6 +119,19 @@ class TestFindPassages:
         assert sent.filters is None
 
     @pytest.mark.asyncio
+    async def test_positional_args_supported(self) -> None:
+        # find_passages(query, filters, k) must accept positional args so older
+        # third-party plugins calling positionally don't break (no keyword-only).
+        result = SearchResult(hits=[], total_candidates=0)
+        adapter, search, *_ = _build_adapter(search_result=result)
+
+        await adapter.find_passages("q", None, 7)
+
+        sent: SearchQuery = search.find_passages.await_args.args[0]
+        assert sent.k == 7
+        assert sent.filters is None
+
+    @pytest.mark.asyncio
     async def test_filters_dict_translates_to_search_filters(self) -> None:
         result = SearchResult(hits=[], total_candidates=0)
         adapter, search, *_ = _build_adapter(search_result=result)
@@ -198,3 +211,14 @@ class TestGetPassageContext:
         assert out["before"][0]["text"] == "before"
         assert out["after"][0]["text"] == "after"
         assert out["document_id"] == str(doc_id)
+
+    @pytest.mark.asyncio
+    async def test_positional_before_after_supported(self) -> None:
+        doc_id = uuid4()
+        target = _passage(uuid4(), doc_id, position=2, text="target")
+        adapter, _s, _d, passages_repo = _build_adapter(context=([], target, []))
+
+        await adapter.get_passage_context(target.id, 1, 1)
+
+        passages_repo.get_context.assert_awaited_once()
+        assert passages_repo.get_context.await_args.kwargs == {"before": 1, "after": 1}

@@ -79,6 +79,8 @@ class SourceMatch(BaseModel):
     title: str
     authors: list[str] = Field(default_factory=list)
     year: int | None = None
+    doi: str | None = None             # first-class identity for cross-source dedup
+    isbn: str | None = None            # first-class identity for cross-source dedup
     availability: Availability = Availability.external_only
     confidence: float = 0.0            # 0..1, plugin-scored
     ingest_action: IngestAction | None = None

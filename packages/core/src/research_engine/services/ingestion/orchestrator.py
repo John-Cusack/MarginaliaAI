@@ -13,6 +13,7 @@ from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.domain.documents import DocumentDraft
 from research_engine.domain.errors import IngestionError
 from research_engine.services.ingestion.pipeline import build_document_draft, run_chunking
+from research_engine.services.search.langconfig import pg_config
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from research_engine.ports.embedding import EmbeddingPort
     from research_engine.ports.repositories import (
         DocumentRepo,
+        DocumentTextRepo,
         IngestionRunRepo,
         PassageRepo,
     )
@@ -40,7 +42,10 @@ class IngestionOrchestrator:
         engine: object,  # AsyncEngine
         concurrency: int = 4,
         embedding_batch_size: int = 32,
+        default_language: str | None = None,
+        document_texts: DocumentTextRepo | None = None,
     ) -> None:
+        self._document_texts = document_texts
         self._docs = docs
         self._passages = passages
         self._embedding = embedding
@@ -49,6 +54,14 @@ class IngestionOrchestrator:
         self._engine = engine
         self._concurrency = concurrency
         self._embedding_batch_size = embedding_batch_size
+        #: ISO 639-1 code assumed when neither the parser nor the caller supplies
+        #: one. Left unset the corpus indexes under ``simple`` (no stemming),
+        #: which is the safe default; a single-language corpus should set it.
+        self._default_language = default_language
+
+    def _resolve_language(self, supplied: str | None) -> str | None:
+        """Prefer what the caller or parser knows; otherwise the configured default."""
+        return supplied or self._default_language
 
     async def ingest_paths(
         self, paths: list[Path], plugin_hint: str | None = None
@@ -119,18 +132,46 @@ class IngestionOrchestrator:
         source: str = "",
         metadata: dict[str, Any] | None = None,
         language: str | None = None,
+        full_text: str | None = None,
     ) -> dict:
         """Ingest pre-chunked PassageDrafts directly, skipping parse/chunk stages.
 
         Useful for plugins that fetch content from APIs and chunk it themselves.
         Returns dict with document_id, passage_count.
-        """
-        from research_engine.domain.passages import PassageDraft
 
+        *full_text* is the canonical text the drafts' ``char_start`` /
+        ``char_end`` index into. Supply it: without it the offsets address text
+        that is not stored, so the passages cannot be quote-verified or
+        re-anchored, and `reindex chunks` will skip the document.
+        """
+
+        # Hash the *content*, not `source:title`. The old form meant a document
+        # was identified by its metadata, so re-ingesting the same file under a
+        # differently-cased title produced a second document that the
+        # (content_hash, source) unique constraint could not catch — which is how
+        # one library book ended up in the corpus twice.
         content_hash = hashlib.sha256(
-            f"{source}:{title}".encode()
+            (full_text if full_text is not None else "\n".join(
+                getattr(d, "text", "") for d in passage_drafts
+            )).encode()
         ).digest()
 
+        existing = await self._docs.find_by_hash(content_hash, source)
+        if existing is not None:
+            logger.info(
+                "ingest_drafts_skipped_dedup",
+                document_id=str(existing.id),
+                source=source,
+                title=title,
+            )
+            passages = await self._passages.get_by_document(existing.id)
+            return {
+                "document_id": str(existing.id),
+                "passage_count": len(passages),
+                "skipped": "duplicate",
+            }
+
+        language = self._resolve_language(language)
         doc_draft = DocumentDraft(
             title=title,
             document_type=document_type,
@@ -144,6 +185,20 @@ class IngestionOrchestrator:
 
         async with transaction(self._engine) as tx:
             doc = await self._docs.insert(tx, doc_draft)
+            if full_text is not None and self._document_texts is not None:
+                await self._document_texts.put(
+                    tx, doc.id, full_text, "plugin_direct", "1.0"
+                )
+            elif full_text is None:
+                logger.warning(
+                    "ingest_drafts_without_canonical_text",
+                    title=title,
+                    source=source,
+                    detail=(
+                        "Passage offsets will address text that is not stored. "
+                        "Pass full_text= to make them verifiable and re-anchorable."
+                    ),
+                )
             saved_passages = await self._passages.insert_many(
                 tx, doc.id, passage_drafts
             )
@@ -170,7 +225,7 @@ class IngestionOrchestrator:
             except ImportError:
                 pass
 
-            await self._passages.index_fts(tx, passage_ids, texts, "english")
+            await self._passages.index_fts(tx, passage_ids, texts, pg_config(language))
 
         logger.info(
             "ingest_drafts_ok",
@@ -209,6 +264,7 @@ class IngestionOrchestrator:
             full_text, title, metadata = await module.parse(source_path)
 
             # Build document draft
+            language = self._resolve_language(metadata.get("language"))
             draft = build_document_draft(
                 source_path=source_path,
                 title=title,
@@ -216,6 +272,7 @@ class IngestionOrchestrator:
                 parser_id=module.id,
                 parser_version=module.version,
                 metadata=metadata,
+                language=language,
             )
 
             # Chunk
@@ -225,6 +282,13 @@ class IngestionOrchestrator:
             # Transaction: insert doc + passages + embeddings + FTS
             async with transaction(self._engine) as tx:
                 doc = await self._docs.insert(tx, draft)
+                # Canonical text first: the passages inserted next carry offsets
+                # into it, and both must land in the same transaction or the
+                # offsets address text that is not there.
+                if self._document_texts is not None:
+                    await self._document_texts.put(
+                        tx, doc.id, full_text, module.id, module.version
+                    )
                 saved_passages = await self._passages.insert_many(tx, doc.id, passage_drafts)
 
                 # Embed in batches
@@ -241,8 +305,8 @@ class IngestionOrchestrator:
                         self._embedding.dim,
                     )
 
-                # FTS index
-                await self._passages.index_fts(tx, passage_ids, texts, "english")
+                # FTS index, stemmed for this document's language
+                await self._passages.index_fts(tx, passage_ids, texts, pg_config(language))
 
             duration_ms = int((time.monotonic() - start) * 1000)
             await self._ingestion_runs.update_item(

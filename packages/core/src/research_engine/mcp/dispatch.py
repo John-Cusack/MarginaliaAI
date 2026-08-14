@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,7 @@ import structlog
 from mcp import types
 
 from research_engine.mcp.tools import (
+    citations,
     corpus_stats,
     events,
     extract,
@@ -17,8 +19,10 @@ from research_engine.mcp.tools import (
     get_document,
     get_entity,
     get_passage_context,
+    ingest_execute,
     list_extraction_schemas,
     list_filters,
+    llm_usage,
     provenance_of,
     query_extractions,
     resolve_entity,
@@ -34,6 +38,28 @@ if TYPE_CHECKING:
     from mcp.server.lowlevel.server import Server
 
 logger = structlog.get_logger()
+
+
+def _select_clients(handler: Any, clients: dict[str, Any]) -> dict[str, Any]:
+    """Pass only the scoped clients a plugin handler actually declares.
+
+    ``build_plugin_clients`` returns the full set of scoped clients (corpus,
+    entity, event, extraction, llm, http, ingestion, edge). A handler that
+    declares only a subset — e.g. ``async def h(corpus, *, query)`` — would get
+    ``TypeError: unexpected keyword argument 'entity'`` if every client were
+    splatted in. Filter to the handler's declared parameters, but pass the full
+    set when the handler accepts ``**kwargs`` (the documented SDK pattern).
+    """
+    if not clients:
+        return {}
+    try:
+        params = inspect.signature(handler).parameters
+    except (TypeError, ValueError):
+        return clients
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return clients
+    return {k: v for k, v in clients.items() if k in params}
+
 
 # All core tool modules, in the order they should appear in listings.
 CORE_TOOL_MODULES = [
@@ -51,34 +77,113 @@ CORE_TOOL_MODULES = [
     query_extractions,
     provenance_of,
     corpus_stats,
+    llm_usage,
+    citations,
     upsert_entity,
     upsert_event,
     upsert_edge,
     list_filters,
     search_sources,
+    ingest_execute,
 ]
 
 
-def _validate_input(schema: dict[str, Any], arguments: dict[str, Any]) -> str | None:
-    """Basic JSON Schema validation for required fields and types.
+_CORE_TOOL_MAP = {module.TOOL_NAME: module for module in CORE_TOOL_MODULES}
 
-    Returns an error message string if validation fails, None if valid.
+
+async def dispatch_tool(
+    container: Any, tool_id: str, arguments: dict[str, Any] | None = None
+) -> Any:
+    """Invoke a registered core or plugin tool by id, returning its raw result.
+
+    Shares the same handler + scoped-client machinery used by the MCP transport,
+    so orchestration tools (e.g. ``ingest_execute``) can call other tools
+    without going through the wire protocol. Raises ``ValueError`` for unknown
+    tool ids.
+    """
+    arguments = arguments or {}
+
+    core = _CORE_TOOL_MAP.get(tool_id)
+    if core is not None:
+        return await core.handler(container, **arguments)
+
+    registry = getattr(container, "registry", None) or getattr(container, "plugin_registry", None)
+    plugin_loader = getattr(container, "plugin_loader", None)
+    if registry is not None:
+        plugin_tools = registry.get_mcp_tools()
+        # Plugin tools register under dotted ids (e.g. "acad.discover_by_doi"),
+        # but agent-facing IngestActions use the underscored MCP name
+        # ("acad_discover_by_doi"). Match either form.
+        matched_id = None
+        if tool_id in plugin_tools:
+            matched_id = tool_id
+        else:
+            for registered_id in plugin_tools:
+                if registered_id.replace(".", "_") == tool_id:
+                    matched_id = registered_id
+                    break
+        if matched_id is not None:
+            clients: dict[str, Any] = {}
+            plugin_name = registry.get_tool_plugin(matched_id)
+            if plugin_name and plugin_loader:
+                clients = plugin_loader.build_plugin_clients(plugin_name)
+            handler = plugin_tools[matched_id]
+            return await handler(**_select_clients(handler, clients), **arguments)
+
+    raise ValueError(f"Unknown tool: {tool_id}")
+
+
+# JSON Schema primitive type -> accepted Python type(s). ``integer`` excludes
+# bool (a subclass of int); ``number`` accepts both int and float.
+_JSON_TYPE_MAP: dict[str, tuple[type, ...]] = {
+    "string": (str,),
+    "integer": (int,),
+    "number": (int, float),
+    "boolean": (bool,),
+    "array": (list,),
+    "object": (dict,),
+}
+
+
+def _validate_input(schema: dict[str, Any], arguments: dict[str, Any]) -> str | None:
+    """Lightweight JSON Schema validation: required fields, types, and enums.
+
+    Checks that every ``required`` field is present, and for each provided field
+    that has a declared ``type``/``enum`` in ``properties``, that the value
+    conforms. Not a full JSON Schema implementation (no nested/array-item or
+    format validation). Returns an error message string if validation fails,
+    None if valid.
     """
     required = schema.get("required", [])
     for field in required:
         if field not in arguments:
             return f"Missing required field: '{field}'"
+
+    properties = schema.get("properties", {})
+    for field, value in arguments.items():
+        spec = properties.get(field)
+        if not isinstance(spec, dict):
+            continue
+
+        expected = spec.get("type")
+        accepted = _JSON_TYPE_MAP.get(expected) if expected else None
+        if accepted is not None:
+            # bool is a subclass of int — reject it for integer/number.
+            if expected in ("integer", "number") and isinstance(value, bool):
+                return f"Field '{field}' must be of type {expected}"
+            if not isinstance(value, accepted):
+                return f"Field '{field}' must be of type {expected}"
+
+        enum = spec.get("enum")
+        if enum is not None and value not in enum:
+            return f"Field '{field}' must be one of {enum}"
+
     return None
 
 
 def register_core_tools(server: Server, container: Any) -> None:
-    """Register all core tools on the MCP server instance."""
+    """Register all core and plugin tools on the MCP server instance."""
     _register_all(server, container)
-
-
-def register_plugin_tools(server: Server, container: Any) -> None:
-    """No-op — plugin tools are registered in _register_all alongside core tools."""
-    pass
 
 
 def _register_all(server: Server, container: Any) -> None:
@@ -184,7 +289,7 @@ def _register_all(server: Server, container: Any) -> None:
                     )}]
                 try:
                     clients = _get_plugin_clients(_name)
-                    result = await _fn(**clients, **arguments)
+                    result = await _fn(**_select_clients(_fn, clients), **arguments)
                     return [{"type": "text", "text": json.dumps(result, default=str)}]
                 except Exception as e:
                     logger.error("plugin_tool_error", tool=_name, error=str(e))

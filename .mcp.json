@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "research-engine": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "research-engine", "serve"],
+      "cwd": "/home/john/repos/MarginaliaAI",
+      "env": {
+        "RE_DEFAULT_LANGUAGE": "en"
+      }
+    }
+  }
+}

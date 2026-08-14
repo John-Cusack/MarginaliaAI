@@ -1,0 +1,15 @@
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "TCH"]
+ignore = ["E501", "B008"]
+
+[lint.per-file-ignores]
+"packages/core/src/research_engine/cli/main.py" = ["E402"]
+"packages/core/src/research_engine/domain/*.py" = ["TCH003", "TCH001", "TCH002"]
+"packages/core/src/research_engine/config/*.py" = ["TCH003", "TCH001", "TCH002"]
+"packages/core/src/research_engine/plugins/manifest.py" = ["TCH003", "TCH001", "TCH002"]
+
+[lint.isort]
+known-first-party = ["research_engine", "research_engine_sdk"]

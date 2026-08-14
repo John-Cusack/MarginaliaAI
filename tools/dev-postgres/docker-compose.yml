@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_DB: research_engine
+      POSTGRES_USER: re_dev
+      POSTGRES_PASSWORD: re_dev_pass
+    ports:
+      - "5435:5432"
+    # Docker defaults /dev/shm to 64MB. A parallel HNSW build over a few hundred
+    # thousand vectors needs far more and fails with DiskFullError on a shared
+    # memory segment — which reads like a disk problem and is not one.
+    shm_size: "4gb"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U re_dev -d research_engine"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -5,14 +5,17 @@ from __future__ import annotations
 import importlib
 import re
 import sys
-from importlib.util import find_spec
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as metadata_version
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from research_engine.domain.errors import PluginLoadError
+from research_engine.plugins.compatibility import check_core_api
 from research_engine.plugins.manifest import PluginManifest, parse_manifest
 from research_engine.plugins.permissions import (
+    DeniedEdgeClient,
     DeniedHttpClient,
     DeniedIngestionClient,
     DeniedLLMClient,
@@ -52,20 +55,17 @@ class PluginLoader:
         self._http = http
         self._services = services
         self._loaded: dict[str, LoadedPlugin] = {}
-
-    # Packages where the pip name differs from the import name.
-    _IMPORT_NAME_OVERRIDES: dict[str, str] = {
-        "pillow": "PIL",
-        "beautifulsoup4": "bs4",
-        "scikit-learn": "sklearn",
-        "python-dateutil": "dateutil",
-        "python-dotenv": "dotenv",
-        "pyyaml": "yaml",
-    }
+        # Top-level Python module name -> owning plugin, to detect collisions.
+        self._module_owners: dict[str, str] = {}
 
     @staticmethod
     def _check_pip_deps(pip_deps: list[str]) -> list[str]:
-        """Check which pip dependencies are missing. Returns list of missing package names."""
+        """Check which pip dependencies are missing. Returns missing package names.
+
+        Resolves each declared distribution via ``importlib.metadata`` (which
+        applies PEP 503 normalization for case/dash/underscore/dot), so there is
+        no need to guess the import name from the pip name.
+        """
         # Pattern to extract package name from PEP 508 strings like "playwright>=1.40"
         _pkg_name_re = re.compile(r"^([A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?)")
         missing = []
@@ -74,13 +74,9 @@ class PluginLoader:
             if not match:
                 continue
             pkg_name = match.group(1)
-            pkg_lower = pkg_name.lower()
-            # Check override table first, then normalize
-            if pkg_lower in PluginLoader._IMPORT_NAME_OVERRIDES:
-                import_name = PluginLoader._IMPORT_NAME_OVERRIDES[pkg_lower]
-            else:
-                import_name = pkg_name.replace("-", "_").replace(".", "_")
-            if find_spec(import_name) is None:
+            try:
+                metadata_version(pkg_name)
+            except PackageNotFoundError:
                 missing.append(pkg_name)
         return missing
 
@@ -104,6 +100,16 @@ class PluginLoader:
         for installed, plugin_dir in plugins_to_load:
             try:
                 manifest = parse_manifest(plugin_dir / "pack.yaml")
+
+                # Check core API compatibility
+                incompat = check_core_api(manifest.requires.core_api)
+                if incompat:
+                    logger.error(
+                        "plugin_incompatible_core_api",
+                        plugin=installed.id,
+                        reason=incompat,
+                    )
+                    continue
 
                 # Check pip dependencies are importable
                 missing = self._check_pip_deps(manifest.requires.pip)
@@ -151,7 +157,7 @@ class PluginLoader:
         # Phase 4b: Register chunkers
         for chunker_contrib in provides.chunkers:
             try:
-                chunker_cls = self._import_entry(plugin_dir, chunker_contrib.entry)
+                chunker_cls = self._import_entry(plugin_dir, chunker_contrib.entry, manifest.name)
                 self._registry.register_chunker(chunker_contrib.id, chunker_cls, manifest.name)
             except Exception as e:
                 raise PluginLoadError(
@@ -161,7 +167,7 @@ class PluginLoader:
         # Phase 4c: Register ingestion modules
         for im_contrib in provides.ingestion_modules:
             try:
-                im_cls = self._import_entry(plugin_dir, im_contrib.entry)
+                im_cls = self._import_entry(plugin_dir, im_contrib.entry, manifest.name)
                 self._registry.register_ingestion_module(im_contrib.id, im_cls, manifest.name)
             except Exception as e:
                 raise PluginLoadError(
@@ -171,7 +177,7 @@ class PluginLoader:
         # Phase 4d: Register filter extensions
         for fe_contrib in provides.filter_extensions:
             try:
-                fe_cls = self._import_entry(plugin_dir, fe_contrib.entry)
+                fe_cls = self._import_entry(plugin_dir, fe_contrib.entry, manifest.name)
                 instance = fe_cls() if isinstance(fe_cls, type) else fe_cls
                 self._registry.register_filter_extension(fe_contrib.id, instance, manifest.name)
             except Exception as e:
@@ -182,7 +188,7 @@ class PluginLoader:
         # Phase 4e: Register source search providers
         for ss_contrib in provides.source_search:
             try:
-                ss_cls = self._import_entry(plugin_dir, ss_contrib.entry)
+                ss_cls = self._import_entry(plugin_dir, ss_contrib.entry, manifest.name)
                 provider = ss_cls() if isinstance(ss_cls, type) else ss_cls
                 self._registry.register_source_search_provider(provider, manifest.name)
             except Exception as e:
@@ -193,7 +199,7 @@ class PluginLoader:
         # Phase 5: Load code
         for tool_contrib in provides.mcp_tools:
             try:
-                handler = self._import_entry(plugin_dir, tool_contrib.entry)
+                handler = self._import_entry(plugin_dir, tool_contrib.entry, manifest.name)
                 loaded.tools[tool_contrib.id] = handler
             except Exception as e:
                 raise PluginLoadError(
@@ -217,13 +223,37 @@ class PluginLoader:
 
         self._loaded[manifest.name] = loaded
 
-    def _import_entry(self, plugin_dir: Path, entry: str) -> Any:
-        """Import a plugin entry point like 'module.path:attr'."""
+    def _import_entry(self, plugin_dir: Path, entry: str, plugin_name: str) -> Any:
+        """Import a plugin entry point like 'module.path:attr'.
+
+        Python caches imports in the global ``sys.modules`` keyed by name, so two
+        plugins shipping the same top-level package — or a package shadowing a
+        stdlib module — would silently resolve to whichever loaded first. Guard
+        against both by raising ``PluginLoadError`` instead of binding the wrong
+        code. Plugin packages must therefore use a globally-unique top-level name.
+        """
         module_path, attr = entry.rsplit(":", 1)
+        top = module_path.split(".", 1)[0]
+
+        if top in sys.stdlib_module_names:
+            raise PluginLoadError(
+                f"Plugin '{plugin_name}' entry '{entry}' uses top-level module "
+                f"'{top}', which shadows a Python standard-library module. "
+                f"Rename the plugin's package to a unique name."
+            )
+        owner = self._module_owners.get(top)
+        if owner is not None and owner != plugin_name:
+            raise PluginLoadError(
+                f"Plugin '{plugin_name}' entry '{entry}' uses top-level module "
+                f"'{top}', already owned by plugin '{owner}'. Plugin package "
+                f"names must be globally unique."
+            )
+
         old_path = sys.path[:]
         sys.path.insert(0, str(plugin_dir))
         try:
             mod = importlib.import_module(module_path)
+            self._module_owners[top] = plugin_name
             return getattr(mod, attr)
         finally:
             sys.path[:] = old_path
@@ -274,6 +304,12 @@ class PluginLoader:
             clients["ingestion"] = self._services["ingestion"]
         else:
             clients["ingestion"] = DeniedIngestionClient(plugin_name)
+
+        # Edge client (graph writes) — gated on the `write` permission
+        if perms.write and self._services.get("edge"):
+            clients["edge"] = self._services["edge"]
+        else:
+            clients["edge"] = DeniedEdgeClient(plugin_name)
 
         return clients
 

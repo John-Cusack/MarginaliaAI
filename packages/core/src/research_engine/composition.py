@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from research_engine.adapters.clock import SystemClock
+from research_engine.adapters.edge_client import EdgeServiceAdapter
 from research_engine.adapters.embedding.local_bge import LocalBGEEmbedding
+from research_engine.adapters.embedding.remote_api import RemoteEmbeddingClient
+from research_engine.adapters.extraction_client import ExtractionServiceAdapter
 from research_engine.adapters.http.httpx_adapter import HttpxAdapter
 from research_engine.adapters.llm.anthropic import AnthropicLLMAdapter
+from research_engine.adapters.llm.budget_guard import BudgetGuard
 from research_engine.adapters.llm.openai_compatible import OpenAICompatibleLLMAdapter
 from research_engine.adapters.reranker.local_bge import LocalBGEReranker
 from research_engine.adapters.reranker.noop import NoopReranker
-from research_engine.adapters.storage.postgres.engine import build_engine
+from research_engine.adapters.storage.postgres.engine import build_engine, transaction
 from research_engine.adapters.storage.postgres.repositories import (
     PGDocumentRepo,
+    PGDocumentTextRepo,
     PGEdgeRepo,
     PGEntityRepo,
     PGEventRepo,
@@ -26,6 +32,7 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGMentionRepo,
     PGPassageRepo,
 )
+from research_engine.domain.errors import ConfigurationError
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
 from research_engine.services.entities.service import EntityService
@@ -48,6 +55,7 @@ class Container:
     http: Any
     clock: Any
     docs: PGDocumentRepo
+    document_texts: PGDocumentTextRepo
     passages: PGPassageRepo
     entities: PGEntityRepo
     mentions: PGMentionRepo
@@ -113,9 +121,18 @@ class Container:
         return self.extraction
 
     @property
+    def llm_calls_repo(self) -> PGLLMCallLogRepo:
+        return self.llm_calls
+
+    @property
     def transaction_factory(self) -> Any:
-        """Transaction factory — not yet wired, placeholder for MCP tool compat."""
-        return None
+        """Open a transactional connection.
+
+        Returns a zero-arg async context manager factory yielding a
+        ``Transaction``. Used by write-path MCP tools (``upsert_edge``,
+        ``upsert_entity``, ``upsert_event``).
+        """
+        return partial(transaction, self.engine)
 
     async def close(self) -> None:
         await self.http.close()
@@ -128,7 +145,8 @@ async def build_container(settings: Settings) -> Container:
 
     # Repositories
     docs = PGDocumentRepo(sql_engine)
-    passages_repo = PGPassageRepo(sql_engine)
+    document_texts_repo = PGDocumentTextRepo(sql_engine)
+    passages_repo = PGPassageRepo(sql_engine, ef_search=settings.hnsw_ef_search)
     entities_repo = PGEntityRepo(sql_engine)
     mentions_repo = PGMentionRepo(sql_engine)
     events_repo = PGEventRepo(sql_engine)
@@ -154,15 +172,51 @@ async def build_container(settings: Settings) -> Container:
             settings.default_llm_model,
         )
 
-    embedding = LocalBGEEmbedding(settings.embedding_model, settings.embedding_dim)
+    http = HttpxAdapter()
+    clock = SystemClock()
+
+    # Wrap the LLM adapter before anything else takes a reference, so that every
+    # caller — core services and plugin clients alike — is guarded.
+    if settings.llm_budget_usd is not None:
+        llm = BudgetGuard(
+            llm,
+            llm_calls_repo,
+            clock,
+            limit_usd=settings.llm_budget_usd,
+            window_days=settings.llm_budget_window_days,
+        )
+
+    # `embedding_provider` was declared but never read — the engine always built
+    # the local model, so setting it did nothing. A base_url implies remote, so
+    # pointing at a GPU host is one variable rather than two that must agree.
+    use_remote = (
+        settings.embedding_provider == "remote_api" or settings.embedding_base_url
+    )
+    if use_remote:
+        if not settings.embedding_base_url:
+            raise ConfigurationError(
+                "embedding_provider is 'remote_api' but RE_EMBEDDING_BASE_URL is "
+                "unset. Point it at a `research-engine embed-server`, e.g. "
+                "http://john-super-server:9882"
+            )
+        embedding = RemoteEmbeddingClient(
+            settings.embedding_base_url,
+            settings.embedding_model,
+            settings.embedding_dim,
+            timeout=settings.embedding_timeout,
+            api_key=(
+                settings.embedding_api_key.get_secret_value()
+                if settings.embedding_api_key
+                else None
+            ),
+        )
+    else:
+        embedding = LocalBGEEmbedding(settings.embedding_model, settings.embedding_dim)
 
     if settings.reranker_provider == "local_bge":
         reranker = LocalBGEReranker(settings.reranker_model)
     else:
         reranker = NoopReranker()
-
-    http = HttpxAdapter()
-    clock = SystemClock()
 
     # Plugin registry
     registry = PluginRegistry()
@@ -216,6 +270,17 @@ async def build_container(settings: Settings) -> Container:
         engine=sql_engine,
         concurrency=settings.ingest_concurrency,
         embedding_batch_size=settings.embedding_batch_size,
+        default_language=settings.default_language,
+        document_texts=document_texts_repo,
+    )
+
+    # Plugin-facing client adapters. Built here (not in the Container) because
+    # the loader needs them before the Container is constructed. Both reference
+    # sql_engine directly via the same transaction factory the Container exposes.
+    tx_factory = partial(transaction, sql_engine)
+    edge_service = EdgeServiceAdapter(edges_repo, tx_factory)
+    extraction_client = ExtractionServiceAdapter(
+        extraction_service, passages_repo, extractions_repo
     )
 
     # Plugin loader
@@ -230,7 +295,8 @@ async def build_container(settings: Settings) -> Container:
         passages=passages_repo,
         entity_service=entity_service,
         event_service=event_service,
-        extraction=extraction_service,
+        extraction=extraction_client,
+        edge=edge_service,
         ingestion=ingestion_service,
     )
     await plugin_loader.load_enabled()
@@ -243,6 +309,7 @@ async def build_container(settings: Settings) -> Container:
         http=http,
         clock=clock,
         docs=docs,
+        document_texts=document_texts_repo,
         passages=passages_repo,
         entities=entities_repo,
         mentions=mentions_repo,

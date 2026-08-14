@@ -201,6 +201,35 @@ class TestSearchSourcesTool:
         assert also[0]["plugin"] == "acad"
 
     @pytest.mark.asyncio
+    async def test_dedup_by_first_class_doi_field(self) -> None:
+        # Providers set doi as a first-class SourceMatch field (not metadata);
+        # dedup must still collapse them to one.
+        reg = PluginRegistry()
+        a = SourceMatch(plugin="acad", source_id="a", title="Same Paper",
+                        doi="10.1/x", availability=Availability.external_only)
+        b = SourceMatch(plugin="logos", source_id="b", title="Same Paper",
+                        doi="10.1/x", availability=Availability.ingestable)
+        reg.register_source_search_provider(StubProvider("acad", [a]), "p1")
+        reg.register_source_search_provider(StubProvider("logos", [b]), "p2")
+        out = await search_sources.handler(StubContainer(reg), query="x")
+        assert out["raw_count"] == 2
+        assert out["deduped_count"] == 1
+        assert out["matches"][0]["plugin"] == "logos"
+
+    @pytest.mark.asyncio
+    async def test_filter_matching_no_provider_reports_available(self) -> None:
+        reg = PluginRegistry()
+        reg.register_source_search_provider(
+            StubProvider("acad", [_match("acad", "A")]), "p1"
+        )
+        out = await search_sources.handler(
+            StubContainer(reg), query="x", sources=["Acad"]  # wrong case
+        )
+        assert out["matches"] == []
+        assert "acad" in out["note"]
+        assert "registered" not in out["note"].lower() or "None of the requested" in out["note"]
+
+    @pytest.mark.asyncio
     async def test_dedup_by_normalized_title_when_no_doi(self) -> None:
         reg = PluginRegistry()
         reg.register_source_search_provider(
@@ -234,14 +263,15 @@ class TestSearchSourcesTool:
     @pytest.mark.asyncio
     async def test_corpus_enrichment_sets_in_corpus(self) -> None:
         class StubIngestion:
-            async def find_existing(self, *, source_pattern: str) -> list[dict]:
-                if "10.1/found" in source_pattern:
+            async def find_existing(self, *, source: str) -> list[dict]:
+                # Exact match only — mirrors the orchestrator's source= path.
+                if source == "doi.org/10.1/found":
                     return [{"document_id": "doc-uuid-1"}]
                 return []
 
         reg = PluginRegistry()
         m = _match("acad", "Already Ingested", doi="10.1/found")
-        m.metadata["corpus_source_pattern"] = "doi.org/10.1/found"
+        m.metadata["corpus_source"] = "doi.org/10.1/found"
         reg.register_source_search_provider(StubProvider("acad", [m]), "p1")
 
         out = await search_sources.handler(
@@ -249,3 +279,24 @@ class TestSearchSourcesTool:
         )
         assert out["matches"][0]["availability"] == "in_corpus"
         assert out["matches"][0]["document_id"] == "doc-uuid-1"
+
+    @pytest.mark.asyncio
+    async def test_corpus_enrichment_uses_exact_match_no_false_positive(self) -> None:
+        # A substring-style hint ('10.1/1') must NOT enrich when only an
+        # unrelated source ('10.1/100') is ingested — exact match required.
+        class StubIngestion:
+            async def find_existing(self, *, source: str) -> list[dict]:
+                if source == "10.1/100":
+                    return [{"document_id": "other-doc"}]
+                return []
+
+        reg = PluginRegistry()
+        m = _match("acad", "Different Paper", doi="10.1/1")
+        m.metadata["corpus_source"] = "10.1/1"
+        reg.register_source_search_provider(StubProvider("acad", [m]), "p1")
+
+        out = await search_sources.handler(
+            StubContainer(reg, ingestion=StubIngestion()), query="x"
+        )
+        assert out["matches"][0]["availability"] != "in_corpus"
+        assert out["matches"][0]["document_id"] is None

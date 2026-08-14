@@ -20,12 +20,12 @@ class CorpusClient(Protocol):
     """
 
     async def find_passages(
-        self, query: str, *, filters: dict[str, Any] | None = None, k: int = 20
+        self, query: str, filters: dict[str, Any] | None = None, k: int = 20
     ) -> SearchResult: ...
     async def find_passages_advanced(self, query: SearchQuery) -> SearchResult: ...
     async def get_document(self, document_id: UUID) -> dict[str, Any] | None: ...
     async def get_passage_context(
-        self, passage_id: UUID, *, before: int = 0, after: int = 0
+        self, passage_id: UUID, before: int = 0, after: int = 0
     ) -> dict[str, Any]: ...
 
 
@@ -38,6 +38,26 @@ class ExtractionClient(Protocol):
     async def query_records(
         self, record_type: str, filters: dict | None = None, k: int = 100
     ) -> list: ...
+
+
+class EdgeClient(Protocol):
+    """Create/read typed graph edges — requires permissions.write = True.
+
+    Implemented by ``adapters.edge_client.EdgeServiceAdapter``. ``create`` takes
+    a flat dict (``source_kind``/``source_id``/``target_kind``/``target_id``/
+    ``relation_type`` plus optional ``attributes``/``source_passage_id``/
+    ``confidence``) and dedups on the natural key, so re-creating an edge
+    enriches rather than duplicates.
+    """
+
+    async def create(self, edge: dict) -> dict: ...
+    async def query(
+        self,
+        *,
+        source_id: UUID | None = None,
+        target_id: UUID | None = None,
+        relation_type: str | None = None,
+    ) -> list[dict]: ...
 
 
 class LLMClient(Protocol):
@@ -84,6 +104,7 @@ class IngestionClient(Protocol):
         source: str = "",
         metadata: dict | None = None,
         language: str | None = None,
+        full_text: str | None = None,
     ) -> dict: ...
 
     async def find_existing(

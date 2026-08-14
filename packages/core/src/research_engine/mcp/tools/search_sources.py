@@ -79,11 +79,15 @@ def _normalize_title(title: str) -> str:
 
 
 def _dedup_key(match: SourceMatch) -> str:
-    """Best-available identity key. DOI > ISBN > title+first-author+year."""
-    doi = match.metadata.get("doi") or ""
+    """Best-available identity key. DOI > ISBN > title+first-author+year.
+
+    Prefers the first-class ``doi``/``isbn`` fields, falling back to the
+    ``metadata`` dict so providers that stash identity there still dedupe.
+    """
+    doi = match.doi or match.metadata.get("doi") or ""
     if doi:
         return f"doi:{doi.lower()}"
-    isbn = match.metadata.get("isbn") or ""
+    isbn = match.isbn or match.metadata.get("isbn") or ""
     if isbn:
         return f"isbn:{isbn.replace('-', '').replace(' ', '')}"
     first_author = match.authors[0] if match.authors else ""
@@ -115,22 +119,26 @@ async def _enrich_with_corpus(
 ) -> list[SourceMatch]:
     """Mark matches whose work is already in the corpus.
 
-    Uses ``IngestionOrchestrator.find_existing`` against per-match source hints
-    that providers can stash in ``metadata['corpus_source_pattern']``.  Best-effort
-    only — providers without a stable source pattern simply skip enrichment.
+    Uses ``IngestionOrchestrator.find_existing`` with an **exact** ``source``
+    match against a per-match source hint providers stash in
+    ``metadata['corpus_source']`` (or the legacy ``corpus_source_pattern`` key).
+    Exact matching is deliberate: a substring match (e.g. '10.1/1' inside
+    '10.1/100') would wrongly flag an unrelated document as already-ingested and
+    silently skip ingesting the real source. Best-effort — providers without a
+    stable source hint simply skip enrichment.
     """
     ingestion = getattr(container, "ingestion", None)
     if ingestion is None or not hasattr(ingestion, "find_existing"):
         return matches
 
     for m in matches:
-        pattern = m.metadata.get("corpus_source_pattern")
-        if not pattern:
+        source = m.metadata.get("corpus_source") or m.metadata.get("corpus_source_pattern")
+        if not source:
             continue
         try:
-            existing = await ingestion.find_existing(source_pattern=pattern)
+            existing = await ingestion.find_existing(source=source)
         except Exception as e:
-            logger.warning("find_existing_failed", pattern=pattern, error=str(e))
+            logger.warning("find_existing_failed", source=source, error=str(e))
             continue
         if existing:
             m.availability = Availability.in_corpus
@@ -188,17 +196,25 @@ async def handler(
     try:
         registry = container.registry
         providers = registry.get_source_search_providers()
+        available = sorted(providers.keys())
         if sources:
             providers = {k: v for k, v in providers.items() if k in sources}
 
         if not providers:
+            if available:
+                note = (
+                    f"None of the requested sources {sources} matched a registered "
+                    f"provider. Available providers: {available}."
+                )
+            else:
+                note = (
+                    "No source search providers are registered. "
+                    "Install/enable a plugin that contributes provides.source_search."
+                )
             return {
                 "matches": [],
                 "providers_queried": [],
-                "note": (
-                    "No source search providers are registered. "
-                    "Install/enable a plugin that contributes provides.source_search."
-                ),
+                "note": note,
             }
 
         sq = SourceQuery(

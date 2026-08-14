@@ -78,6 +78,19 @@ class DeniedIngestionClient:
         raise PermissionDenied(self._plugin, "ingest")
 
 
+class DeniedEdgeClient:
+    """Edge client that always denies access (plugin lacks `write`)."""
+
+    def __init__(self, plugin_name: str) -> None:
+        self._plugin = plugin_name
+
+    async def create(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "write")
+
+    async def query(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "write")
+
+
 class GatedHttpClient:
     """HTTP client that filters requests against an allowlist."""
 

@@ -1,6 +1,6 @@
 [project]
 name = "research-engine"
-version = "0.2.0"
+version = "0.5.0"
 description = "Corpus Engine — turn a personal library into a research superpower"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -28,10 +28,17 @@ dependencies = [
     "structlog>=24.1,<25",
     "uuid-utils>=0.9,<1",
     "docling>=2.70,<3",
+    "packaging>=23.0",
 ]
 
 [project.optional-dependencies]
+# Only needed on the machine running `research-engine embed-server`.
+embed-server = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
 dev = [
+    "fastapi>=0.110",
     "pytest>=8,<9",
     "pytest-asyncio>=0.23,<1",
     "pytest-cov>=5,<6",

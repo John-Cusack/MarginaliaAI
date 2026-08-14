@@ -16,6 +16,7 @@ from research_engine.domain.source_search import (
 )
 from research_engine.plugins.sdk.clients import (
     CorpusClient,
+    EdgeClient,
     EntityClient,
     EventClient,
     ExtractionClient,
@@ -41,7 +42,7 @@ __all__ = [
     # Source search domain
     "SourceQuery", "SourceMatch", "IngestAction", "Availability",
     # Clients
-    "CorpusClient", "EntityClient", "EventClient", "ExtractionClient",
+    "CorpusClient", "EdgeClient", "EntityClient", "EventClient", "ExtractionClient",
     "HttpClient", "IngestionClient", "LLMClient",
     # Decorators
     "tool", "hook",

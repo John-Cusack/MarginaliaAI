@@ -1,0 +1,83 @@
+id: conceptual_overlap
+version: 1
+description: |
+  Extract conceptual themes from a passage that may overlap with themes
+  in other documents. Used to identify cross-document thematic connections
+  between works in different traditions (e.g., biblical/Protestant and
+  scholastic/Catholic arguments about property, government, and justice).
+owner: core
+
+record_types:
+  - id: conceptual_theme
+    description: A conceptual theme or argument present in the passage
+    fields:
+      theme:
+        type: enum
+        values:
+          - property_rights_as_moral_foundation
+          - government_coercion
+          - inflation_as_theft
+          - voluntariness_principle
+          - christian_moral_tradition
+          - government_as_beneficiary
+          - institutional_spheres_of_authority
+          - debasement_as_theft
+        required: true
+      summary:
+        type: string
+        description: "One-sentence summary of the argument or claim made in this passage"
+        required: true
+      evidence:
+        type: evidence_span
+        description: "Exact substring of the passage that most clearly expresses this theme"
+        required: true
+      moral_framework:
+        type: enum
+        values: [biblical_protestant, scholastic_catholic, natural_law, secular_libertarian, mixed]
+        description: "Which moral tradition the argument draws on"
+        required: true
+      confidence:
+        type: number
+        range: [0, 1]
+        required: true
+
+prompt: |
+  You are analyzing a passage for conceptual themes relevant to the
+  intersection of economics, property rights, and moral philosophy.
+
+  Identify which of the following themes appear in this passage:
+  - property_rights_as_moral_foundation: Property rights treated as a moral
+    principle (not utilitarian), where good intentions don't authorize violation.
+  - government_coercion: Government operates through compulsion; this has
+    moral implications for legitimacy.
+  - inflation_as_theft: Money creation / inflation as a form of unauthorized
+    taking or redistribution of property.
+  - voluntariness_principle: Legitimate economic cooperation must be voluntary,
+    not compelled.
+  - christian_moral_tradition: Economic arguments rooted in explicitly Christian
+    moral reasoning (Scripture, Aquinas, natural law, papal teaching).
+  - government_as_beneficiary: The state as the primary beneficiary of
+    coercive economic arrangements it creates.
+  - institutional_spheres_of_authority: Specific functions belong to specific
+    institutions; transgression of boundaries is harmful.
+  - debasement_as_theft: Historical coin debasement or currency manipulation
+    as government theft.
+
+  For each theme found, produce a record of type `conceptual_theme`.
+
+  Rules:
+  - The `evidence` field MUST be a verbatim substring of the passage.
+  - Only extract themes that are clearly present, not merely tangential.
+  - Be conservative with confidence: 0.9+ only for passages where the
+    theme is central to the argument.
+
+  Passage:
+  """
+  {{ passage_text }}
+  """
+
+  Output JSON matching the schema.
+
+validation:
+  evidence_must_be_substring: true
+  evidence_max_length: 300
