@@ -24,6 +24,8 @@ def trim_span(text: str, start: int, end: int) -> tuple[int, int]:
 
 class FixedWindowChunker:
     id = "fixed_window"
+    #: What `chunk()` takes: "text" or "sections".
+    consumes = "text"
     # 2.0: trims the span instead of stripping the text, so char offsets and
     # text agree. Offsets written by 1.0 are off by the stripped whitespace.
     version = "2.0"
@@ -33,6 +35,11 @@ class FixedWindowChunker:
     ) -> None:
         self._window = window_chars
         self._overlap = overlap_chars
+
+    @property
+    def max_passage_tokens(self) -> int | None:
+        """The window, in tokens, at the shared ~4-chars-per-token estimate."""
+        return max(1, self._window // 4)
 
     async def chunk(self, text: str, metadata: dict | None = None) -> list[PassageDraft]:
         if not text.strip():

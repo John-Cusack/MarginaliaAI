@@ -29,6 +29,8 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
 
 class ProseWindowChunker:
     id = "prose_window"
+    #: What `chunk()` takes: "text" or "sections".
+    consumes = "text"
     # 2.0: works in offsets and slices once, rather than rebuilding chunks with
     # `" ".join(sentences)`. Output text changes (whitespace is preserved), so
     # passages written by 1.0 are stale — see the reindex command.
@@ -37,6 +39,10 @@ class ProseWindowChunker:
     def __init__(self, max_tokens: int = 500, overlap_tokens: int = 50) -> None:
         self._max_tokens = max_tokens
         self._overlap_tokens = overlap_tokens
+
+    @property
+    def max_passage_tokens(self) -> int | None:
+        return self._max_tokens
 
     async def chunk(self, text: str, metadata: dict | None = None) -> list[PassageDraft]:
         """Split text into overlapping chunks at sentence boundaries."""

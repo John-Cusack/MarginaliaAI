@@ -26,11 +26,25 @@ def paragraph_spans(text: str) -> list[tuple[int, int]]:
 
 class WholeOrParagraphChunker:
     id = "whole_or_paragraph"
+    #: What `chunk()` takes: "text" or "sections".
+    consumes = "text"
     # 2.0: emits char offsets, drops empty input, and numbers positions densely.
     version = "2.0"
 
     def __init__(self, threshold_tokens: int = DEFAULT_THRESHOLD_TOKENS) -> None:
         self._threshold = threshold_tokens
+
+    @property
+    def max_passage_tokens(self) -> int | None:
+        """Unbounded, deliberately.
+
+        A document that is one long paragraph yields one long passage: this
+        chunker's promise is to respect paragraph boundaries, and there is no
+        smaller unit it is willing to break. Declared None rather than left
+        unstated so the contract suite treats it as a decision, not an
+        oversight — which is exactly how `structural` slipped past unbounded.
+        """
+        return None
 
     async def chunk(self, text: str, metadata: dict | None = None) -> list[PassageDraft]:
         if not text.strip():

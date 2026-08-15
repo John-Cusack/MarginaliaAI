@@ -15,6 +15,8 @@ def _approx_tokens(text: str) -> int:
 
 class StructuralChunker:
     id = "structural"
+    #: What `chunk()` takes: "text" or "sections".
+    consumes = "sections"
     # 3.0: sections longer than `max_tokens` are split into prose windows.
     # Passage boundaries change, so 2.0 passages are stale — see `reindex`.
     version = "3.0"
@@ -27,6 +29,10 @@ class StructuralChunker:
         #: Sections stay the addressing unit; oversized ones are windowed.
         self._max_tokens = max_tokens
         self._windows = ProseWindowChunker(max_tokens, overlap_tokens)
+
+    @property
+    def max_passage_tokens(self) -> int | None:
+        return self._max_tokens
 
     async def chunk(
         self,
@@ -49,6 +55,13 @@ class StructuralChunker:
         pure boundaries, which can be stored on the document without keeping a
         second copy of its prose.
         """
+        if isinstance(sections, str):
+            raise ChunkingError(
+                "StructuralChunker.chunk() takes a section table, not text. "
+                "Pass sections_from_markdown(text) with full_text=text, or use "
+                "a text chunker."
+            )
+
         chunks: list[PassageDraft] = []
         cursor = 0
         position = 0
