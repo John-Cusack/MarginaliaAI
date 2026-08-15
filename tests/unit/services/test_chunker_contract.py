@@ -41,10 +41,7 @@ from typing import Any
 import pytest
 
 from research_engine.services.ingestion.chunking.fixed_window import FixedWindowChunker
-from research_engine.services.ingestion.chunking.prose_window import (
-    ProseWindowChunker,
-    sentence_spans,
-)
+from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
 from research_engine.services.ingestion.chunking.structural import StructuralChunker
 from research_engine.services.ingestion.chunking.whole_or_paragraph import (
     WholeOrParagraphChunker,
@@ -243,12 +240,16 @@ async def test_chunker_versions_were_bumped() -> None:
 
 
 @pytest.mark.contract
-async def test_plugin_chunkers_satisfy_the_same_invariant() -> None:
-    """Any chunker a pack registers is held to the offset contract too.
+async def test_plugin_chunkers_satisfy_the_same_contract() -> None:
+    """Any chunker a pack registers is held to exactly what core is held to.
 
-    Skips when no packs are loaded, so the core suite stays hermetic.
+    Uses the shared assertion from `research_engine.testing` rather than a copy,
+    so there is one definition of the contract and packs can run it themselves
+    — which is the point, since a pack's chunker is only loaded here by
+    accident of what happens to be installed.
     """
     from research_engine.plugins import registry as reg_mod
+    from research_engine.testing import assert_chunker_contract
 
     registry = reg_mod._global_registry
     if registry is None:
@@ -258,179 +259,48 @@ async def test_plugin_chunkers_satisfy_the_same_invariant() -> None:
     if not plugin_chunkers:
         pytest.skip("No plugin chunkers registered")
 
-    for chunker_id, factory in plugin_chunkers.items():
+    for factory in plugin_chunkers.values():
         chunker = factory() if isinstance(factory, type) else factory
-        for name, text in TRICKY_TEXTS.items():
-            try:
-                drafts = await chunk_text(chunker, text)
-            except TypeError:
-                pytest.skip(f"{chunker_id} does not take plain text")
-            assert_offsets_are_true(chunker, text, drafts), name
+        await assert_chunker_contract(chunker)
 
 
-# --- Coverage gate ------------------------------------------------------------
+async def test_core_chunkers_satisfy_the_shared_contract() -> None:
+    """Core is held to the exported contract too, not just its own suite.
+
+    Without this the exported assertion could rot: packs would be measured
+    against a definition core never runs.
+    """
+    from research_engine.testing import assert_chunker_contract
+
+    for chunker in text_chunkers():
+        await assert_chunker_contract(chunker)
+
+
+# --- Coverage gate -----------------------------------------------------------
+#
+# The invariants themselves now live in `research_engine.testing`, shared with
+# packs. What stays here is the thing no shared assertion can do: check that
+# every registered chunker is actually put through it. `structural` satisfied no
+# invariant for its whole existence simply by not appearing in the roster, and
+# nothing failed, because an untested chunker looks exactly like a suite with
+# fewer parameters.
+
 
 def test_every_registered_chunker_is_under_contract() -> None:
-    """A chunker that is not exercised here must fail, not go quiet.
-
-    `structural` was absent from this suite for its whole existence. Nothing
-    reported it, because an untested chunker looks exactly like a suite with
-    fewer parameters. Deriving the expectation from the registry means the next
-    chunker added to `CORE_CHUNKERS` turns this red until it is covered.
-    """
+    """A chunker absent from the roster must fail, not go quiet."""
     covered = {chunker.id for chunker in text_chunkers()}
     missing = set(CORE_CHUNKERS) - covered
     assert not missing, (
         f"Registered chunkers with no contract coverage: {sorted(missing)}. "
         f"Add them to text_chunkers(); if chunk() takes something other than a "
-        f"string, teach chunk_text() how to call it."
+        f"string, declare `consumes` so call_chunker knows how to reach it."
     )
 
 
-def test_every_chunker_declares_a_size_contract() -> None:
-    """Unbounded must be a stated decision, not an omission.
-
-    `whole_or_paragraph` is legitimately unbounded — one long paragraph is one
-    long passage. `structural` was accidentally unbounded and looked identical
-    from outside. Forcing the declaration separates the two.
-    """
+def test_every_chunker_declares_how_it_is_called() -> None:
+    """`consumes` is what lets the shared contract reach a chunker at all."""
     for chunker in text_chunkers():
-        assert hasattr(chunker, "max_passage_tokens"), (
-            f"{chunker.id} declares no max_passage_tokens. State the cap, or "
-            f"state None and say why."
+        assert getattr(chunker, "consumes", None) in {"text", "sections"}, (
+            f"{chunker.id} does not declare `consumes`, so a shared harness "
+            f"cannot call it and it will silently skip the contract."
         )
-
-
-# --- Size ---------------------------------------------------------------------
-
-#: Roughly a 500-page book. The largest fixture above is under 3,000 characters,
-#: which is why a defect that only appears at chapter scale survived this suite.
-BOOK_SCALE = (
-    "The clerk recorded the transaction in the ledger. "
-    "A second hand annotated the margin some years later. "
-    "The binding was repaired twice before the bequest. "
-) * 5000
-
-
-#: Passages overshoot their limit slightly by construction: a window is closed
-#: only when the *next* unit would exceed it, and the whole-window token
-#: estimate rounds differently from the sum of its parts. Measured across every
-#: chunker and fixture here, the worst real overshoot is 1.15x. 1.5 leaves room
-#: without leaving room for a defect: the bug this rule exists to catch ran to
-#: roughly 375x.
-OVERSHOOT_TOLERANCE = 1.5
-
-#: An absolute ceiling, with no irreducibility exemption. The soft rule above
-#: lets a single unbreakable unit be any size, and that exemption turned out to
-#: be too generous: a book index has almost no sentence punctuation, so an
-#: entire one counted as one "sentence" and passed at 22,131 tokens. Nothing
-#: justifies that — the embedding model tops out at 8,192 tokens, so the tail of
-#: such a passage is stored but never embedded, and is unreachable by search
-#: while appearing to be indexed. Found in the corpus by `research-engine
-#: doctor`, not by this suite; the fixture below is why it can no longer hide.
-ABSOLUTE_MAX_TOKENS = 2_000
-
-#: A book index: newline-separated entries, page numbers, almost no full stops.
-#: Taken from the shape of a real document in the corpus rather than invented.
-INDEX_SHAPED = (
-    "Index\n\nPage numbers correspond to the print edition.\n\n"
-    + "".join(
-        f"{word}, {n}, {n + 40}, {n + 90}\n"
-        for n, word in enumerate(
-            ["abolition", "archive", "binding", "clerk", "codex", "deed",
-             "estate", "folio", "grant", "hearing", "indenture", "judgment"] * 300
-        )
-    )
-)
-
-
-@pytest.mark.parametrize("chunker", text_chunkers(), ids=_ids(text_chunkers()))
-@pytest.mark.parametrize("name", ["long_prose", "no_boundaries", "book_scale"])
-async def test_passages_stay_near_their_declared_size(chunker: Any, name: str) -> None:
-    """A passage of many sentences must stay near the declared cap.
-
-    A flat bound would be wrong: `prose_window(max_tokens=20)` emits a 500-token
-    passage for a text containing no sentence boundary, and is right to — there
-    is nowhere to cut. So the exemption is content-based: a passage that is a
-    single unbreakable unit may be any size, and a passage made of many units
-    may not.
-
-    The exemption must be content-based rather than "re-chunk it and see if it
-    splits". That probe passes for `structural` no matter how large its output,
-    because re-chunking one of its sections yields that same single section —
-    it was written, tried against the original defect, and found to catch
-    nothing. This rule catches it at roughly 375x.
-    """
-    limit = chunker.max_passage_tokens
-    if limit is None:
-        pytest.skip(f"{chunker.id} is unbounded by declaration")
-
-    text = BOOK_SCALE if name == "book_scale" else ALL_TEXTS[name]
-    for draft in await chunk_text(chunker, text):
-        if len(sentence_spans(draft.text)) <= 1:
-            continue  # irreducible content: no boundary to cut on
-        tokens = max(1, len(draft.text) // 4)
-        assert tokens <= limit * OVERSHOOT_TOLERANCE, (
-            f"{chunker.id}: emitted a {tokens}-token passage against a declared "
-            f"limit of {limit} ({tokens / limit:.1f}x), and it contains "
-            f"{len(sentence_spans(draft.text))} sentences — so there were "
-            f"boundaries available and the chunker did not use them."
-        )
-
-
-@pytest.mark.parametrize("chunker", text_chunkers(), ids=_ids(text_chunkers()))
-@pytest.mark.parametrize("name", ["index_shaped", "book_scale"])
-async def test_no_passage_exceeds_the_absolute_ceiling(chunker: Any, name: str) -> None:
-    """No exemption. A passage the embedder truncates is not really indexed.
-
-    The soft rule exempts a single unbreakable unit, which is right for a long
-    sentence and wrong for a document that simply has no sentences in it. This
-    one admits no excuse: whatever the chunker's reasoning, a passage past this
-    size is one the embedding model will cut short, leaving text in the corpus
-    that search cannot reach.
-    """
-    if chunker.max_passage_tokens is None:
-        pytest.skip(f"{chunker.id} is unbounded by declaration")
-
-    text = INDEX_SHAPED if name == "index_shaped" else BOOK_SCALE
-    for draft in await chunk_text(chunker, text):
-        tokens = max(1, len(draft.text) // 4)
-        assert tokens <= ABSOLUTE_MAX_TOKENS, (
-            f"{chunker.id}: emitted a {tokens:,}-token passage on {name}. The "
-            f"embedder accepts 8,192; everything past that is stored but never "
-            f"embedded, so it is invisible to search while looking indexed."
-        )
-
-
-@pytest.mark.parametrize("chunker", text_chunkers(), ids=_ids(text_chunkers()))
-async def test_book_scale_documents_are_chunked_at_all(chunker: Any) -> None:
-    """Scale itself is a dimension: a whole book must not become one passage."""
-    drafts = await chunk_text(chunker, BOOK_SCALE)
-
-    assert drafts
-    assert_offsets_are_true(chunker, BOOK_SCALE, drafts)
-    if chunker.max_passage_tokens is not None:
-        assert len(drafts) > 1, (
-            f"{chunker.id} returned the entire book as {len(drafts)} passage(s)"
-        )
-
-
-# --- Determinism and degeneracy -----------------------------------------------
-
-@pytest.mark.parametrize("chunker", text_chunkers(), ids=_ids(text_chunkers()))
-@pytest.mark.parametrize("name", sorted(TRICKY_TEXTS))
-async def test_no_empty_passages(chunker: Any, name: str) -> None:
-    """A whitespace-only passage is an embedding and an index entry for nothing."""
-    for draft in await chunk_text(chunker, TRICKY_TEXTS[name]):
-        assert draft.text.strip(), f"{chunker.id}: empty passage on {name}"
-
-
-@pytest.mark.parametrize("chunker", text_chunkers(), ids=_ids(text_chunkers()))
-async def test_chunking_is_deterministic(chunker: Any) -> None:
-    """Re-ingesting a document must not silently renumber the corpus."""
-    first = await chunk_text(chunker, ALL_TEXTS["long_prose"])
-    second = await chunk_text(chunker, ALL_TEXTS["long_prose"])
-
-    assert [(d.char_start, d.char_end, d.position) for d in first] == [
-        (d.char_start, d.char_end, d.position) for d in second
-    ]

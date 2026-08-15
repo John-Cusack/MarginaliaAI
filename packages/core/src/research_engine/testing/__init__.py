@@ -14,19 +14,45 @@ Two rules this package exists to enforce:
    a dedicated database unless they opt out explicitly.
 """
 
-from research_engine.testing.corpus import Corpus, new_id
-from research_engine.testing.database import (
-    DEFAULT_TEST_DB_NAME,
-    CorpusFootprint,
-    ensure_test_database,
-    resolve_test_db_url,
+from research_engine.testing.chunker_contract import (
+    ABSOLUTE_MAX_TOKENS,
+    CONTRACT_TEXTS,
+    assert_chunker_contract,
+    call_chunker,
 )
 
 __all__ = [
+    "ABSOLUTE_MAX_TOKENS",
+    "CONTRACT_TEXTS",
     "DEFAULT_TEST_DB_NAME",
     "Corpus",
     "CorpusFootprint",
+    "assert_chunker_contract",
+    "call_chunker",
     "ensure_test_database",
     "new_id",
     "resolve_test_db_url",
 ]
+
+#: The corpus and database helpers are resolved on access, not on import.
+#: They need a Postgres driver and a uuid7 implementation; the chunker contract
+#: needs neither. A pack that only wants to hold its chunker to the contract was
+#: otherwise forced to install a database stack to import this package — a
+#: barrier in front of exactly the packs it exists to serve.
+_LAZY = {
+    "Corpus": ("research_engine.testing.corpus", "Corpus"),
+    "new_id": ("research_engine.testing.corpus", "new_id"),
+    "CorpusFootprint": ("research_engine.testing.database", "CorpusFootprint"),
+    "DEFAULT_TEST_DB_NAME": ("research_engine.testing.database", "DEFAULT_TEST_DB_NAME"),
+    "ensure_test_database": ("research_engine.testing.database", "ensure_test_database"),
+    "resolve_test_db_url": ("research_engine.testing.database", "resolve_test_db_url"),
+}
+
+
+def __getattr__(name: str) -> object:
+    target = _LAZY.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    return getattr(importlib.import_module(target[0]), target[1])

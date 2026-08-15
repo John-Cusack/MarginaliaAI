@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 
 from research_engine.domain.passages import PassageDraft
+from research_engine.services.ingestion.chunking.fixed_window import (
+    split_at_boundary,
+)
 
 # Simple sentence boundary pattern
 _SENT_BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
@@ -84,38 +87,8 @@ class ProseWindowChunker:
         return chunks
 
     def _fit_to_window(self, text: str, span: tuple[int, int]) -> list[tuple[int, int]]:
-        """Break a single unit that will not fit, preferring a real boundary.
-
-        Sentence boundaries are the natural seam, but prose is not the only
-        thing ingested: indexes, tables of contents and lexicon entries run for
-        pages with barely a full stop. Treating those as one indivisible unit
-        produced passages an order of magnitude over the window — and past the
-        embedder's own limit, so the tail was silently not embedded at all.
-
-        Line breaks are tried before spaces because in exactly those documents
-        the line *is* the record.
-        """
-        start, end = span
-        budget = self._max_tokens * 4  # the shared ~4-chars-per-token estimate
-        if end - start <= budget:
-            return [span]
-
-        pieces: list[tuple[int, int]] = []
-        cursor = start
-        while end - cursor > budget:
-            window_end = cursor + budget
-            cut = text.rfind("\n", cursor + 1, window_end)
-            if cut <= cursor:
-                cut = text.rfind(" ", cursor + 1, window_end)
-            if cut <= cursor:
-                # No boundary of any kind: cut on the budget. A passage the
-                # embedder truncates is worse than one cut mid-word.
-                cut = window_end
-            pieces.append((cursor, cut))
-            cursor = cut
-        if cursor < end:
-            pieces.append((cursor, end))
-        return [(s, e) for s, e in pieces if text[s:e].strip()]
+        """Break a unit that will not fit, at the best seam available."""
+        return split_at_boundary(text, span[0], span[1], self._max_tokens * 4)
 
     def _overlap_window(
         self, text: str, window: list[tuple[int, int]]
