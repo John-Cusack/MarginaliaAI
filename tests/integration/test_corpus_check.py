@@ -114,15 +114,35 @@ async def test_a_passage_with_no_offsets_is_caught(
     assert check.severity == "warning"
 
 
-async def test_passages_without_canonical_text_are_caught(
+async def test_a_file_backed_document_without_text_is_routed_to_reparse(
     engine: AsyncEngine, corpus: Corpus
 ) -> None:
-    doc_id = await corpus.add_document()  # deliberately no document_texts row
+    doc_id = await corpus.add_document(source="/books/somewhere.epub")
     await corpus.add_passage(doc_id, "Orphaned prose.")
 
     check = await _check(engine, "document_has_canonical_text")
+
     assert str(doc_id) in check.samples
     assert "reindex text" in check.remedy
+
+
+async def test_a_pack_sourced_document_is_not_routed_to_a_command_that_cannot_help(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """`reindex text` classifies a pack URI as unreachable and skips it.
+
+    Naming it as the remedy anyway is worse than naming none: the command
+    reports success having done nothing, and the corpus looks repaired.
+    """
+    doc_id = await corpus.add_document(source="logos:LLS:46.30.12:batch:b0010")
+    await corpus.add_passage(doc_id, "Prose fetched from an API.")
+
+    reparse = await _check(engine, "document_has_canonical_text")
+    pack = await _check(engine, "document_text_needs_a_pack_reingest")
+
+    assert str(doc_id) not in reparse.samples
+    assert str(doc_id) in pack.samples
+    assert "plugin" in pack.remedy
 
 
 async def test_an_oversized_passage_is_caught(

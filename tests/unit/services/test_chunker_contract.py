@@ -320,6 +320,29 @@ BOOK_SCALE = (
 #: roughly 375x.
 OVERSHOOT_TOLERANCE = 1.5
 
+#: An absolute ceiling, with no irreducibility exemption. The soft rule above
+#: lets a single unbreakable unit be any size, and that exemption turned out to
+#: be too generous: a book index has almost no sentence punctuation, so an
+#: entire one counted as one "sentence" and passed at 22,131 tokens. Nothing
+#: justifies that — the embedding model tops out at 8,192 tokens, so the tail of
+#: such a passage is stored but never embedded, and is unreachable by search
+#: while appearing to be indexed. Found in the corpus by `research-engine
+#: doctor`, not by this suite; the fixture below is why it can no longer hide.
+ABSOLUTE_MAX_TOKENS = 2_000
+
+#: A book index: newline-separated entries, page numbers, almost no full stops.
+#: Taken from the shape of a real document in the corpus rather than invented.
+INDEX_SHAPED = (
+    "Index\n\nPage numbers correspond to the print edition.\n\n"
+    + "".join(
+        f"{word}, {n}, {n + 40}, {n + 90}\n"
+        for n, word in enumerate(
+            ["abolition", "archive", "binding", "clerk", "codex", "deed",
+             "estate", "folio", "grant", "hearing", "indenture", "judgment"] * 300
+        )
+    )
+)
+
 
 @pytest.mark.parametrize("chunker", text_chunkers(), ids=_ids(text_chunkers()))
 @pytest.mark.parametrize("name", ["long_prose", "no_boundaries", "book_scale"])
@@ -352,6 +375,30 @@ async def test_passages_stay_near_their_declared_size(chunker: Any, name: str) -
             f"limit of {limit} ({tokens / limit:.1f}x), and it contains "
             f"{len(sentence_spans(draft.text))} sentences — so there were "
             f"boundaries available and the chunker did not use them."
+        )
+
+
+@pytest.mark.parametrize("chunker", text_chunkers(), ids=_ids(text_chunkers()))
+@pytest.mark.parametrize("name", ["index_shaped", "book_scale"])
+async def test_no_passage_exceeds_the_absolute_ceiling(chunker: Any, name: str) -> None:
+    """No exemption. A passage the embedder truncates is not really indexed.
+
+    The soft rule exempts a single unbreakable unit, which is right for a long
+    sentence and wrong for a document that simply has no sentences in it. This
+    one admits no excuse: whatever the chunker's reasoning, a passage past this
+    size is one the embedding model will cut short, leaving text in the corpus
+    that search cannot reach.
+    """
+    if chunker.max_passage_tokens is None:
+        pytest.skip(f"{chunker.id} is unbounded by declaration")
+
+    text = INDEX_SHAPED if name == "index_shaped" else BOOK_SCALE
+    for draft in await chunk_text(chunker, text):
+        tokens = max(1, len(draft.text) // 4)
+        assert tokens <= ABSOLUTE_MAX_TOKENS, (
+            f"{chunker.id}: emitted a {tokens:,}-token passage on {name}. The "
+            f"embedder accepts 8,192; everything past that is stored but never "
+            f"embedded, so it is invisible to search while looking indexed."
         )
 
 

@@ -194,7 +194,14 @@ async def test_every_dependent_survives_and_is_repointed(
     new_ids = {p.id for p in new_passages}
     assert new_ids.isdisjoint(old_ids), "old passages should be gone"
     assert new_passages, "new passages should exist"
-    assert all(p.chunker_version == "2.0" for p in new_passages)
+    # Asked of the registry, not hardcoded: a version literal here means every
+    # chunker bump breaks a test that has nothing to do with the change.
+    from research_engine.services.ingestion.pipeline import current_chunker_versions
+
+    expected = current_chunker_versions()
+    assert all(
+        p.chunker_version == expected[p.chunker] for p in new_passages
+    ), f"expected {expected}, got {sorted({(p.chunker, p.chunker_version) for p in new_passages})}"
 
     # Nothing cascaded away, nothing nulled — and each points at a real new row.
     async with engine.connect() as conn:

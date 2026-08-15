@@ -127,26 +127,77 @@ _CHECKS: list[tuple[str, str, str, str | None, str]] = [
         "research-engine reindex chunks",
         "SELECT id::text FROM core.passages WHERE char_end < char_start",
     ),
+    # Passages with no span are split by what can actually recover them. A
+    # single check pointing everything at `reindex chunks` was worse than no
+    # advice: that command needs canonical text, and every damaged passage in
+    # this corpus is in a document that has none, so it would have skipped all
+    # of them and reported success.
     (
         "passage_has_offsets",
         "warning",
-        "Passage carries no span, so it cannot be cited or re-anchored",
+        "Passage has no span, but its document has text to re-anchor against",
         "research-engine reindex chunks",
         """
-        SELECT id::text FROM core.passages
-        WHERE char_start IS NULL OR char_end IS NULL
+        SELECT p.id::text
+        FROM core.passages p
+        JOIN core.document_texts dt ON dt.document_id = p.document_id
+        WHERE p.char_start IS NULL OR p.char_end IS NULL
+        """,
+    ),
+    (
+        "passage_offsets_recoverable_by_reparse",
+        "warning",
+        "Passage has no span and no canonical text, but its source is still a file",
+        "research-engine reindex text --include-slow, then reindex chunks",
+        """
+        SELECT p.id::text
+        FROM core.passages p
+        JOIN core.documents d ON d.id = p.document_id
+        LEFT JOIN core.document_texts dt ON dt.document_id = p.document_id
+        WHERE dt.document_id IS NULL
+          AND (p.char_start IS NULL OR p.char_end IS NULL)
+          AND NOT (d.source LIKE '%://%' OR (position(':' in d.source) > 0 AND d.source NOT LIKE '/%'))
+        """,
+    ),
+    (
+        "passage_offsets_need_a_pack_reingest",
+        "warning",
+        "Passage has no span and its source is a pack URI — no core command reaches it",
+        "re-run that plugin's ingest for the affected resources",
+        """
+        SELECT p.id::text
+        FROM core.passages p
+        JOIN core.documents d ON d.id = p.document_id
+        LEFT JOIN core.document_texts dt ON dt.document_id = p.document_id
+        WHERE dt.document_id IS NULL
+          AND (p.char_start IS NULL OR p.char_end IS NULL)
+          AND (d.source LIKE '%://%' OR (position(':' in d.source) > 0 AND d.source NOT LIKE '/%'))
         """,
     ),
     (
         "document_has_canonical_text",
         "warning",
-        "Document has passages but no stored text for their offsets to address",
-        "research-engine reindex text",
+        "Document has passages but no stored text, and its source is still a file",
+        "research-engine reindex text --include-slow",
         """
         SELECT DISTINCT p.document_id::text
         FROM core.passages p
+        JOIN core.documents d ON d.id = p.document_id
         LEFT JOIN core.document_texts dt ON dt.document_id = p.document_id
-        WHERE dt.document_id IS NULL
+        WHERE dt.document_id IS NULL AND NOT (d.source LIKE '%://%' OR (position(':' in d.source) > 0 AND d.source NOT LIKE '/%'))
+        """,
+    ),
+    (
+        "document_text_needs_a_pack_reingest",
+        "warning",
+        "Document has passages but no stored text, and its source is not a file",
+        "re-run that plugin's ingest for the affected resources",
+        """
+        SELECT DISTINCT p.document_id::text
+        FROM core.passages p
+        JOIN core.documents d ON d.id = p.document_id
+        LEFT JOIN core.document_texts dt ON dt.document_id = p.document_id
+        WHERE dt.document_id IS NULL AND (d.source LIKE '%://%' OR (position(':' in d.source) > 0 AND d.source NOT LIKE '/%'))
         """,
     ),
     (
@@ -159,12 +210,16 @@ _CHECKS: list[tuple[str, str, str, str | None, str]] = [
     (
         "passage_is_not_oversized",
         "warning",
-        f"Passage exceeds ~{OVERSIZED_TOKENS} tokens, diluting its own embedding",
+        f"Passage on a superseded chunker exceeds ~{OVERSIZED_TOKENS} tokens",
         "research-engine reindex chunks",
-        f"""
-        SELECT id::text FROM core.passages
-        WHERE length(text) / 4 > {OVERSIZED_TOKENS}
-        """,
+        None,  # filled in at runtime: needs the current chunker versions
+    ),
+    (
+        "current_chunkers_are_not_emitting_oversized_passages",
+        "critical",
+        f"A chunker in use today emitted a passage over ~{OVERSIZED_TOKENS} tokens",
+        "cap the chunker; re-chunk the affected documents",
+        None,  # filled in at runtime
     ),
     (
         "passage_is_embedded",
@@ -229,6 +284,41 @@ _CHECKS: list[tuple[str, str, str, str | None, str]] = [
 ]
 
 
+def _oversized_sql() -> dict[str, str]:
+    """Oversized-passage checks, split by whether the chunker is still in use.
+
+    The distinction is the whole point. An oversized passage from a superseded
+    chunker is debt, cleared by re-chunking. One from a chunker running today is
+    a defect still being written into the corpus with every ingest, and it is
+    critical for that reason — the remedy is to cap the chunker, not to tidy up
+    after it.
+    """
+    from research_engine.services.ingestion.pipeline import current_chunker_versions
+
+    current = current_chunker_versions()
+    if current:
+        pairs = ", ".join(
+            f"('{chunker}', '{version}')" for chunker, version in sorted(current.items())
+        )
+        is_current = f"(p.chunker, p.chunker_version) IN ({pairs})"
+    else:  # pragma: no cover - a registry with no chunkers at all
+        is_current = "false"
+
+    oversized = f"length(p.text) / 4 > {OVERSIZED_TOKENS}"
+    return {
+        "passage_is_not_oversized": (
+            f"SELECT p.id::text FROM core.passages p "
+            f"WHERE {oversized} AND NOT {is_current}"
+        ),
+        "current_chunkers_are_not_emitting_oversized_passages": (
+            f"SELECT p.chunker || ' ' || p.chunker_version || ': ' || "
+            f"length(p.text) || ' chars' FROM core.passages p "
+            f"WHERE {oversized} AND {is_current} "
+            f"ORDER BY length(p.text) DESC"
+        ),
+    }
+
+
 class CorpusChecker:
     """Runs the invariant checks. Reports; never writes."""
 
@@ -242,6 +332,8 @@ class CorpusChecker:
                 await conn.execute(sa.text("SELECT count(*) FROM core.passages"))
             ).scalar_one()
 
+            runtime_sql = _oversized_sql()
+
             for name, severity, description, remedy, sql in _CHECKS:
                 check = Check(
                     name=name,
@@ -250,6 +342,7 @@ class CorpusChecker:
                     remedy=remedy,
                     total=passage_total,
                 )
+                sql = sql if sql is not None else runtime_sql[name]
                 try:
                     rows = (await conn.execute(sa.text(sql))).all()
                 except Exception as exc:  # noqa: BLE001

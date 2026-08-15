@@ -31,10 +31,12 @@ class ProseWindowChunker:
     id = "prose_window"
     #: What `chunk()` takes: "text" or "sections".
     consumes = "text"
-    # 2.0: works in offsets and slices once, rather than rebuilding chunks with
-    # `" ".join(sentences)`. Output text changes (whitespace is preserved), so
-    # passages written by 1.0 are stale — see the reindex command.
-    version = "2.0"
+    # 3.0: a unit larger than the window is broken at a word or line boundary
+    # instead of emitted whole. Found in the corpus, not in a fixture: a book
+    # index has almost no sentence punctuation, so the whole of one became a
+    # single 22,131-token passage — well past the 8,192 the embedder accepts,
+    # which means most of it was stored but never embedded.
+    version = "3.0"
 
     def __init__(self, max_tokens: int = 500, overlap_tokens: int = 50) -> None:
         self._max_tokens = max_tokens
@@ -49,7 +51,11 @@ class ProseWindowChunker:
         if not text.strip():
             return []
 
-        spans = sentence_spans(text)
+        spans = [
+            piece
+            for span in sentence_spans(text)
+            for piece in self._fit_to_window(text, span)
+        ]
         if not spans:
             return []
 
@@ -76,6 +82,40 @@ class ProseWindowChunker:
             chunks.append(self._make_draft(text, window[0][0], window[-1][1], position, metadata))
 
         return chunks
+
+    def _fit_to_window(self, text: str, span: tuple[int, int]) -> list[tuple[int, int]]:
+        """Break a single unit that will not fit, preferring a real boundary.
+
+        Sentence boundaries are the natural seam, but prose is not the only
+        thing ingested: indexes, tables of contents and lexicon entries run for
+        pages with barely a full stop. Treating those as one indivisible unit
+        produced passages an order of magnitude over the window — and past the
+        embedder's own limit, so the tail was silently not embedded at all.
+
+        Line breaks are tried before spaces because in exactly those documents
+        the line *is* the record.
+        """
+        start, end = span
+        budget = self._max_tokens * 4  # the shared ~4-chars-per-token estimate
+        if end - start <= budget:
+            return [span]
+
+        pieces: list[tuple[int, int]] = []
+        cursor = start
+        while end - cursor > budget:
+            window_end = cursor + budget
+            cut = text.rfind("\n", cursor + 1, window_end)
+            if cut <= cursor:
+                cut = text.rfind(" ", cursor + 1, window_end)
+            if cut <= cursor:
+                # No boundary of any kind: cut on the budget. A passage the
+                # embedder truncates is worse than one cut mid-word.
+                cut = window_end
+            pieces.append((cursor, cut))
+            cursor = cut
+        if cursor < end:
+            pieces.append((cursor, end))
+        return [(s, e) for s, e in pieces if text[s:e].strip()]
 
     def _overlap_window(
         self, text: str, window: list[tuple[int, int]]
