@@ -33,7 +33,20 @@ TEXT = "The archive holds letters. Each letter carries a date. Others are exact.
 
 
 async def _check(engine: AsyncEngine, name: str):
-    report = await CorpusChecker(engine).run()
+    """The named check, sampled widely enough to prove it found *this* row.
+
+    These tests plant one broken row and assert it comes back. A report samples
+    five ids by default, which is right for a human reading it and wrong here:
+    the checks run over the whole corpus, so once it holds more than five real
+    offenders the planted row stops appearing and the test fails while the check
+    is working perfectly. That is what happened when the oversized check became
+    script-aware and went from 10 offenders to 142.
+
+    So the sample is widened for the assertion. The alternative — asserting on
+    counts — would pass against a check that found five *other* rows and missed
+    the planted one entirely, which is the failure these tests exist to catch.
+    """
+    report = await CorpusChecker(engine).run(sample_size=100_000)
     return next(c for c in report.checks if c.name == name)
 
 
