@@ -112,3 +112,35 @@ async def test_sections_may_omit_text_and_be_read_from_the_canonical_text():
 async def test_a_section_with_neither_text_nor_full_text_is_refused():
     with pytest.raises(ChunkingError, match="offsets"):
         await StructuralChunker().chunk([{"text": "Body without a home."}], None)
+
+
+async def test_a_dense_section_inside_a_latin_document_is_still_capped() -> None:
+    """A document average is not a bound, and a section is where that shows.
+
+    Measured against the document, a Greek section of a mostly-English book
+    reads as English: this exact shape was estimated at 472 tokens and came to
+    947 real ones, past a declared cap of 500, because the rate it was judged
+    against belonged to the book rather than to the section.
+    """
+    english = "The clerk recorded the transaction in the ledger. " * 400
+    greek = "λόγος πρὸς τὸν θεόν καὶ θεὸς ἦν ὁ λόγος οὗτος ἦν ἐν ἀρχῇ " * 22
+    text = english + greek
+    sections = [
+        {"char_start": 0, "char_end": len(english), "level": 1},
+        {"char_start": len(english), "char_end": len(text), "level": 1},
+    ]
+
+    chunker = StructuralChunker()
+    drafts = await chunker.chunk(sections, None, full_text=text)
+
+    # Judged the way the contract judges: non-ASCII at ~1.5 chars per token,
+    # independent of whatever the chunker believed about this document.
+    def independent_tokens(chunk: str) -> int:
+        dense = sum(1 for char in chunk if ord(char) >= 128)
+        return int((len(chunk) - dense) / 4.0 + dense / 1.5)
+
+    worst = max(independent_tokens(d.text) for d in drafts)
+    assert worst <= chunker.max_passage_tokens * 1.5, (
+        f"emitted a {worst}-token passage against a {chunker.max_passage_tokens} "
+        f"cap; the Greek section was measured with the book's rate, not its own"
+    )

@@ -39,16 +39,45 @@ ABSOLUTE_MAX_TOKENS = 2_000
 #: real overshoot is 1.15x.
 OVERSHOOT_TOLERANCE = 1.5
 
-_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+#: Places a chunker could have cut. Whitespace, and the CJK terminators that do
+#: the same job in a script that does not space its words.
+#:
+#: This used to be a sentence split, ``(?<=[.!?])\s+(?=[A-Z])``, and that ``A-Z``
+#: quietly disabled the size check for every non-Latin script: Greek and CJK
+#: never matched, so every such passage counted as one indivisible "sentence"
+#: and took the irreducibility exemption. The Logos pack's Greek chunker passed
+#: its contract with the size fix reverted because of this line.
+_SEAM = re.compile(r"\s+|[。！？；、，]")
 
 
 def approx_tokens(text: str) -> int:
-    """The ~4-chars-per-token estimate every core chunker uses."""
-    return max(1, len(text) // 4)
+    """A deliberately independent token estimate.
+
+    This duplicates, in miniature, what ``services.text.tokens`` does — and the
+    duplication is the point. Importing the production estimator here was tried
+    and is worthless: the contract then measures the chunker with the chunker's
+    own ruler, so an estimator that mis-reads Greek by 2x also mis-reads its own
+    output by 2x and the size assertions pass. Reverting the whole script-aware
+    fix left all 772 tests green, which is how that was discovered.
+
+    So the rule is: this function may not import from the code under test. It is
+    intentionally cruder and more pessimistic — non-ASCII at 1.5 characters per
+    token is roughly the densest real script — because a contract should fail
+    toward "too strict", never toward "silently agreed with the bug".
+    """
+    if not text:
+        return 1
+    dense = sum(1 for char in text if ord(char) >= 128)
+    return max(1, int((len(text) - dense) / 4.0 + dense / 1.5))
 
 
 def _atoms(text: str) -> int:
-    return len(_SENTENCE.split(text))
+    """How many pieces this passage could have been cut into, at worst.
+
+    One means genuinely irreducible — a single unbroken run with nowhere to cut
+    — and only that earns the exemption from the declared size limit.
+    """
+    return len(_SEAM.findall(text)) + 1
 
 
 #: Shapes that have actually broken a chunker, plus the ordinary cases. An
@@ -77,7 +106,18 @@ CONTRACT_TEXTS: dict[str, str] = {
         "Syr. b-, Mnd. b-, e.g. v. 3, cp. Gn. 1:1, Ex. 3:14, etc. "
     ) * 200,
     "no_boundaries": "word " * 2000,
-    "cjk": "第一句話。第二句話。第三句話。" * 200,
+    # Sized so that a chunker estimating 4 chars per token — the English
+    # constant — emits a passage well past `ABSOLUTE_MAX_TOKENS` in real ones.
+    # The earlier, shorter version of this fixture passed against an estimator
+    # that had been sabotaged back to English-only, which made it worthless: it
+    # asserted the invariant without ever reaching it.
+    "cjk": "第一句話寫在這裡。第二句話也寫在這裡，內容比較長一些。" * 900,
+    # Polytonic Greek, the shape of a lexicon body. At ~1.8 chars per token this
+    # is roughly twice as many tokens as its character count suggests.
+    "greek": (
+        "λόγος, ου, ὁ (Hom.+) πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος· "
+        "οὗτος ἦν ἐν ἀρχῇ πρὸς τὸν θεόν. πάντα διʼ αὐτοῦ ἐγένετο. "
+    ) * 600,
     "crlf": "First line.\r\nSecond line.\r\n\r\nThird.",
     "book_scale": (
         "The clerk recorded the transaction in the ledger. "

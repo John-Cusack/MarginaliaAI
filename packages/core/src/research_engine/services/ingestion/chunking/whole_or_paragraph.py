@@ -9,13 +9,18 @@ from research_engine.services.ingestion.chunking.fixed_window import (
     split_at_boundary,
     trim_span,
 )
+from research_engine.services.text.tokens import (
+    approx_tokens,
+    chars_per_token,
+    min_chars_per_token,
+    token_budget_chars,
+)
 
 #: A paragraph is this chunker's unit, and it holds to that — but not past the
 #: point where an embedding model truncates the result. A book index is one
 #: "paragraph" of thousands of tokens; emitted whole, most of it was stored and
 #: never embedded. Sized to match `research_engine.testing.ABSOLUTE_MAX_TOKENS`.
 CEILING_TOKENS = 2_000
-CEILING_CHARS = CEILING_TOKENS * 4
 
 _PARA_SPLIT = re.compile(r"\n\s*\n")
 DEFAULT_THRESHOLD_TOKENS = 600
@@ -41,7 +46,9 @@ class WholeOrParagraphChunker:
     # 3.0: a paragraph past the embedder's reach is broken at a line or word
     # boundary rather than emitted whole. Passage boundaries change for such
     # documents, so 2.0 passages of them are stale — see `reindex chunks`.
-    version = "3.0"
+    # 4.0: the ceiling is measured in real tokens, so it is the same ceiling in
+    # Greek as in English. Only non-Latin documents move.
+    version = "4.0"
 
     def __init__(self, threshold_tokens: int = DEFAULT_THRESHOLD_TOKENS) -> None:
         self._threshold = threshold_tokens
@@ -68,22 +75,33 @@ class WholeOrParagraphChunker:
         if not text.strip():
             return []
 
-        approx_tokens = max(1, len(text) // 4)
-        if approx_tokens <= self._threshold and len(text) <= CEILING_CHARS:
-            return [self._draft(text, 0, len(text), 0, metadata)]
+        rate = chars_per_token(text)
+        # The ceiling is budgeted against the densest script in the document,
+        # not its average: this is the limit that admits no exemption, so it has
+        # to hold for a passage that is denser than the book around it.
+        ceiling_chars = token_budget_chars(CEILING_TOKENS, min_chars_per_token(text))
+
+        if approx_tokens(text, rate) <= self._threshold and len(text) <= ceiling_chars:
+            return [self._draft(text, 0, len(text), 0, metadata, rate)]
 
         spans = [
             piece
             for start, end in paragraph_spans(text)
-            for piece in split_at_boundary(text, start, end, CEILING_CHARS)
+            for piece in split_at_boundary(text, start, end, ceiling_chars)
         ]
         return [
-            self._draft(text, start, end, position, metadata)
+            self._draft(text, start, end, position, metadata, rate)
             for position, (start, end) in enumerate(spans)
         ]
 
     def _draft(
-        self, text: str, start: int, end: int, position: int, metadata: dict | None
+        self,
+        text: str,
+        start: int,
+        end: int,
+        position: int,
+        metadata: dict | None,
+        rate: float,
     ) -> PassageDraft:
         chunk_text = text[start:end]
         return PassageDraft(
@@ -91,7 +109,7 @@ class WholeOrParagraphChunker:
             char_start=start,
             char_end=end,
             text=chunk_text,
-            token_count=max(1, len(chunk_text) // 4),
+            token_count=approx_tokens(chunk_text, rate),
             chunker=self.id,
             chunker_version=self.version,
             metadata=metadata or {},

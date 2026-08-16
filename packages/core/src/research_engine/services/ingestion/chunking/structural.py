@@ -6,11 +6,7 @@ from research_engine.domain.errors import ChunkingError
 from research_engine.domain.passages import PassageDraft
 from research_engine.services.ingestion.chunking.fixed_window import trim_span
 from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
-
-
-def _approx_tokens(text: str) -> int:
-    """Rough token estimate: ~4 chars per token, matching the other chunkers."""
-    return max(1, len(text) // 4)
+from research_engine.services.text.tokens import approx_tokens, chars_per_token
 
 
 class StructuralChunker:
@@ -19,7 +15,8 @@ class StructuralChunker:
     consumes = "sections"
     # 3.0: sections longer than `max_tokens` are split into prose windows.
     # Passage boundaries change, so 2.0 passages are stale — see `reindex`.
-    version = "3.0"
+    # 4.0: token estimates are script-aware. Only non-Latin text moves.
+    version = "4.0"
 
     def __init__(self, max_tokens: int = 500, overlap_tokens: int = 50) -> None:
         #: A section is a unit of authorship, not of retrieval. A book chapter
@@ -95,7 +92,11 @@ class StructuralChunker:
         return chunks
 
     async def _drafts_for_section(
-        self, text: str, start: int, locator: dict, section_meta: dict
+        self,
+        text: str,
+        start: int,
+        locator: dict,
+        section_meta: dict,
     ) -> list[PassageDraft]:
         """One passage for a section that fits; prose windows for one that does not.
 
@@ -104,14 +105,20 @@ class StructuralChunker:
         ``canonical_text[char_start:char_end] == text`` — true of the pieces as
         it was of the whole.
         """
-        if _approx_tokens(text) <= self._max_tokens:
+        # Measured on the section, not on the document. A section is exactly
+        # where the two diverge: a Greek passage quoted inside an English book
+        # reads as English at the document level, and a section of it estimated
+        # at 472 tokens that way really came to 947 — past the cap, undetected,
+        # because the average it was measured against was not its own.
+        rate = chars_per_token(text)
+        if approx_tokens(text, rate) <= self._max_tokens:
             return [
                 PassageDraft(
                     position=0,
                     char_start=start,
                     char_end=start + len(text),
                     text=text,
-                    token_count=_approx_tokens(text),
+                    token_count=approx_tokens(text, rate),
                     chunker=self.id,
                     chunker_version=self.version,
                     metadata=section_meta,
