@@ -11,11 +11,12 @@ or rerank control reach for ``find_passages_advanced(SearchQuery)``.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
 
 from research_engine.domain.passages import SearchFilters, SearchQuery, SearchResult
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from research_engine.ports.repositories import DocumentRepo, PassageRepo
     from research_engine.services.search.hybrid import HybridSearchService
 

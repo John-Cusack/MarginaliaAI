@@ -81,8 +81,8 @@ class TestInstallDependencies:
         with (
             patch("subprocess.run", return_value=mock_proc),
             patch("shutil.which", return_value=None),
+            pytest.raises(PluginError, match="pip install failed"),
         ):
-            with pytest.raises(PluginError, match="pip install failed"):
                 installer._install_dependencies(manifest)
 
     def test_setup_commands_without_permission_raises(self, tmp_path: Path):
@@ -119,8 +119,10 @@ class TestInstallDependencies:
         )
 
         mock_proc = MagicMock(returncode=1, stderr="command failed", stdout="")
-        with patch("subprocess.run", return_value=mock_proc):
-            with pytest.raises(PluginError, match="Setup command failed"):
+        with (
+            patch("subprocess.run", return_value=mock_proc),
+            pytest.raises(PluginError, match="Setup command failed"),
+        ):
                 installer._install_dependencies(manifest)
 
     def test_callback_receives_messages(self, tmp_path: Path):
@@ -171,7 +173,6 @@ class TestInstallCleanupOnDepFailure:
 
         # We also need rename to work — but the repo_dir already exists
         # so we simulate it by pre-creating the final dir after clone
-        original_rename = Path.rename
 
         def patched_rename(self_path: Path, target: Path) -> Path:
             target.mkdir(parents=True, exist_ok=True)
@@ -187,8 +188,8 @@ class TestInstallCleanupOnDepFailure:
             patch("subprocess.run", side_effect=mock_run),
             patch("shutil.which", return_value=None),
             patch.object(Path, "rename", patched_rename),
+            pytest.raises(PluginError, match="pip install failed"),
         ):
-            with pytest.raises(PluginError, match="pip install failed"):
                 await installer.install("https://example.com/plugin.git")
 
         final_dir = plugins_dir / "failing@0.1.0"
@@ -215,8 +216,10 @@ class TestInstallIncompatibleCoreApi:
             # git clone "succeeds" (repo already on disk); nothing else should run.
             return MagicMock(returncode=0, stderr="", stdout="")
 
-        with patch("subprocess.run", side_effect=mock_run):
-            with pytest.raises(PluginError, match="core_api"):
+        with (
+            patch("subprocess.run", side_effect=mock_run),
+            pytest.raises(PluginError, match="core_api"),
+        ):
                 await installer.install("https://example.com/plugin.git")
 
         # Nothing should have been written to the final location.

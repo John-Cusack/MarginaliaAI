@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 backup_app = typer.Typer()
 console = Console()

@@ -12,7 +12,7 @@ with an empty ``passage_ids`` to extract over every passage of a document
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from research_engine.domain.extractions import ExtractionOptions

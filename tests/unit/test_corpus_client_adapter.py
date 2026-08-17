@@ -5,8 +5,7 @@ plugin-facing Protocol surface.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -22,7 +21,6 @@ from research_engine.domain.passages import (
 )
 from research_engine.plugins.sdk.clients import CorpusClient
 
-
 # ---------- Helpers ----------
 
 
@@ -35,7 +33,7 @@ def _doc(doc_id: UUID, *, title: str = "Doc", source: str = "/x.pdf") -> Documen
         content_hash=b"\x00" * 32,
         parser="pdf_text",
         parser_version="1",
-        ingested_at=datetime.now(timezone.utc),
+        ingested_at=datetime.now(UTC),
         metadata={},
     )
 
@@ -49,7 +47,7 @@ def _passage(p_id: UUID, doc_id: UUID, *, position: int = 0, text: str = "hello"
         chunker="prose_window",
         chunker_version="1",
         content_hash=b"\x00" * 32,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 

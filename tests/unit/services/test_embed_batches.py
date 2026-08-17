@@ -13,12 +13,13 @@ names the cause).
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import httpx
 import pytest
 
 from research_engine.domain.errors import EmbeddingUnavailable, describe_exception
 from research_engine.services.ingestion.embed_batches import embed_and_store
-from uuid import uuid4
 
 
 class _Embedder:

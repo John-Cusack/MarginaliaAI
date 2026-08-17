@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
 from rich.progress import Progress
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 ingest_app = typer.Typer()
 console = Console()
