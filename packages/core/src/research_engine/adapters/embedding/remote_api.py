@@ -29,6 +29,7 @@ from research_engine.adapters.embedding.wire import (
     HealthResponse,
     ModelMismatch,
 )
+from research_engine.domain.errors import EmbeddingUnavailable, describe_exception
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -96,7 +97,7 @@ class RemoteEmbeddingClient:
         await self._ensure_verified()
 
         if self._consecutive_failures >= self._failure_threshold:
-            raise RuntimeError(
+            raise EmbeddingUnavailable(
                 f"Remote embedding server {self._base_url} failed "
                 f"{self._consecutive_failures} times consecutively; refusing "
                 f"further calls. Fix the server, or unset RE_EMBEDDING_BASE_URL "
@@ -111,6 +112,15 @@ class RemoteEmbeddingClient:
         try:
             resp = await self._client.post("/embeddings", json=payload.model_dump())
             resp.raise_for_status()
+        except httpx.TransportError as exc:
+            # Never reached the server, so batch size had nothing to do with it.
+            # Translated here, at the layer that knows about transports, so the
+            # caller can tell "the box is off" from "that batch was too big".
+            self._consecutive_failures += 1
+            raise EmbeddingUnavailable(
+                f"Cannot reach the embedding server at {self._base_url}: "
+                f"{describe_exception(exc)}"
+            ) from exc
         except Exception:
             self._consecutive_failures += 1
             raise
@@ -142,7 +152,19 @@ class RemoteEmbeddingClient:
         async with self._lock:
             if self._verified:
                 return
-            health = await self.health()
+            try:
+                health = await self.health()
+            except httpx.TransportError as exc:
+                # The handshake is the *first* call a run makes, so an
+                # unreachable host fails here rather than in `embed_batch`.
+                # Untranslated it surfaced as a bare ConnectTimeout and was
+                # mistaken for a batch that needed halving.
+                self._consecutive_failures += 1
+                raise EmbeddingUnavailable(
+                    f"Cannot reach the embedding server at {self._base_url}: "
+                    f"{describe_exception(exc)}. Check the host is powered on "
+                    f"and `research-engine embed-server` is running."
+                ) from exc
             self._assert_matches(health.model_name, health.model_version, health.dim)
             self._verified = True
             logger.info(

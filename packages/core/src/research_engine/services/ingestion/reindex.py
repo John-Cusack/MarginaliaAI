@@ -39,6 +39,7 @@ from research_engine.adapters.storage.postgres.schema import (
     mentions,
     passages,
 )
+from research_engine.domain.errors import EmbeddingUnavailable, describe_exception
 from research_engine.services.ingestion.embed_batches import BatchOutcome, embed_and_store
 from research_engine.services.ingestion.pipeline import run_chunking
 from research_engine.services.search.langconfig import pg_config
@@ -173,9 +174,25 @@ class ReindexService:
         for document_id in targets:
             try:
                 await self._reindex_one(document_id, report, dry_run=dry_run)
+            except EmbeddingUnavailable:
+                # Tolerating one bad document is right; tolerating a backend
+                # that is gone is not. Every remaining document will fail the
+                # same way, and the run reports thousands of individual
+                # failures instead of the one fact that matters.
+                report.aborted = True
+                logger.error(
+                    "reindex_aborted_embedding_unavailable",
+                    completed=report.documents_reindexed,
+                    remaining=len(targets) - targets.index(document_id),
+                )
+                raise
             except Exception as exc:  # noqa: BLE001 - one bad document must not stop the run
-                logger.error("reindex_document_failed", document_id=str(document_id), error=str(exc))
-                report.documents_failed[str(document_id)] = str(exc)
+                logger.error(
+                    "reindex_document_failed",
+                    document_id=str(document_id),
+                    error=describe_exception(exc),
+                )
+                report.documents_failed[str(document_id)] = describe_exception(exc)
 
         return report
 

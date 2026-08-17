@@ -129,8 +129,21 @@ def chunks(
     (`research-engine backup create`) before the real pass: after old passages
     are deleted, rollback needs that backup.
     """
+    from research_engine.domain.errors import EmbeddingUnavailable
+
     ids = [UUID(d) for d in document_id] if document_id else None
-    report = asyncio.run(_reindex(ids, dry_run, orphan_threshold))
+    try:
+        report = asyncio.run(_reindex(ids, dry_run, orphan_threshold))
+    except EmbeddingUnavailable as exc:
+        # One line naming the cause, rather than a traceback under thousands of
+        # halving warnings. This run previously looked healthy for hours while
+        # embedding against a host that was switched off.
+        typer.echo(f"\nStopped: {exc}")
+        typer.echo(
+            "\nNothing was left half-written — each document commits or rolls "
+            "back on its own. Re-run this command once embedding works."
+        )
+        raise typer.Exit(code=1) from exc
     _print(report, orphan_threshold)
     if report.aborted or report.exceeded(orphan_threshold) or report.documents_failed:
         raise typer.Exit(code=1)

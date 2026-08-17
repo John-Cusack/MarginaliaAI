@@ -161,6 +161,40 @@ class UnknownType(ResearchEngineError):
         super().__init__(msg)
 
 
+def describe_exception(exc: BaseException) -> str:
+    """A description that is never empty, for logs and wrapped messages.
+
+    ``str(exc)`` is the natural thing to log and it is not sufficient: several
+    exceptions that matter here carry no message at all. ``httpx.ConnectTimeout``
+    is the one that cost real time — ``str()`` on it returns ``''``, so an
+    embedding run logged ``error=`` thousands of times while a GPU host sat
+    powered off, and the logs looked like progress rather than failure.
+
+    The type name is always present because the type is often the whole story.
+    """
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
+# --- Embedding ---
+
+
+class EmbeddingUnavailable(ResearchEngineError):
+    """The embedding backend cannot be reached, and a smaller batch will not help.
+
+    Distinct from an ordinary batch failure, which is usually accelerator memory
+    pressure and *is* fixed by halving. This one says the backend is not there:
+    the same call fails identically at any size, so every retry costs a full
+    timeout and buys nothing.
+
+    The distinction is not academic. A corpus re-chunk once ran for hours
+    halving 16 -> 8 -> 4 -> 2 -> 1 against a GPU host that had been powered off
+    for a day, wrote nothing, and reported it as `error=` — an empty string,
+    because `str(httpx.ConnectTimeout())` is empty. Raising this instead stops
+    the run at the first batch and names the cause.
+    """
+
+
 # --- Storage ---
 
 
