@@ -91,6 +91,10 @@ class ReindexReport:
     documents_total: int = 0
     documents_reindexed: int = 0
     documents_up_to_date: int = 0
+    #: Documents a current chunker reproduces byte-identically, carried onto the
+    #: new version by updating the label rather than by re-embedding.
+    documents_relabelled: int = 0
+    passages_relabelled: int = 0
     documents_without_text: list[UUID] = field(default_factory=list)
     #: Structurally chunked documents, which cannot be re-chunked from canonical
     #: text alone — their section decomposition lives on the document, not here.
@@ -114,6 +118,26 @@ class ReindexReport:
 
     def exceeded(self, threshold: float) -> bool:
         return self.orphan_rate > threshold
+
+
+def _output_is_identical(old_passages: Sequence[Any], new_drafts: Sequence[Any]) -> bool:
+    """True when re-chunking would reproduce exactly the passages already stored.
+
+    Compares spans and text, which is the whole of what a passage *is* for
+    retrieval and citation: the same characters at the same offsets embed to the
+    same vector and verify the same quote. Version, token estimate and metadata
+    are deliberately excluded — they are labels on identical content, and
+    treating a changed label as changed content is what would force a
+    corpus-wide re-embed.
+    """
+    if len(old_passages) != len(new_drafts):
+        return False
+    return all(
+        old.char_start == draft.char_start
+        and old.char_end == draft.char_end
+        and old.text == draft.text
+        for old, draft in zip(old_passages, new_drafts, strict=True)
+    )
 
 
 class ReindexService:
@@ -219,6 +243,34 @@ class ReindexService:
         async with self._engine.connect() as conn:
             return [row[0] for row in await conn.execute(stmt)]
 
+    async def _relabel(
+        self,
+        document_id: UUID,
+        old_passages: Sequence[Any],
+        new_drafts: Sequence[Any],
+        report: ReindexReport,
+        *,
+        dry_run: bool,
+    ) -> None:
+        """Carry passages onto the current version, leaving their text alone."""
+        report.documents_relabelled += 1
+        report.passages_relabelled += len(old_passages)
+        if dry_run:
+            return
+
+        token_counts = {
+            old.id: draft.token_count
+            for old, draft in zip(old_passages, new_drafts, strict=True)
+            if draft.token_count != old.token_count
+        }
+        async with transaction(self._engine) as tx:
+            await self._passages.relabel_version(
+                tx,
+                [p.id for p in old_passages],
+                new_drafts[0].chunker_version,
+                token_counts,
+            )
+
     async def _reindex_one(
         self, document_id: UUID, report: ReindexReport, *, dry_run: bool
     ) -> None:
@@ -252,6 +304,19 @@ class ReindexService:
 
         if all(p.chunker_version == new_drafts[0].chunker_version for p in old_passages):
             report.documents_up_to_date += 1
+            return
+
+        if _output_is_identical(old_passages, new_drafts):
+            # The version moved but the text did not. Every embedding and FTS
+            # row is still correct, so re-chunking would delete and re-embed
+            # passages to arrive at exactly what is already stored.
+            #
+            # This is the common case, not an edge case: making the token
+            # estimate script-aware changed output only for non-Latin text, yet
+            # bumped every chunker's version, marking all 260,447 passages
+            # stale. Re-embedding them all to correct a label would cost hours
+            # of GPU time and change nothing a reader could see.
+            await self._relabel(document_id, old_passages, new_drafts, report, dry_run=dry_run)
             return
 
         report.passages_before += len(old_passages)

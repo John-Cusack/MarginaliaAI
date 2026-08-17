@@ -183,6 +183,11 @@ def _print(report: ReindexReport, threshold: float) -> None:
     typer.echo(f"Documents examined:   {report.documents_total}")
     typer.echo(f"  re-chunked:         {report.documents_reindexed}")
     typer.echo(f"  already current:    {report.documents_up_to_date}")
+    if report.documents_relabelled:
+        typer.echo(
+            f"  relabelled:         {report.documents_relabelled} "
+            f"({report.passages_relabelled} passages unchanged, not re-embedded)"
+        )
     typer.echo(f"Passages {'replaced' if not report.dry_run else 'to replace'}: "
                f"{report.passages_before} -> {report.passages_after}")
 

@@ -231,6 +231,35 @@ class PGPassageRepo:
             results.append(self._to_domain(row))
         return results
 
+    async def relabel_version(
+        self,
+        tx: Transaction,
+        passage_ids: list[UUID],
+        chunker_version: str,
+        token_counts: dict[UUID, int] | None = None,
+    ) -> int:
+        """Move passages onto *chunker_version* without touching their text.
+
+        Only for passages a current chunker reproduces byte-identically. Their
+        embeddings and FTS rows stay valid precisely because the text did not
+        change, which is what makes this cheap: the alternative is deleting and
+        re-embedding a quarter of a million passages to correct a label.
+        """
+        if not passage_ids:
+            return 0
+        await tx.conn.execute(
+            passages.update()
+            .where(passages.c.id.in_(passage_ids))
+            .values(chunker_version=chunker_version)
+        )
+        for passage_id, count in (token_counts or {}).items():
+            await tx.conn.execute(
+                passages.update()
+                .where(passages.c.id == passage_id)
+                .values(token_count=count)
+            )
+        return len(passage_ids)
+
     async def get(self, passage_id: UUID) -> Passage | None:
         async with self._engine.connect() as conn:
             row = (
