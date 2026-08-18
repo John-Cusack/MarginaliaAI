@@ -40,10 +40,12 @@ from research_engine.adapters.storage.postgres.schema import (
     passages,
 )
 from research_engine.domain.errors import EmbeddingUnavailable, describe_exception
+from research_engine.domain.nodes import attach_nodes, build_node_tree
 from research_engine.services.ingestion.embed_batches import BatchOutcome, embed_and_store
 from research_engine.services.ingestion.pipeline import run_chunking
 from research_engine.services.search.langconfig import pg_config
 from research_engine.services.text.anchoring import CanonicalIndex, Span, best_overlap
+from research_engine.services.text.sections import sections_from_markdown
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -95,6 +97,9 @@ class ReindexReport:
     #: new version by updating the label rather than by re-embedding.
     documents_relabelled: int = 0
     passages_relabelled: int = 0
+    #: Structure nodes written while re-chunking. Zero across a whole run means
+    #: the outline tools will still return nothing.
+    nodes_written: int = 0
     documents_without_text: list[UUID] = field(default_factory=list)
     #: Structurally chunked documents, which cannot be re-chunked from canonical
     #: text alone — their section decomposition lives on the document, not here.
@@ -151,10 +156,16 @@ class ReindexService:
         embedding: Any,
         orphan_threshold: float = DEFAULT_ORPHAN_THRESHOLD,
         embedding_batch_size: int = 32,
+        document_node_repo: Any = None,
     ) -> None:
         self._engine = engine
         self._passages = passage_repo
         self._texts = document_text_repo
+        #: Optional so a caller that only wants passages re-anchored can say so,
+        #: but the CLI always supplies it: `document_nodes` is written at ingest
+        #: and nowhere else, so without this a corpus that has been re-chunked
+        #: since the table existed has structure for no document at all.
+        self._nodes = document_node_repo
         #: Required, not optional. `passage_embeddings` and `passage_fts` cascade
         #: away with the old passages; a reindexer that cannot regenerate them
         #: would quietly drop the document out of both vector and keyword search.
@@ -243,6 +254,48 @@ class ReindexService:
         async with self._engine.connect() as conn:
             return [row[0] for row in await conn.execute(stmt)]
 
+    async def _rebuild_nodes(
+        self,
+        tx: Any,
+        document_id: UUID,
+        canonical_text: str,
+        drafts: list[Any],
+        report: ReindexReport,
+    ) -> list[Any]:
+        """Rewrite the document's structure tree and point the new passages at it.
+
+        Structure was previously written at ingest and nowhere else, so a corpus
+        re-chunked since `document_nodes` existed had a tree for no document at
+        all — and `get_document_outline`, `read_node` and `locate_passage`
+        returned nothing for every book in it.
+
+        The section table the parser produced is not reachable from here; it was
+        metadata on an ingest that has long since finished. What *is* reachable
+        is the canonical text, and for everything docling or the EPUB module
+        converted, the headings survive in it as ordinary markdown. Reading them
+        back gives offsets that are exact by construction, because they are
+        offsets into the very string the passages are addressed against.
+
+        A document with no headings — a lexicon, a plain-text transcript — gets
+        a root node covering the whole text rather than nothing, so every
+        passage has an ancestor to report and the tree is uniform.
+        """
+        if self._nodes is None:
+            return drafts
+
+        await self._nodes.delete_for_document(tx, document_id)
+        stored = await self._nodes.insert_many(
+            tx,
+            document_id,
+            build_node_tree(
+                sections_from_markdown(canonical_text),
+                text_length=len(canonical_text),
+            ),
+        )
+        if stored:
+            report.nodes_written += len(stored)
+        return attach_nodes(drafts, stored)
+
     async def _relabel(
         self,
         document_id: UUID,
@@ -327,6 +380,9 @@ class ReindexService:
         # on the run whose whole purpose is to surface them.
         try:
             async with transaction(self._engine) as tx:
+                new_drafts = await self._rebuild_nodes(
+                    tx, document_id, canonical_text, new_drafts, report
+                )
                 new_passages = await self._passages.insert_many(tx, document_id, new_drafts)
                 new_spans = [
                     (p.id, Span(p.char_start, p.char_end))

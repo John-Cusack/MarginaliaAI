@@ -400,3 +400,107 @@ async def test_new_passages_are_searchable_after_reindex(
 
     assert embedded == len(new_ids), "new passages have no embeddings"
     assert indexed == len(new_ids), "new passages are not in the FTS index"
+
+
+async def test_re_chunking_rebuilds_the_structure_tree(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """Structure was written at ingest and nowhere else.
+
+    A corpus re-chunked since `document_nodes` existed therefore had a tree for
+    no document at all, and `get_document_outline`, `read_node` and
+    `locate_passage` returned nothing for every book in it. The section table
+    the parser produced is long gone by re-chunk time, so the headings are read
+    back out of the canonical text they are offsets into.
+    """
+    from research_engine.adapters.storage.postgres.repositories.nodes import (
+        PGDocumentNodeRepo,
+    )
+
+    text = (
+        "# The Peninsula\n\n"
+        "The clerk recorded the transaction in the ledger. A second hand "
+        "annotated the margin some years later.\n\n"
+        "## Spring\n\n"
+        "Letters slowed through April. The cadence resumes in May.\n\n"
+        "## Summer\n\n"
+        "Correspondence thickens again once the roads dry.\n"
+    )
+    doc_id = await corpus.add_document()
+    old = PassageDraft(
+        position=0, char_start=0, char_end=40, text=text[0:40],
+        chunker="prose_window", chunker_version="1.0", token_count=10,
+    )
+    async with transaction(engine) as tx:
+        await PGDocumentTextRepo(engine).put(tx, doc_id, text, "test", "1.0")
+        await PGPassageRepo(engine).insert_many(tx, doc_id, [old])
+
+    service = ReindexService(
+        engine,
+        PGPassageRepo(engine),
+        PGDocumentTextRepo(engine),
+        FakeEmbedding(),
+        document_node_repo=PGDocumentNodeRepo(engine),
+    )
+    report = await service.reindex_chunks([doc_id])
+
+    assert report.nodes_written > 0, "re-chunk wrote no structure at all"
+
+    nodes = await PGDocumentNodeRepo(engine).get_tree(doc_id)
+    headings = [n.title for n in nodes if n.title]
+    assert "The Peninsula" in headings
+    assert "Spring" in headings and "Summer" in headings
+
+    # Every node's span must address the text it claims, or the outline points
+    # at prose that is not there.
+    for node in nodes:
+        assert 0 <= node.char_start <= node.char_end <= len(text)
+
+    async with engine.connect() as conn:
+        attached = (
+            await conn.execute(
+                sa.select(sa.func.count())
+                .select_from(passages)
+                .where(passages.c.document_id == doc_id, passages.c.node_id.isnot(None))
+            )
+        ).scalar_one()
+    assert attached > 0, "passages were written without an owning node"
+
+
+async def test_re_chunking_a_document_with_no_headings_still_gives_it_a_root(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """A lexicon has no headings, and must still be uniform with everything else.
+
+    Returning no tree at all would make `locate_passage` answer "no structure"
+    for a document that simply has one level of it.
+    """
+    from research_engine.adapters.storage.postgres.repositories.nodes import (
+        PGDocumentNodeRepo,
+    )
+
+    text = "Bato Comicus iii b.c. Ed. T. Kock. Berosus Historicus iv b.c. Ed. Mueller. "
+    doc_id = await corpus.add_document()
+    old = PassageDraft(
+        position=0, char_start=0, char_end=30, text=text[0:30],
+        chunker="prose_window", chunker_version="1.0", token_count=10,
+    )
+    async with transaction(engine) as tx:
+        await PGDocumentTextRepo(engine).put(tx, doc_id, text, "test", "1.0")
+        await PGPassageRepo(engine).insert_many(tx, doc_id, [old])
+
+    service = ReindexService(
+        engine,
+        PGPassageRepo(engine),
+        PGDocumentTextRepo(engine),
+        FakeEmbedding(),
+        document_node_repo=PGDocumentNodeRepo(engine),
+    )
+    await service.reindex_chunks([doc_id])
+
+    nodes = await PGDocumentNodeRepo(engine).get_tree(doc_id)
+    assert len(nodes) >= 1
+    root = nodes[0]
+    assert root.char_start == 0 and root.char_end == len(text), (
+        "the root must cover the whole text, or subtree queries lose the tail"
+    )

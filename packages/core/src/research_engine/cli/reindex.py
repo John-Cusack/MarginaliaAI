@@ -165,6 +165,7 @@ async def _reindex(
             container.embedding,
             orphan_threshold=orphan_threshold,
             embedding_batch_size=container.settings.embedding_batch_size,
+            document_node_repo=container.document_nodes,
         )
         return await service.reindex_chunks(document_ids, dry_run=dry_run)
     finally:
@@ -190,6 +191,8 @@ def _print(report: ReindexReport, threshold: float) -> None:
         )
     typer.echo(f"Passages {'replaced' if not report.dry_run else 'to replace'}: "
                f"{report.passages_before} -> {report.passages_after}")
+    if report.nodes_written:
+        typer.echo(f"Structure nodes written: {report.nodes_written}")
 
     if report.repointed:
         typer.echo("\nReferences re-anchored:")
