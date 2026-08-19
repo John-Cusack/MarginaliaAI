@@ -245,13 +245,25 @@ class TestHasExtractionFilter:
         assert isinstance(clause, sa.sql.expression.SelectBase)
 
     def test_build_clause_with_data_contains(self):
+        """Compiled against Postgres, because the defect was dialect-specific.
+
+        `data` is a `json` column and containment is a `jsonb` operator. Without
+        casts, SQLAlchemy renders `.contains()` as a string LIKE —
+        `data LIKE '%' || $1::JSON || '%'` — which Postgres rejects outright, so
+        the filter could only raise. Asserting the table name appeared in the
+        SQL passed against that just as happily as against a working query.
+        """
+        from sqlalchemy.dialects import postgresql
+
         f = HasExtractionFilter()
         clause = f.build_clause({
             "record_type": "citation",
             "data_contains": {"doi": "10.1234/test"},
         })
-        compiled = str(clause.compile())
+        compiled = str(clause.compile(dialect=postgresql.dialect()))
         assert "extraction_records" in compiled
+        assert "@>" in compiled
+        assert "LIKE" not in compiled
 
 
 # ---------- Dynamic schema ----------

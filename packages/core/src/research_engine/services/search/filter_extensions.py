@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 
 from research_engine.adapters.storage.postgres.schema import (
     event_actors,
@@ -115,5 +116,13 @@ class HasExtractionFilter:
     def build_clause(self, value: Any) -> sa.sql.expression.SelectBase:
         conditions = [extraction_records.c.record_type == value["record_type"]]
         if data_filter := value.get("data_contains"):
-            conditions.append(extraction_records.c.data.contains(data_filter))
+            # `data` is a `json` column, and containment is a `jsonb` operator.
+            # Without the casts SQLAlchemy renders `contains` as a string LIKE —
+            # `data LIKE '%' || $1::JSON || '%'` — which Postgres rejects
+            # outright, so this filter could only ever raise.
+            conditions.append(
+                sa.cast(extraction_records.c.data, JSONB).contains(
+                    sa.cast(sa.literal(data_filter, sa.JSON), JSONB)
+                )
+            )
         return sa.select(extraction_records.c.passage_id).where(sa.and_(*conditions))
