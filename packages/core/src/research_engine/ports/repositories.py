@@ -172,7 +172,7 @@ class EdgeRepo(Protocol):
 
 @runtime_checkable
 class ExtractionSchemaRepo(Protocol):
-    async def insert(self, tx: Transaction, draft: ExtractionSchemaDraft) -> ExtractionSchema: ...
+    async def save(self, tx: Transaction, draft: ExtractionSchemaDraft) -> ExtractionSchema: ...
     async def get(self, schema_id: UUID) -> ExtractionSchema | None: ...
     async def get_by_name_version(
         self, name: str, version: int
@@ -182,15 +182,20 @@ class ExtractionSchemaRepo(Protocol):
 
 @runtime_checkable
 class ExtractionRepo(Protocol):
-    async def insert(self, tx: Transaction, extraction: Extraction) -> Extraction: ...
+    async def save(self, tx: Transaction, extraction: Extraction) -> Extraction: ...
     async def get_by_key(
         self, passage_id: UUID, schema_id: UUID, extractor_version: str
     ) -> Extraction | None: ...
-    async def insert_records(
-        self, tx: Transaction, records: list[ExtractionRecord]
+    async def replace_records(
+        self, tx: Transaction, extraction_id: UUID, records: list[ExtractionRecord]
     ) -> None: ...
+    async def get_record(self, record_id: UUID) -> ExtractionRecord | None: ...
     async def query_records(
-        self, record_type: str, filters: dict[str, Any] | None, k: int
+        self,
+        record_type: str,
+        data_filter: dict[str, Any] | None = None,
+        passage_ids: list[UUID] | None = None,
+        k: int = 100,
     ) -> list[ExtractionRecord]: ...
 
 

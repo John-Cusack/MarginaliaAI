@@ -50,16 +50,21 @@ async def handler(
     try:
         extraction_repo = container.extraction_repo
 
-        # Combine passage_filter and data_filter into a single filters dict
-        filters: dict[str, Any] = {}
+        # A passage filter selects passages, not record data. Folding both into
+        # one dict and testing it against the record's `data` asked whether an
+        # extracted claim contained a key named "passage_filter", which nothing
+        # ever does — so any filtered query returned nothing at best.
+        passage_ids = None
         if passage_filter:
-            filters["passage_filter"] = passage_filter
-        if data_filter:
-            filters["data_filter"] = data_filter
+            passage_ids = await container.passage_repo.filter_candidate_ids(
+                {k_: v for k_, v in passage_filter.items() if v is not None},
+                filter_extensions=container.registry.get_filter_extensions(),
+            )
 
         records = await extraction_repo.query_records(
             record_type=record_type,
-            filters=filters if filters else None,
+            data_filter=data_filter or None,
+            passage_ids=passage_ids,
             k=k,
         )
 

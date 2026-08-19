@@ -13,9 +13,10 @@ logger = structlog.get_logger()
 
 TOOL_NAME = "extract"
 TOOL_DESCRIPTION = (
-    "Run a registered or ad-hoc extraction schema against passages. "
-    "Extractions are cached; use force_refresh to re-extract. "
-    "Can accept explicit passage IDs or a passage filter."
+    "Run a registered extraction schema against passages. Results are stored "
+    "and cached, so re-running returns the same records without calling the "
+    "model again; use force_refresh to re-extract. Takes explicit passage IDs "
+    "or a passage filter. Use list_extraction_schemas to see what is registered."
 )
 TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -31,7 +32,7 @@ TOOL_SCHEMA: dict[str, Any] = {
         },
         "schema": {
             "type": "string",
-            "description": "Schema reference as 'name:version' (e.g. 'epistolary_references:2') or an inline schema object.",
+            "description": "Schema reference as 'name:version' (e.g. 'epistolary_references:2'). Register schemas with `research-engine extraction register`.",
         },
         "options": {
             "type": "object",

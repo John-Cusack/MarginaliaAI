@@ -338,8 +338,12 @@ Or from the MCP tool `extract` (see [05-mcp-spec.md](05-mcp-spec.md)).
 ### Execution
 
 1. **Cache check.** Key on
-   `sha256(passage_id, schema_id, schema_version, extractor_version, llm_model)`.
-   Hits return immediately.
+   `sha256(passage_id, schema_id, schema_version, extractor_version, llm_model)`,
+   with the prompt template folded into `extractor_version` — editing a
+   prompt without bumping the schema version is routine during development,
+   and would otherwise serve the old records back indefinitely.
+   Hits return immediately; a cached *failure* does not, or a transient
+   provider outage becomes permanent for every passage it touched.
 2. **Prompt assembly.** Render the Jinja template with the passage
    text and any context hints the schema requests.
 3. **LLM call.** Core's `LLMClient` with structured-output mode where
@@ -349,7 +353,12 @@ Or from the MCP tool `extract` (see [05-mcp-spec.md](05-mcp-spec.md)).
    validation error appended to the prompt; then surface the failure.
 5. **Post-processing.**
    - Resolve `entity_ref` fields against the entity store.
-   - Convert `evidence_span` text to byte offsets.
+   - Convert `evidence_span` text to **character** offsets into
+     `passage.text`, matching whitespace-insensitively but returning
+     offsets into the text as stored. (Byte offsets, as this said
+     until 2026-08-19, would disagree with every other span in the
+     engine and be wrong by a factor of two on the Greek and Hebrew
+     that make up most of the corpus.)
    - Parse `fuzzy_date` strings to structured form.
 6. **Write.** Insert extraction row + per-record rows in a single
    transaction. Log the LLM call.

@@ -81,7 +81,9 @@ class ExtractionServiceAdapter:
     async def query_records(
         self, record_type: str, filters: dict | None = None, k: int = 100
     ) -> list:
-        rows = await self._extractions.query_records(record_type, filters, k)
+        rows = await self._extractions.query_records(
+            record_type, data_filter=filters, k=k
+        )
         return [
             {
                 "id": str(r.id),

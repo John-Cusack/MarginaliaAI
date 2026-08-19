@@ -49,13 +49,8 @@ async def handler(
 
         if kind == "extraction_record":
             extraction_repo = container.extraction_repo
-            records = await extraction_repo.query_records(
-                record_type="",
-                filters={"record_id": str(item_id)},
-                k=1,
-            )
-            if records:
-                record = records[0]
+            record = await extraction_repo.get_record(item_id)
+            if record:
                 passage_id = record.passage_id
                 extraction_info = {
                     "schema_id": str(record.schema_id),
