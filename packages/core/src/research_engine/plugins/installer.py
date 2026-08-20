@@ -162,10 +162,24 @@ class PluginInstaller:
                 source_ref=commit_sha,
                 installed_at=datetime.now(UTC),
                 enabled=True,
-                manifest=manifest.model_dump(),
-                permissions_granted=manifest.permissions.model_dump(),
+                # `mode="json"` because several manifest fields are `Path`:
+                # every `file:` and `schema:` a pack declares. `installed_packs.
+                # manifest` is a JSON column, and a plain model_dump leaves
+                # PosixPath objects the driver cannot encode — so declaring an
+                # extraction schema, an entity schema, or a tool schema made a
+                # pack uninstallable, failing after its files were in place.
+                manifest=manifest.model_dump(mode="json"),
+                permissions_granted=manifest.permissions.model_dump(mode="json"),
             )
-            await self._installed.insert(plugin_record)
+            try:
+                await self._installed.insert(plugin_record)
+            except Exception:
+                # The files are already at their final location by this point.
+                # Left there, they satisfy the "already installed" check on the
+                # next attempt and the plugin can never be installed or removed
+                # — `uninstall` needs the database row this failed to write.
+                shutil.rmtree(final_dir, ignore_errors=True)
+                raise
 
             logger.info(
                 "plugin_installed",
