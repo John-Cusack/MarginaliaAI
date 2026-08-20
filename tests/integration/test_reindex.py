@@ -80,7 +80,14 @@ async def _setup_stale_document(engine: AsyncEngine, corpus: Corpus) -> dict:
 
     entity_id = corpus.track(entities, _id())
     schema_id = corpus.track(extraction_schemas, _id())
-    extraction_id, event_id, edge_id = _id(), _id(), _id()
+    extraction_id = _id()
+    # Neither of these cascades with the document: `events.source_passage_id` is
+    # ON DELETE SET NULL, and edges address entities by (kind, id) with no
+    # foreign key at all. Untracked, this fixture left one of each behind on
+    # every run — 165 events and 165 edges accumulated in the live corpus.
+    # Tracked after the entity so cleanup removes the edge before what it names.
+    event_id = corpus.track(events, _id())
+    edge_id = corpus.track(edges, _id())
 
     async with engine.begin() as conn:
         await conn.execute(
