@@ -244,3 +244,76 @@ def _print(report: ReindexReport, threshold: float) -> None:
         )
     elif not report.dry_run and report.documents_reindexed:
         typer.echo("\nDone.")
+
+
+@reindex_app.command("structure")
+def structure(
+    document_id: list[str] = typer.Option(
+        None, "--document-id", help="Restrict to these documents. Repeatable."
+    ),
+    only_missing: bool = typer.Option(
+        False, "--only-missing", help="Only documents that have no nodes at all."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Do the work and roll back; report what would happen."
+    ),
+) -> None:
+    """Rebuild structure trees from canonical text, and date their sections.
+
+    Unlike `reindex chunks`, this rewrites nothing but `document_nodes` and the
+    `node_id` of existing passages — no re-chunking and no embedding — so a
+    document whose outline is missing can be repaired without the embedding
+    server. That matters because structure was previously only ever written by
+    commands that need one.
+
+    Sections that open with a date carry it: the date of a letter, a diary
+    entry, or a dated report. A bound volume has one date or none; its letters
+    have hundreds, and this is the level they vary at.
+    """
+    ids = [UUID(d) for d in document_id] if document_id else None
+    report = asyncio.run(_rebuild_structure(ids, only_missing, dry_run))
+    _print_structure(report)
+    if report.failures:
+        raise typer.Exit(code=1)
+
+
+async def _rebuild_structure(document_ids, only_missing, dry_run):
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.services.ingestion.structure import StructureService
+
+    container = await build_container(load_settings())
+    try:
+        service = StructureService(
+            container.engine,
+            container.document_texts,
+            container.document_nodes,
+            container.transaction_factory,
+        )
+        return await service.rebuild(
+            document_ids, dry_run=dry_run, only_missing=only_missing
+        )
+    finally:
+        await container.close()
+
+
+def _print_structure(report) -> None:
+    if report.dry_run:
+        typer.echo("DRY RUN — nothing was written.\n")
+    typer.echo(f"Documents examined:   {report.documents_total}")
+    typer.echo(f"  rebuilt:            {report.documents_rebuilt}")
+    typer.echo(f"Nodes written:        {report.nodes_written}")
+    typer.echo(f"  carrying a date:    {report.nodes_dated}")
+    typer.echo(f"Passages repointed:   {report.passages_repointed}")
+
+    if report.documents_without_text:
+        typer.echo(
+            f"\n{len(report.documents_without_text)} document(s) have no canonical "
+            f"text and were skipped. `research-engine reindex text` recovers it."
+        )
+    if report.failures:
+        typer.echo(f"\nFailed documents: {len(report.failures)}")
+        for doc_id, error in list(report.failures.items())[:10]:
+            typer.echo(f"  {doc_id}: {error}")
+    elif report.documents_rebuilt:
+        typer.echo("\nDone.")
