@@ -192,7 +192,10 @@ def _print(report: ReindexReport, threshold: float) -> None:
     typer.echo(f"Passages {'replaced' if not report.dry_run else 'to replace'}: "
                f"{report.passages_before} -> {report.passages_after}")
     if report.nodes_written:
-        typer.echo(f"Structure nodes written: {report.nodes_written}")
+        typer.echo(
+            f"Structure nodes written: {report.nodes_written} "
+            f"({report.nodes_dated} dated)"
+        )
 
     if report.repointed:
         typer.echo("\nReferences re-anchored:")

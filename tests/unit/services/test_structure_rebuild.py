@@ -8,10 +8,15 @@ letter it appears in, not to the volume.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
 from research_engine.domain.nodes import build_node_tree
+from research_engine.services.ingestion.reindex import ReindexReport, ReindexService
 from research_engine.services.ingestion.structure import (
     DATELINE_WINDOW,
-    _dated_sections,
+    dated_sections,
+    node_tree_for,
 )
 
 VOLUME = """# The Civil War Papers
@@ -35,7 +40,7 @@ This section states no date of its own.
 
 
 def sections_by_heading(text: str) -> dict:
-    return {s["heading"]: s for s in _dated_sections(text)}
+    return {s["heading"]: s for s in dated_sections(text)}
 
 
 class TestDatingSections:
@@ -67,14 +72,14 @@ class TestDatingSections:
         assert text.index("May 3, 1863") - section["char_start"] > DATELINE_WINDOW
 
     def test_text_with_no_headings_yields_no_sections(self):
-        assert _dated_sections("Just prose, no headings at all.") == []
+        assert dated_sections("Just prose, no headings at all.") == []
 
 
 class TestIntoTheTree:
     def test_dates_reach_the_node_metadata(self):
         """`build_node_tree` folds unrecognised section keys into metadata."""
         drafts = build_node_tree(
-            _dated_sections(VOLUME), text_length=len(VOLUME), title="Papers"
+            dated_sections(VOLUME), text_length=len(VOLUME), title="Papers"
         )
         dated = {
             d.title: d.metadata["date_start"]
@@ -87,7 +92,7 @@ class TestIntoTheTree:
 
     def test_the_tree_still_has_a_root_covering_everything(self):
         drafts = build_node_tree(
-            _dated_sections(VOLUME), text_length=len(VOLUME), title="Papers"
+            dated_sections(VOLUME), text_length=len(VOLUME), title="Papers"
         )
         root = drafts[0]
 
@@ -96,8 +101,58 @@ class TestIntoTheTree:
 
     def test_every_node_span_addresses_the_text(self):
         drafts = build_node_tree(
-            _dated_sections(VOLUME), text_length=len(VOLUME), title="Papers"
+            dated_sections(VOLUME), text_length=len(VOLUME), title="Papers"
         )
 
         for draft in drafts:
             assert 0 <= draft.char_start <= draft.char_end <= len(VOLUME)
+
+
+class TestOneEntryPointForBothCommands:
+    """`reindex chunks` and `reindex structure` must build the same tree.
+
+    They did not. `reindex structure` dated its sections and `reindex chunks`
+    did not, and `reindex chunks` deletes the document's nodes before writing
+    its own — so re-chunking a volume of correspondence put the tree back with
+    every date stripped. On this corpus that was 681 dates on one volume, and
+    nothing failed: the node count is identical either way, which is exactly
+    why it needed a test rather than a look at the output.
+    """
+
+    def test_the_shared_builder_dates_the_sections(self):
+        nodes = node_tree_for(VOLUME, title="Papers")
+        dated = {n.title: n.metadata.get("date_start") for n in nodes if n.title}
+        assert dated["To Mary Ellen McClellan"].startswith("1862-09-20")
+        assert dated["To Henry W. Halleck"].startswith("1862-03-24")
+        assert dated["Editorial note"] is None
+
+    def test_the_shared_builder_keeps_the_title_on_the_root(self):
+        root = node_tree_for(VOLUME, title="Papers")[0]
+        assert root.depth == 0
+        assert root.title == "Papers"
+
+    async def test_re_chunking_writes_dated_nodes(self):
+        """Drive the reindex path itself, not just the function it should call."""
+        written: list = []
+
+        nodes_repo = AsyncMock()
+        nodes_repo.insert_many = AsyncMock(
+            side_effect=lambda tx, doc_id, drafts: written.extend(drafts) or []
+        )
+        service = ReindexService(
+            engine=MagicMock(),
+            passage_repo=AsyncMock(),
+            document_text_repo=AsyncMock(),
+            embedding=AsyncMock(),
+            document_node_repo=nodes_repo,
+        )
+
+        tx = MagicMock()
+        tx.conn.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: "Papers")
+        )
+        await service._rebuild_nodes(tx, uuid4(), VOLUME, [], ReindexReport())
+
+        dated = [n for n in written if n.metadata.get("date_start")]
+        assert len(dated) == 2, "the two letters must keep their datelines"
+        assert written[0].title == "Papers", "the root must keep the document title"

@@ -40,12 +40,12 @@ from research_engine.adapters.storage.postgres.schema import (
     passages,
 )
 from research_engine.domain.errors import EmbeddingUnavailable, describe_exception
-from research_engine.domain.nodes import attach_nodes, build_node_tree
+from research_engine.domain.nodes import attach_nodes
 from research_engine.services.ingestion.embed_batches import BatchOutcome, embed_and_store
 from research_engine.services.ingestion.pipeline import run_chunking
+from research_engine.services.ingestion.structure import node_tree_for
 from research_engine.services.search.langconfig import pg_config
 from research_engine.services.text.anchoring import CanonicalIndex, Span, best_overlap
-from research_engine.services.text.sections import sections_from_markdown
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -100,6 +100,10 @@ class ReindexReport:
     #: Structure nodes written while re-chunking. Zero across a whole run means
     #: the outline tools will still return nothing.
     nodes_written: int = 0
+    #: Of those, the ones that state their own date. Reported because a
+    #: re-chunk that silently drops the dates looks identical to one that
+    #: keeps them — the node count is the same either way.
+    nodes_dated: int = 0
     documents_without_text: list[UUID] = field(default_factory=list)
     #: Structurally chunked documents, which cannot be re-chunked from canonical
     #: text alone — their section decomposition lives on the document, not here.
@@ -279,21 +283,35 @@ class ReindexService:
         A document with no headings — a lexicon, a plain-text transcript — gets
         a root node covering the whole text rather than nothing, so every
         passage has an ancestor to report and the tree is uniform.
+
+        Built through `node_tree_for`, the same entry point `reindex structure`
+        uses, so a section that states its own date keeps it. Building the tree
+        here separately dropped every date the other command had written: 681
+        on one volume of correspondence alone.
         """
         if self._nodes is None:
             return drafts
+
+        # The title comes from the document rather than the text because the
+        # root node carries it, and rebuilding without it renamed every root to
+        # nothing on re-chunk.
+        title = (
+            await tx.conn.execute(
+                sa.select(documents.c.title).where(documents.c.id == document_id)
+            )
+        ).scalar_one_or_none()
 
         await self._nodes.delete_for_document(tx, document_id)
         stored = await self._nodes.insert_many(
             tx,
             document_id,
-            build_node_tree(
-                sections_from_markdown(canonical_text),
-                text_length=len(canonical_text),
-            ),
+            node_tree_for(canonical_text, title=title),
         )
         if stored:
             report.nodes_written += len(stored)
+            report.nodes_dated += sum(
+                1 for node in stored if (node.metadata or {}).get("date_start")
+            )
         return attach_nodes(drafts, stored)
 
     async def _relabel(

@@ -26,7 +26,11 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy as sa
 import structlog
 
-from research_engine.domain.nodes import build_node_tree, deepest_containing
+from research_engine.domain.nodes import (
+    DocumentNodeDraft,
+    build_node_tree,
+    deepest_containing,
+)
 from research_engine.services.text.dates import dominant_century, scan_dates
 from research_engine.services.text.sections import sections_from_markdown
 
@@ -130,8 +134,7 @@ class StructureService:
         # nothing.
         text = stored_text.text
 
-        sections = _dated_sections(text)
-        drafts = build_node_tree(sections, text_length=len(text), title=title)
+        drafts = node_tree_for(text, title=title)
         dated = sum(1 for d in drafts if d.metadata.get("date_start"))
 
         async with self._transaction() as tx:
@@ -147,7 +150,19 @@ class StructureService:
         report.passages_repointed += repointed
 
 
-def _dated_sections(text: str) -> list[dict[str, Any]]:
+def node_tree_for(text: str, *, title: str | None = None) -> list[DocumentNodeDraft]:
+    """The one way a document's structure tree is built, for every caller.
+
+    Two commands write `document_nodes`: this service and `reindex chunks`.
+    They built the tree separately, and the second one used the undated
+    sections — so re-chunking a volume of correspondence deleted its nodes and
+    put them back without a single date, undoing the whole point of dating
+    them. Both call this now, so a third caller cannot reintroduce the split.
+    """
+    return build_node_tree(dated_sections(text), text_length=len(text), title=title)
+
+
+def dated_sections(text: str) -> list[dict[str, Any]]:
     """Markdown sections, each carrying its own date where it states one."""
     sections = sections_from_markdown(text)
     if not sections:
