@@ -14,7 +14,11 @@ from datetime import UTC, datetime
 import pytest
 
 from research_engine.domain.common import DatePrecision
-from research_engine.services.text.dates import parse_fuzzy_date
+from research_engine.services.text.dates import (
+    dominant_century,
+    parse_fuzzy_date,
+    scan_dates,
+)
 
 #: McClellan on the Peninsula. Any anchor would do; a real one keeps the
 #: expected values readable.
@@ -154,3 +158,98 @@ class TestRefusals:
     def test_none_and_whitespace(self):
         assert parse_fuzzy_date("") is None
         assert parse_fuzzy_date("   ") is None
+
+
+class TestScanningScannedText:
+    """Finding a dateline inside a page that has been through OCR.
+
+    Measured against the 728 letters of Sears's edition of McClellan's papers:
+    91% carry a date this finds, and 0.8% of those fall out of the edition's own
+    chronological order — the check that catches a date picked out of the body
+    rather than the dateline.
+    """
+
+    def test_a_plain_dateline(self):
+        [(_, _, date)] = scan_dates("Cincinnati, April 24, 1861")
+        assert date.start.date() == datetime(1861, 4, 24, tzinfo=UTC).date()
+
+    def test_no_comma_between_place_and_date(self):
+        [(_, _, date)] = scan_dates("Head Quarters OVM Cincinnati April 29 1861")
+        assert date.start.day == 29
+
+    def test_a_year_the_editor_supplied(self):
+        [(_, _, date)] = scan_dates("Cincinnati Dec 27 [1860]")
+        assert date.start.year == 1860
+
+    def test_a_month_the_scanner_misread(self):
+        """"Dee" for "Dec" shares two letters with its target."""
+        [(_, _, date)] = scan_dates("Cincinnati Dee 27 [1860]")
+        assert date.start.month == 12
+
+    def test_a_month_misread_no_one_listed(self):
+        """The similarity fallback, for misreads nobody enumerated."""
+        [(_, _, date)] = scan_dates("Camp near Sharpsburg, Marcli 24, 1862")
+        assert date.start.month == 3
+
+    def test_a_slashed_short_year_needs_a_century(self):
+        assert scan_dates("Cincinnati April 18/61") == []
+        [(_, _, date)] = scan_dates("Cincinnati April 18/61", century=1800)
+        assert date.start.year == 1861
+
+    def test_the_month_and_day_split_by_a_bracket(self):
+        [(_, _, date)] = scan_dates("[Washington, August] 16th [1861]")
+        assert date.start.date() == datetime(1861, 8, 16, tzinfo=UTC).date()
+
+    def test_a_telegram_time_is_not_a_year(self):
+        """The defect this cost the most to find.
+
+        A telegram dateline puts the hour exactly where a two-digit year would
+        go, so "March 24 11 am 1862" read as 1811 — and 26 letters landed in the
+        1810s, before McClellan was born. A four-digit year just past the day
+        wins over anything shorter.
+        """
+        [(_, _, date)] = scan_dates(
+            "Head Quarters, Army of the Potomac, Seminary March 24 11 am 1862"
+        )
+        assert date.start.year == 1862
+        assert date.start.month == 3
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "Near Yorktown April 11 12.30 am 1862",
+            "Berkeley August 4 12m 1862",
+            "Camp Lincoln June 14, 11 a.m. 1862",
+        ],
+    )
+    def test_other_telegram_times(self, line: str):
+        [(_, _, date)] = scan_dates(line)
+        assert date.start.year == 1862
+
+    def test_an_editor_s_alternative_day_is_stepped_over(self):
+        """"Aug 9 [10] 1861" — the editor offering a second reading of the day."""
+        [(_, _, date)] = scan_dates("## Washington Aug 9 [10] 1861 1 am.")
+        assert date.start.year == 1861
+
+    def test_dates_come_back_in_document_order(self):
+        found = scan_dates("May 3, 1862 ... June 4, 1862 ... July 5, 1862")
+        assert [d.start.month for _, _, d in found] == [5, 6, 7]
+
+    def test_the_span_addresses_the_text_it_read(self):
+        text = "Camp near Sharpsburg, Sept. 20, 1862 — my dear Nelly"
+        [(start, end, _)] = scan_dates(text)
+        assert text[start:end].strip().rstrip(",") == "Sept. 20, 1862"
+
+    def test_ordinary_prose_yields_nothing(self):
+        assert scan_dates("I have 3 brigades and 4 batteries in the field.") == []
+
+
+class TestDominantCentury:
+    def test_read_from_the_years_the_text_states(self):
+        assert dominant_century("1861 1862 1862 1863 1864 1865") == 1800
+
+    def test_refused_when_there_is_too_little_to_go_on(self):
+        assert dominant_century("1862") is None
+
+    def test_refused_when_the_text_is_split_between_centuries(self):
+        assert dominant_century("1861 1862 1863 1961 1962 1963 2001 2002") is None

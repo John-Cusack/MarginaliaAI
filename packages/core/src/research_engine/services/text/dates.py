@@ -297,3 +297,132 @@ def _add_days(moment: datetime, days: int) -> datetime:
 
 def _span(start: datetime, end: datetime, precision: DatePrecision) -> FuzzyDate:
     return FuzzyDate(start=start, end=end, precision=precision)
+
+
+# --- Finding dates in text that has been through a scanner -------------------
+
+#: A month word, a day, and a year, with the noise a page scan leaves behind.
+#: The year may be bracketed (an editor supplying what the writer omitted),
+#: slashed and abbreviated ("April 18/61"), or plain.
+#: A month word and a day. What follows them is handled separately, because
+#: what follows is where the noise lives.
+_MONTH_AND_DAY = re.compile(
+    r"\b([A-Za-z]{3,9})\.?"                 # month word, possibly misread
+    r"[\s\]\)\[\(\|,]{0,4}"                  # an editor's bracket may close here
+    r"(\d{1,2})(?:st|nd|rd|th|d)?\.?"       # day
+)
+
+#: A four-digit year, looked for just past the day.
+_FULL_YEAR = re.compile(r"\b(1[5-9]\d{2}|20\d{2})\b")
+
+#: "April 18/61". Only after a slash: a bare two-digit number following a day is
+#: far more often an hour than a year.
+_SLASHED_YEAR = re.compile(r"^[\s\]\)\[\(\|,]{0,3}/\s?(\d{2})\b")
+
+#: How far past the day to look for the year. Telegram datelines put a time
+#: between the two — "March 24 11 am 1862" — and an editor may insert an
+#: alternative day — "Aug 9 [10] 1861". Both need stepping over. Kept short so
+#: the year cannot be picked out of the letter's first sentence.
+_YEAR_WINDOW = 22
+
+#: Misreads frequent enough in scanned nineteenth-century print to name. The
+#: similarity fallback below catches the rest, but "Dee" for "Dec" shares only
+#: two letters with its target and sits just under any threshold loose enough
+#: to be safe.
+_MONTH_OCR = {
+    "dee": 12, "deo": 12, "dec'": 12,
+    "jime": 6, "jnne": 6, "jnue": 6,
+    "jnly": 7, "julv": 7,
+    "angust": 8, "augnst": 8,
+    "marcli": 3, "mareh": 3, "mareli": 3,
+    "febmary": 2, "febrnary": 2,
+    "jaimary": 1, "jannary": 1,
+    "aprii": 4, "apl": 4, "apnl": 4,
+    "oet": 10, "octr": 10,
+    "xov": 11, "novr": 11,
+    "sepr": 9, "sepc": 9,
+}
+
+#: How close a scanned word has to be to a month name to be read as one. A page
+#: scan turns "Dec" into "Dee" and "March" into "Marcli" often enough that
+#: listing the misreads is a losing game; requiring a day number immediately
+#: after is what keeps this from matching ordinary prose.
+_MONTH_SIMILARITY = 0.75
+
+
+def _read_month(word: str) -> int | None:
+    """A month number from a word a scanner may have damaged."""
+    cleaned = word.strip(".").lower()
+    if cleaned in MONTHS:
+        return MONTHS[cleaned]
+    if cleaned in _MONTH_OCR:
+        return _MONTH_OCR[cleaned]
+    import difflib
+
+    close = difflib.get_close_matches(
+        cleaned, MONTHS.keys(), n=1, cutoff=_MONTH_SIMILARITY
+    )
+    return MONTHS[close[0]] if close else None
+
+
+def _read_year(digits: str, century: int | None) -> int | None:
+    """Expand a two-digit year, or refuse when nothing says which century.
+
+    "April 18/61" is 1861 in this corpus and 1961 in another. The century comes
+    from the document the date was found in — the years it states in full — so
+    the guess is drawn from the same page rather than from an assumption.
+    """
+    if len(digits) == 4:
+        return int(digits)
+    if len(digits) == 2 and century is not None:
+        return century + int(digits)
+    return None
+
+
+def dominant_century(text: str) -> int | None:
+    """The century this text is written about, from the years it spells out.
+
+    Returns e.g. 1800 when four-digit years in the text are mostly 18xx.
+    """
+    years = [int(y) for y in re.findall(r"\b(1[5-9]\d{2}|20\d{2})\b", text)]
+    if len(years) < 5:
+        return None
+    centuries: dict[int, int] = {}
+    for year in years:
+        centuries[year // 100 * 100] = centuries.get(year // 100 * 100, 0) + 1
+    best = max(centuries.items(), key=lambda kv: kv[1])
+    return best[0] if best[1] >= len(years) / 2 else None
+
+
+def scan_dates(
+    text: str, *, century: int | None = None
+) -> list[tuple[int, int, FuzzyDate]]:
+    """Every date this text states, as ``(start, end, date)`` in document order.
+
+    Unlike :func:`parse_fuzzy_date`, which reads a string that is supposed to be
+    a date, this looks for dates inside text that is mostly something else — a
+    letter's dateline in among its address and salutation.
+
+    A four-digit year anywhere just past the day wins over a two-digit number
+    immediately after it. That ordering is what separates "March 24 11 am 1862"
+    from a date in 1811: the hour sits exactly where a short year would.
+    """
+    found: list[tuple[int, int, FuzzyDate]] = []
+    for match in _MONTH_AND_DAY.finditer(text):
+        month = _read_month(match.group(1))
+        if month is None:
+            continue
+        tail = text[match.end() : match.end() + _YEAR_WINDOW]
+        if full := _FULL_YEAR.search(tail):
+            year, end = int(full.group(1)), match.end() + full.end()
+        elif short := _SLASHED_YEAR.match(tail):
+            resolved = _read_year(short.group(1), century)
+            if resolved is None:
+                continue
+            year, end = resolved, match.end() + short.end()
+        else:
+            continue
+        parsed = _day(year, month, int(match.group(2)))
+        if parsed is not None:
+            found.append((match.start(), end, parsed))
+    return found
