@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 import anthropic
 
-from research_engine.domain.errors import LLMError, LLMProviderDown, LLMRateLimited
+from research_engine.domain.errors import (
+    LLMError,
+    LLMProviderDown,
+    LLMRateLimited,
+    LLMUnavailable,
+)
 from research_engine.domain.provenance import LLMCallDraft
 
 if TYPE_CHECKING:
@@ -63,6 +68,24 @@ class AnthropicLLMAdapter:
                 )
             )
             return text, call.id
+        except anthropic.AuthenticationError as e:
+            await self._log_error(model, caller, purpose, start, str(e))
+            raise LLMUnavailable(
+                f"The Anthropic API rejected these credentials: {e}. Set "
+                f"RE_ANTHROPIC_API_KEY."
+            ) from e
+        except TypeError as e:
+            # Raised by the client before any request when it can resolve no
+            # credentials at all. Not an APIError, so without this it escapes
+            # every handler here and surfaces as a traceback from whatever was
+            # unlucky enough to call first.
+            if "authentication" not in str(e).lower():
+                raise
+            raise LLMUnavailable(
+                "No Anthropic credentials are configured. Set "
+                "RE_ANTHROPIC_API_KEY in .env, or ANTHROPIC_API_KEY in the "
+                "environment."
+            ) from e
         except anthropic.RateLimitError as e:
             await self._log_error(model, caller, purpose, start, str(e))
             raise LLMRateLimited(str(e)) from e
@@ -123,6 +146,24 @@ class AnthropicLLMAdapter:
                 )
             )
             return tool_input, call.id
+        except anthropic.AuthenticationError as e:
+            await self._log_error(model, caller, purpose, start, str(e))
+            raise LLMUnavailable(
+                f"The Anthropic API rejected these credentials: {e}. Set "
+                f"RE_ANTHROPIC_API_KEY."
+            ) from e
+        except TypeError as e:
+            # Raised by the client before any request when it can resolve no
+            # credentials at all. Not an APIError, so without this it escapes
+            # every handler here and surfaces as a traceback from whatever was
+            # unlucky enough to call first.
+            if "authentication" not in str(e).lower():
+                raise
+            raise LLMUnavailable(
+                "No Anthropic credentials are configured. Set "
+                "RE_ANTHROPIC_API_KEY in .env, or ANTHROPIC_API_KEY in the "
+                "environment."
+            ) from e
         except anthropic.RateLimitError as e:
             await self._log_error(model, caller, purpose, start, str(e))
             raise LLMRateLimited(str(e)) from e

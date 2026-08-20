@@ -21,7 +21,11 @@ import structlog
 from uuid_utils import uuid7
 
 from research_engine.domain.common import ExtractionStatus
-from research_engine.domain.errors import LLMError, ValidationError
+from research_engine.domain.errors import (
+    LLMError,
+    LLMUnavailable,
+    ValidationError,
+)
 from research_engine.domain.extractions import (
     Extraction,
     ExtractionBatch,
@@ -154,6 +158,16 @@ class ExtractionExecutor:
                 validated, llm_call_id = await self._ask(
                     prompt, output_schema, record_types, passage, model, options
                 )
+            except LLMUnavailable:
+                # Not this passage's failure — no passage can succeed. Marking
+                # each one and continuing would write a failed row for every
+                # passage in the corpus and bury the one fact that matters.
+                logger.error(
+                    "extraction_abandoned",
+                    schema=schema.name,
+                    reason="the LLM is unavailable",
+                )
+                raise
             except (LLMError, ValidationError) as exc:
                 logger.warning(
                     "extraction_failed",

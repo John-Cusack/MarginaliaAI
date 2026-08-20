@@ -17,7 +17,7 @@ from uuid import uuid4
 import pytest
 
 from research_engine.domain.common import ExtractionStatus
-from research_engine.domain.errors import LLMError
+from research_engine.domain.errors import LLMError, LLMUnavailable
 from research_engine.domain.extractions import ExtractionOptions, ExtractionSchema
 from research_engine.services.extraction.executor import ExtractionExecutor
 from research_engine.testing.corpus import new_id
@@ -308,3 +308,37 @@ class TestSchemaResolution:
 
         assert batch.results[0].status == ExtractionStatus.failed
         assert extractions.saved == {}
+
+
+class TestAnUnavailableBackend:
+    """A missing API key is not eight hundred failed passages."""
+
+    @pytest.mark.asyncio
+    async def test_the_run_stops_instead_of_failing_every_passage(self):
+        """Found by trying to run the real thing.
+
+        The Anthropic client raises a bare `TypeError` before any request when
+        it can resolve no credentials, so nothing recognised it as an LLM
+        problem: it escaped every handler in the adapter and killed the batch
+        with a traceback. Translated and caught, the run stops at the first
+        passage and says what is wrong.
+        """
+        llm = FakeLLM(LLMUnavailable("No Anthropic credentials are configured."))
+        executor, extractions, passage, _ = build(llm)
+
+        with pytest.raises(LLMUnavailable, match="credentials"):
+            await executor.execute([passage.id], "interpretive_claims:1")
+
+        # Nothing recorded: no passage failed, the run never happened.
+        assert extractions.saved == {}
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_provider_error_still_fails_just_that_passage(self):
+        """The distinction this rests on — one bad passage is not a dead backend."""
+        llm = FakeLLM(LLMError("content filter"))
+        executor, extractions, passage, _ = build(llm)
+
+        batch = await executor.execute([passage.id], "interpretive_claims:1")
+
+        assert batch.results[0].status == ExtractionStatus.failed
+        assert len(extractions.saved) == 1
