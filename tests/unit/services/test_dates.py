@@ -253,3 +253,46 @@ class TestDominantCentury:
 
     def test_refused_when_the_text_is_split_between_centuries(self):
         assert dominant_century("1861 1862 1863 1961 1962 1963 2001 2002") is None
+
+
+class TestPhrasesTheLettersActuallyUse:
+    """Read off real passages of the Sears edition, not invented.
+
+    Sampling four letters before paying for an extraction run turned up three
+    forms the parser could not read. Every one of them is common in the volume.
+    """
+
+    @pytest.mark.parametrize(
+        ("phrase", "day"),
+        [
+            # "Yours of the 2nd has reached me" — with the ordinal.
+            ("yours of the 2nd", 2),
+            # "your letters of the 19 & 20" — without it. Both forms appear,
+            # sometimes in the same letter.
+            ("your letters of the 19", 19),
+            ("the 19", 19),
+            ("your communication of the 14th inst", 14),
+            ("your confidential letter of the 23rd", 23),
+            ("your very kind letter of the 3d", 3),
+        ],
+    )
+    def test_a_letter_referred_to_by_day(self, phrase: str, day: int):
+        assert day_of(phrase, ANCHOR).start.day == day
+
+    def test_of_today(self):
+        """"Your telegram of today is received." """
+        assert day_of("your telegram of today", ANCHOR).start.date() == ANCHOR.date()
+
+    def test_of_yesterday(self):
+        """"Your note of yesterday is received." """
+        result = day_of("your note of yesterday", ANCHOR)
+        assert result.start.day == ANCHOR.day - 1
+
+    def test_yesterday_across_a_month_boundary(self):
+        first = datetime(1862, 3, 1, tzinfo=UTC)
+        result = day_of("yesterday", first)
+        assert (result.start.month, result.start.day) == (2, 28)
+
+    def test_a_bare_day_still_needs_an_anchor(self):
+        """Relaxing the ordinal must not make a bare number resolvable alone."""
+        assert parse_fuzzy_date("the 19") is None

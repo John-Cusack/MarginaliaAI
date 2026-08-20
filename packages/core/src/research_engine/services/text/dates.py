@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from research_engine.domain.common import DatePrecision
 from research_engine.domain.events import FuzzyDate
@@ -64,7 +64,13 @@ _ORDINAL = r"(?:st|nd|rd|th|d)"
 #: "yours of the 15th", "dated May 3d". Stripping them here means the schema
 #: author does not have to fight the phrasing in the prompt.
 _LEAD = re.compile(
-    r"^\s*(?:your[s]?\s+of\s+|letter\s+of\s+|dated\s+|written\s+|on\s+|of\s+|the\s+)+",
+    r"^\s*(?:"
+    r"your[s]?\s+(?:\w+\s+){0,3}of\s+"   # "yours of", "your confidential letter of"
+    r"|letter[s]?\s+of\s+"
+    r"|in\s+reply\s+to\s+"
+    r"|received\s+|acknowledg\w*\s+"
+    r"|dated\s+|written\s+|on\s+|of\s+|the\s+"
+    r")+",
     re.IGNORECASE,
 )
 
@@ -96,7 +102,15 @@ _RELATIVE_MONTH = re.compile(
     r"(ult(?:o|imo)?|inst(?:\.|ant)?|prox(?:o|imo)?)\.?$",
     re.IGNORECASE,
 )
-_BARE_DAY = re.compile(rf"^(\d{{1,2}}){_ORDINAL}$")
+#: "the 19th" and "the 19" alike. The ordinal is optional because the letters
+#: use both — "Yours of the 2nd has reached me" beside "your letters of the 19
+#: & 20" — and a bare number reaching here has already been declared a date by
+#: the schema field it came from.
+_BARE_DAY = re.compile(rf"^(\d{{1,2}}){_ORDINAL}?$")
+
+#: Written from inside the letter's own day.
+_TODAY = re.compile(r"^(today|to-day|this day)$", re.IGNORECASE)
+_YESTERDAY = re.compile(r"^(yesterday)$", re.IGNORECASE)
 
 _OFFSET = {"ult": -1, "inst": 0, "prox": 1}
 
@@ -220,6 +234,12 @@ def _try_year(text: str) -> FuzzyDate | None:
 
 def _try_relative(text: str, anchor: datetime) -> FuzzyDate | None:
     """The epistolary forms, resolved against the letter's own date."""
+    if _TODAY.match(text):
+        return _day(anchor.year, anchor.month, anchor.day)
+    if _YESTERDAY.match(text):
+        previous = anchor - timedelta(days=1)
+        return _day(previous.year, previous.month, previous.day)
+
     if match := _RELATIVE_MONTH.match(text):
         day = int(match.group(1))
         keyword = match.group(2).lower().rstrip(".")
@@ -289,8 +309,6 @@ def _end_of(year: int, month: int, day: int) -> datetime:
 
 
 def _add_days(moment: datetime, days: int) -> datetime:
-    from datetime import timedelta
-
     end = moment + timedelta(days=days)
     return end.replace(hour=23, minute=59, second=59)
 
