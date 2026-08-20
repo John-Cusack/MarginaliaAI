@@ -238,3 +238,89 @@ async def test_a_record_can_be_fetched_by_its_own_id(
 
     assert (await repo.get_record(record.id)).id == record.id
     assert await repo.get_record(uuid4()) is None
+
+
+class TestSelectingPassagesToRun:
+    """What `extraction run` picks, before any model is called.
+
+    `--dated-only` is the flag that matters for correspondence: a relative date
+    resolves only against the date of the letter it appears in, and that date
+    lives on the passage's structure node. Selecting the wrong set is how a run
+    costs money and produces records whose dates stay null.
+    """
+
+    async def test_dated_only_selects_passages_inside_a_dated_node(
+        self, engine: AsyncEngine, corpus: Corpus
+    ):
+        from research_engine.adapters.storage.postgres.repositories.nodes import (
+            PGDocumentNodeRepo,
+        )
+        from research_engine.cli.extraction import _select_passages
+        from research_engine.domain.nodes import build_node_tree
+
+        document_id = await corpus.add_document(title="A letterbook")
+        dated = await corpus.add_passage(
+            document_id, "Inside the dated letter.", position=0, char_start=0, char_end=24
+        )
+        undated = await corpus.add_passage(
+            document_id, "Outside it.", position=1, char_start=100, char_end=111
+        )
+        async with transaction(engine) as tx:
+            stored = await PGDocumentNodeRepo(engine).insert_many(
+                tx,
+                document_id,
+                build_node_tree(
+                    [
+                        {
+                            "char_start": 0,
+                            "char_end": 50,
+                            "heading": "To Someone",
+                            "level": 1,
+                            "date_start": "1862-05-20T00:00:00+00:00",
+                        },
+                        {
+                            "char_start": 90,
+                            "char_end": 120,
+                            "heading": "Editorial note",
+                            "level": 1,
+                        },
+                    ],
+                    text_length=200,
+                ),
+            )
+        by_span = {(n.char_start, n.char_end): n.id for n in stored}
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text("UPDATE core.passages SET node_id = :n WHERE id = :p"),
+                [
+                    {"n": by_span[(0, 50)], "p": dated},
+                    {"n": by_span[(90, 120)], "p": undated},
+                ],
+            )
+
+        everything = await _select_passages(engine, [document_id], False, 0)
+        only_dated = await _select_passages(engine, [document_id], True, 0)
+
+        assert {row[0] for row in everything} == {dated, undated}
+        assert [row[0] for row in only_dated] == [dated]
+        assert only_dated[0][2] is True
+
+    async def test_a_limit_is_honoured(self, engine: AsyncEngine, corpus: Corpus):
+        from research_engine.cli.extraction import _select_passages
+
+        document_id = await corpus.add_document(title="Long")
+        for position in range(4):
+            await corpus.add_passage(document_id, f"Passage {position}.", position=position)
+
+        assert len(await _select_passages(engine, [document_id], False, 2)) == 2
+
+    async def test_size_is_reported_for_the_estimate(
+        self, engine: AsyncEngine, corpus: Corpus
+    ):
+        from research_engine.cli.extraction import _select_passages
+
+        document_id = await corpus.add_document(title="Sized")
+        await corpus.add_passage(document_id, "A passage with a number of words in it.")
+
+        [(_, tokens, _)] = await _select_passages(engine, [document_id], False, 0)
+        assert tokens > 0

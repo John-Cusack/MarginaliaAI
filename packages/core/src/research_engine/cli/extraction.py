@@ -11,6 +11,7 @@ import asyncio
 
 # Path must exist at runtime and cannot move into a TYPE_CHECKING block.
 from pathlib import Path  # noqa: TC003
+from uuid import UUID
 
 import typer
 
@@ -141,3 +142,178 @@ async def _container():
 
     container = await build_container(load_settings())
     return container, container.close
+
+
+@extraction_app.command("run")
+def run(
+    schema: str = typer.Argument(..., help="Schema as 'name:version', e.g. 'claims:1'."),
+    document_id: list[str] = typer.Option(
+        None, "--document-id", help="Restrict to these documents. Repeatable."
+    ),
+    dated_only: bool = typer.Option(
+        False,
+        "--dated-only",
+        help="Only passages sitting inside a structure node that carries a date.",
+    ),
+    limit: int = typer.Option(0, "--limit", help="Stop after this many passages."),
+    concurrency: int = typer.Option(8, "--concurrency", help="Concurrent calls."),
+    force_refresh: bool = typer.Option(
+        False, "--force-refresh", help="Re-extract passages already done."
+    ),
+    estimate_only: bool = typer.Option(
+        False, "--estimate", help="Report what would run and what it would cost."
+    ),
+) -> None:
+    """Run a registered extraction schema over passages.
+
+    Extraction was previously reachable only through the MCP `extract` tool, so
+    running a schema over a corpus meant driving an MCP client. Results are
+    stored and cached: re-running returns the same records without paying for
+    them again, and `--force-refresh` is how you overrule that.
+
+    `--dated-only` matters for correspondence. A relative date — "yours of the
+    3d ult." — resolves only against the date of the letter it appears in, and
+    that date lives on the passage's structure node. Passages outside a dated
+    node extract fine and their relative dates stay unresolved.
+    """
+    from research_engine.domain.errors import LLMUnavailable
+
+    ids = [UUID(d) for d in document_id] if document_id else None
+    try:
+        result = asyncio.run(
+            _run_extraction(
+                schema, ids, dated_only, limit, concurrency, force_refresh, estimate_only
+            )
+        )
+    except LLMUnavailable as exc:
+        typer.echo(f"\nStopped before extracting anything: {exc}")
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        typer.echo(f"{exc}\n\nRegistered schemas: research-engine extraction list")
+        raise typer.Exit(code=1) from exc
+
+    _print_run(result)
+    if result.get("failed"):
+        raise typer.Exit(code=1)
+
+
+async def _run_extraction(
+    schema, document_ids, dated_only, limit, concurrency, force_refresh, estimate_only
+):
+    import sqlalchemy as sa
+
+    from research_engine.domain.extractions import ExtractionOptions
+
+    container, close = await _container()
+    try:
+        passages = await _select_passages(
+            container.engine, document_ids, dated_only, limit
+        )
+        if estimate_only or not passages:
+            return {
+                "estimate_only": True,
+                "selected": len(passages),
+                "dated": sum(1 for p in passages if p[2]),
+                "input_tokens": sum(p[1] for p in passages),
+            }
+
+        batch = await container.extraction_executor.execute(
+            [p[0] for p in passages],
+            schema,
+            ExtractionOptions(concurrency=concurrency, force_refresh=force_refresh),
+        )
+        results = batch.results
+        records = [record for r in results for record in r.records]
+        async with container.engine.connect() as conn:
+            spend = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT count(*), coalesce(sum(cost_estimate), 0) "
+                        "FROM core.llm_calls WHERE purpose LIKE 'extraction%'"
+                    )
+                )
+            ).first()
+        return {
+            "estimate_only": False,
+            "selected": len(passages),
+            "ok": sum(1 for r in results if r.status == "ok"),
+            "failed": [r for r in results if r.status == "failed"],
+            "cached": sum(1 for r in results if r.from_cache),
+            "records": len(records),
+            "resolved_dates": sum(
+                1
+                for record in records
+                for key, value in record.get("fields", {}).items()
+                if key.endswith("_resolved") and value and "start" in value
+            ),
+            "llm_calls": spend[0] if spend else 0,
+            "spend": float(spend[1]) if spend else 0.0,
+        }
+    finally:
+        await close()
+
+
+async def _select_passages(engine, document_ids, dated_only, limit):
+    """Passage ids with their size, and whether their node carries a date."""
+    import sqlalchemy as sa
+
+    from research_engine.services.text.tokens import approx_tokens, chars_per_token
+
+    stmt = (
+        "SELECT p.id, p.text, n.metadata->>'date_start' AS dated "
+        "FROM core.passages p LEFT JOIN core.document_nodes n ON n.id = p.node_id"
+    )
+    clauses, params = [], {}
+    if document_ids:
+        clauses.append("p.document_id = ANY(:ids)")
+        params["ids"] = list(document_ids)
+    if dated_only:
+        clauses.append("n.metadata->>'date_start' IS NOT NULL")
+    if clauses:
+        stmt += " WHERE " + " AND ".join(clauses)
+    stmt += " ORDER BY p.document_id, p.position"
+    if limit:
+        stmt += f" LIMIT {int(limit)}"
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.text(stmt), params)).all()
+    return [
+        (row[0], approx_tokens(row[1], chars_per_token(row[1])), bool(row[2]))
+        for row in rows
+    ]
+
+
+def _print_run(result: dict) -> None:
+    if result["estimate_only"]:
+        selected = result["selected"]
+        if not selected:
+            typer.echo("No passages matched. Nothing to extract.")
+            return
+        # Prompt and schema ride along with every call; 500 tokens is the
+        # measured overhead for a schema of this size.
+        tokens_in = result["input_tokens"] + 500 * selected
+        typer.echo(f"Passages selected:    {selected}")
+        typer.echo(f"  inside a dated node: {result['dated']}")
+        typer.echo(f"Estimated input:      ~{tokens_in / 1000:,.0f}k tokens")
+        typer.echo(
+            f"Estimated cost:       ~${tokens_in / 1e6 * 3.0 + selected * 350 / 1e6 * 15.0:,.2f}"
+            f"  (Sonnet list pricing, before caching)"
+        )
+        typer.echo("\nDrop --estimate to run it.")
+        return
+
+    typer.echo(f"Passages:             {result['selected']}")
+    typer.echo(f"  extracted:          {result['ok']}")
+    typer.echo(f"  served from cache:  {result['cached']}")
+    typer.echo(f"Records stored:       {result['records']}")
+    typer.echo(f"  with a resolved date/entity: {result['resolved_dates']}")
+    typer.echo(f"LLM calls to date:    {result['llm_calls']}  (${result['spend']:,.2f})")
+
+    failed = result["failed"]
+    if failed:
+        typer.echo(f"\n{len(failed)} passage(s) failed:")
+        for r in failed[:10]:
+            typer.echo(f"  {r.passage_id}: {str(r.error)[:120]}")
+        if len(failed) > 10:
+            typer.echo(f"  ... and {len(failed) - 10} more")
+    else:
+        typer.echo("\nDone. Query them with `query_extractions`.")
