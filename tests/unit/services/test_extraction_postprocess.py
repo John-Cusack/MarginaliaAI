@@ -73,16 +73,43 @@ def a_record(**fields):
     )
 
 
-def a_passage():
-    return SimpleNamespace(id=new_id(), document_id=DOCUMENT_ID, text="x")
+def a_passage(node_id=None):
+    return SimpleNamespace(
+        id=new_id(), document_id=DOCUMENT_ID, text="x", node_id=node_id
+    )
 
 
-async def enrich(records, documents=None, entities=None):
+class FakeNodes:
+    """Structure nodes, one letter apiece, some dated."""
+
+    def __init__(self, dates: dict, ancestors: dict | None = None):
+        self._dates = dates
+        self._ancestors = ancestors or {}
+
+    async def get(self, node_id):
+        if node_id not in self._dates and node_id not in self._ancestors:
+            return None
+        date = self._dates.get(node_id)
+        return SimpleNamespace(
+            id=node_id,
+            depth=2,
+            metadata={"date_start": date} if date else {},
+        )
+
+    async def get_ancestors(self, node_id):
+        return [
+            SimpleNamespace(id=nid, depth=depth, metadata={"date_start": date})
+            for nid, depth, date in self._ancestors.get(node_id, [])
+        ]
+
+
+async def enrich(records, documents=None, entities=None, nodes=None, passage=None):
     enricher = RecordEnricher(
         documents=documents or FakeDocuments(),
         entities=entities or FakeEntities(),
+        document_nodes=nodes,
     )
-    return await enricher.enrich(records, a_passage(), RECORD_TYPES)
+    return await enricher.enrich(records, passage or a_passage(), RECORD_TYPES)
 
 
 pytestmark = pytest.mark.asyncio
@@ -199,3 +226,74 @@ class TestUntouchedFields:
 
     async def test_no_records(self):
         assert await enrich([]) == []
+
+
+class TestAnchoringToTheContainingLetter:
+    """Where the date of a bound volume's letters actually lives.
+
+    `civilwarpapersof0000mccl` is one document holding 728 letters. Its own
+    `created_date_start` is null and always would be — a collected edition has
+    no single date. Each letter's dateline is on its structure node, and that is
+    what a relative date inside it is relative to.
+    """
+
+    async def test_the_letter_s_date_is_used(self):
+        node = new_id()
+        [result] = await enrich(
+            [a_record(referenced_date="the 3d ult.")],
+            documents=FakeDocuments(created_date_start=None),
+            nodes=FakeNodes({node: "1862-05-20T00:00:00+00:00"}),
+            passage=a_passage(node_id=node),
+        )
+
+        assert result.fields["referenced_date_resolved"]["start"].startswith("1862-04-03")
+
+    async def test_the_letter_wins_over_the_volume(self):
+        """A volume date, where one exists, is far too coarse to anchor with."""
+        node = new_id()
+        [result] = await enrich(
+            [a_record(referenced_date="the 3d ult.")],
+            documents=FakeDocuments(created_date_start=ANCHOR),
+            nodes=FakeNodes({node: "1863-01-10T00:00:00+00:00"}),
+            passage=a_passage(node_id=node),
+        )
+
+        assert result.fields["referenced_date_resolved"]["start"].startswith("1862-12-03")
+
+    async def test_an_undated_node_falls_back_to_the_document(self):
+        node = new_id()
+        [result] = await enrich(
+            [a_record(referenced_date="the 3d ult.")],
+            nodes=FakeNodes({node: None}),
+            passage=a_passage(node_id=node),
+        )
+
+        assert result.fields["referenced_date_resolved"]["start"].startswith("1862-04-03")
+
+    async def test_the_nearest_dated_ancestor_is_used(self):
+        """A passage inside a subsection of a letter is still inside the letter."""
+        child, letter, volume = new_id(), new_id(), new_id()
+        [result] = await enrich(
+            [a_record(referenced_date="the 3d ult.")],
+            documents=FakeDocuments(created_date_start=None),
+            nodes=FakeNodes(
+                {child: None},
+                ancestors={
+                    child: [
+                        (volume, 0, "1860-01-01T00:00:00+00:00"),
+                        (letter, 2, "1862-05-20T00:00:00+00:00"),
+                    ]
+                },
+            ),
+            passage=a_passage(node_id=child),
+        )
+
+        assert result.fields["referenced_date_resolved"]["start"].startswith("1862-04-03")
+
+    async def test_without_a_node_repo_the_document_still_anchors(self):
+        [result] = await enrich(
+            [a_record(referenced_date="the 3d ult.")],
+            passage=a_passage(node_id=new_id()),
+        )
+
+        assert result.fields["referenced_date_resolved"]["start"].startswith("1862-04-03")

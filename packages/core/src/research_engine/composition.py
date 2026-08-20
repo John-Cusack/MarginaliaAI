@@ -253,7 +253,11 @@ async def build_container(settings: Settings) -> Container:
         extraction_schemas=extraction_schemas_repo,
         transaction_factory=partial(transaction, sql_engine),
         default_model=settings.default_llm_model,
-        enricher=RecordEnricher(documents=docs, entities=entities_repo),
+        enricher=RecordEnricher(
+            documents=docs,
+            entities=entities_repo,
+            document_nodes=document_nodes_repo,
+        ),
     )
 
     search_service = HybridSearchService(
