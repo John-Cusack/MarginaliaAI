@@ -36,6 +36,12 @@ jobs:
       - name: Unit tests
         run: uv run pytest tests/unit -q
 
+      # The in-tree packs under `packages/plugins/` are the reason to keep a
+      # pack in this repo at all: it and the SDK change it depends on land in
+      # one reviewed commit. That only holds if the pack's tests run here.
+      - name: In-tree pack tests
+        run: uv run pytest packages/plugins -q
+
 # Integration tests are deliberately absent. They run against a populated
 # corpus via `load_settings().db_url` and take ~19 minutes, most of it in
 # checks that scan every passage — so against the empty database a service
