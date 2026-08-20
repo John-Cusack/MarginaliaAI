@@ -276,7 +276,9 @@ class PluginLoader:
         documents = self._services.get("documents")
         passages = self._services.get("passages")
         if search is not None and documents is not None and passages is not None:
-            corpus_client: Any = CorpusServiceAdapter(search, documents, passages)
+            corpus_client: Any = CorpusServiceAdapter(
+                search, documents, passages, self._services.get("document_nodes")
+            )
         else:
             corpus_client = search
 
