@@ -317,3 +317,74 @@ def _print_structure(report) -> None:
             typer.echo(f"  {doc_id}: {error}")
     elif report.documents_rebuilt:
         typer.echo("\nDone.")
+
+
+@reindex_app.command("offsets")
+def offsets(
+    document_id: list[str] = typer.Option(
+        None, "--document-id", help="Restrict to these documents. Repeatable."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Do the work and roll back; report what would happen."
+    ),
+) -> None:
+    """Give span-less passages their offsets back, by matching their text.
+
+    For passages whose words are right and whose addresses are missing —
+    `prose_window` 1.0 recorded no offsets for anything it wrote. `reindex
+    chunks` repairs them too and re-embeds the corpus to do it; this matches the
+    stored text against the canonical text instead, so it needs no embedding
+    server and changes no passage's words.
+
+    Whitespace is restored to what the source has, because the span and the text
+    must agree exactly. Run `research-engine doctor` afterwards to confirm.
+    """
+    ids = [UUID(d) for d in document_id] if document_id else None
+    report = asyncio.run(_recover_offsets(ids, dry_run))
+    _print_offsets(report)
+    if report.unmatched:
+        raise typer.Exit(code=1)
+
+
+async def _recover_offsets(document_ids, dry_run):
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.services.ingestion.offsets import OffsetRecoveryService
+
+    container = await build_container(load_settings())
+    try:
+        service = OffsetRecoveryService(
+            container.engine,
+            container.document_texts,
+            container.document_nodes,
+            container.transaction_factory,
+        )
+        return await service.recover(document_ids, dry_run=dry_run)
+    finally:
+        await container.close()
+
+
+def _print_offsets(report) -> None:
+    if report.dry_run:
+        typer.echo("DRY RUN — nothing was written.\n")
+    typer.echo(f"Documents examined:        {report.documents_examined}")
+    typer.echo(f"Passages without a span:   {report.passages_without_a_span}")
+    typer.echo(f"  re-anchored:             {report.recovered}")
+    typer.echo(f"  whitespace restored:     {report.text_restored}")
+    typer.echo(f"  attached to a node:      {report.attached_to_a_node}")
+
+    if report.unmatched:
+        typer.echo(
+            f"\n{len(report.unmatched)} passage(s) could not be matched against "
+            f"their document's canonical text, and were left alone:"
+        )
+        for passage_id in report.unmatched[:10]:
+            typer.echo(f"  {passage_id}")
+        if len(report.unmatched) > 10:
+            typer.echo(f"  ... and {len(report.unmatched) - 10} more")
+        typer.echo(
+            "\nThese need `research-engine reindex chunks`, which re-derives "
+            "passages from the text rather than matching against it."
+        )
+    elif report.recovered:
+        typer.echo("\nDone.")
