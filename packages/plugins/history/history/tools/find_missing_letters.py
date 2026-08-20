@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 #: Suffix core appends when it resolves a declared field type into structured
 #: form. Kept as a literal rather than imported: this is a pack, and reaching
@@ -157,10 +158,22 @@ async def _cadence(
     """Stretches longer than this correspondence's own rhythm."""
     from research_engine.domain.events import EventFilter
 
+    # MCP hands these over as strings; `EventFilter.actor_entity_ids` is typed
+    # `list[UUID]` and rejects anything else outright, so the whole tool raised
+    # before it looked at a single event.
+    actors = [_as_uuid(correspondent_a_entity_id), _as_uuid(correspondent_b_entity_id)]
+    actors = [a for a in actors if a is not None]
+    if not actors:
+        notes.append(
+            "Cadence analysis needs at least one correspondent identified by "
+            "entity id; neither argument was a usable one."
+        )
+        return []
+
     events, _ = await event.query(
         EventFilter(
             event_types=["letter_sent"],
-            actor_entity_ids=[correspondent_a_entity_id, correspondent_b_entity_id],
+            actor_entity_ids=actors,
             date_range_start=_as_datetime((date_range or {}).get("start")),
             date_range_end=_as_datetime((date_range or {}).get("end")),
         ),
@@ -201,6 +214,16 @@ async def _cadence(
         for delta, index in intervals
         if delta > threshold
     ]
+
+
+def _as_uuid(value: object) -> UUID | None:
+    """An entity id, or None when the caller passed something that is not one."""
+    if isinstance(value, UUID):
+        return value
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_datetime(value: str | None) -> datetime | None:
