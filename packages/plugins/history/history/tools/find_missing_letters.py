@@ -24,6 +24,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from history.tools import _holdings
+
 #: Suffix core appends when it resolves a declared field type into structured
 #: form. Kept as a literal rather than imported: this is a pack, and reaching
 #: into core's service internals is how packs break on an engine upgrade.
@@ -50,15 +52,18 @@ async def tool_handler(
     """
     candidates: list[dict[str, Any]] = []
     notes: list[str] = []
+    verdicts: dict[str, list] = {"missing": [], "held": [], "undetermined": []}
 
     if method in ("all", "referenced"):
         candidates.extend(
             await _referenced(
+                corpus,
                 extraction,
                 correspondent_a_entity_id,
                 correspondent_b_entity_id,
                 min_confidence,
                 notes,
+                verdicts,
             )
         )
 
@@ -75,23 +80,45 @@ async def tool_handler(
 
     candidates.sort(key=lambda c: c.get("confidence", 0), reverse=True)
     return {
+        # Checked against the corpus and absent from it.
         "candidates": candidates,
+        # Referenced and found — evidence the check works, and the reason the
+        # candidate list is shorter than the reference count.
+        "held": verdicts["held"],
+        # Referenced, but not checkable. Kept visible so the gap between
+        # "not found" and "not looked for" stays legible.
+        "undetermined": verdicts["undetermined"],
         "notes": notes,
         "summary": {
             "total_candidates": len(candidates),
+            "referenced_and_held": len(verdicts["held"]),
+            "not_checkable": len(verdicts["undetermined"]),
             "by_method": _count_by_method(candidates),
         },
     }
 
 
 async def _referenced(
+    corpus: Any,
     extraction: Any,
     correspondent_a_entity_id: str,
     correspondent_b_entity_id: str,
     min_confidence: float,
     notes: list[str],
+    verdicts: dict[str, list],
 ) -> list[dict[str, Any]]:
-    """Letters named in letters we hold, that we do not hold."""
+    """Letters named in letters we hold, that we do not hold.
+
+    The second half of that sentence is new. This used to return every
+    reference above the confidence threshold, which is a list of letters
+    *mentioned* — the same thing as letters *missing* only if you hold none of
+    them. Each reference is now looked up against the corpus's own dated
+    sections and sorted into held, missing, or undetermined.
+
+    Undetermined is not a failure to be tidied away. A reference whose date
+    would not resolve cannot be looked up at all, and calling it missing would
+    manufacture a gap out of a parsing limitation.
+    """
     records = await extraction.query_records(
         record_type="epistolary_reference",
         filters={
@@ -109,43 +136,69 @@ async def _referenced(
         )
         return []
 
-    candidates = []
-    undated = 0
-    for record in records:
-        data = record.get("data", {}) if isinstance(record, dict) else {}
-        confidence = data.get("confidence", 0)
-        if confidence < min_confidence:
-            continue
-        expected_date = data.get(f"referenced_date{RESOLVED}")
-        if expected_date is None:
-            undated += 1
-        candidates.append({
+    considered = [
+        record
+        for record in records
+        if (record.get("data") or {}).get("confidence", 0) >= min_confidence
+    ]
+    holdings = await _holdings.build(
+        corpus, [record.get("passage_id") for record in considered if record.get("passage_id")]
+    )
+    if holdings.total == 0:
+        notes.append(
+            "The corpus reports no dated sections for these documents, so no "
+            "reference could be checked against what is held. Run "
+            "`research-engine reindex structure` to date them."
+        )
+    elif (coverage := holdings.coverage_note()) is not None:
+        notes.append(coverage)
+
+    missing: list[dict[str, Any]] = []
+    for record in considered:
+        data = record.get("data") or {}
+        resolved = data.get(f"referenced_date{RESOLVED}") or {}
+        when = resolved.get("start")
+        who = _holdings.surname(data.get("referenced_party_surface"))
+        entry = {
             "method": "referenced",
             "expected_sender_entity_id": correspondent_b_entity_id,
             "expected_recipient_entity_id": correspondent_a_entity_id,
-            "expected_date": expected_date,
-            # What the letter actually said, kept beside the parsed form so a
-            # reader can judge the interpretation.
+            "expected_date": resolved or None,
             "expected_date_as_written": data.get("referenced_date"),
-            "confidence": confidence,
+            "direction": _holdings.direction_of(data.get("reference_type")),
+            "confidence": data.get("confidence", 0),
             "evidence": {
-                # `passage_id` sits beside `data`, not inside it. Reading it
-                # from `data` returned None for every candidate, so nothing
-                # could be traced back to the letter that referenced it.
-                "passage_id": record.get("passage_id") if isinstance(record, dict) else None,
+                "passage_id": record.get("passage_id"),
                 "span_text": data.get("evidence", ""),
             },
             "content_hints": [data.get("content_hint", "")],
-        })
+        }
 
-    if undated:
+        if not when:
+            entry["undetermined_because"] = (
+                "the date it gives could not be resolved, so there is nothing "
+                "to look up"
+            )
+            verdicts["undetermined"].append(entry)
+            continue
+
+        if (title := holdings.held(who, when)) is not None:
+            entry["held_as"] = title
+            verdicts["held"].append(entry)
+            continue
+
+        entry["absent_from"] = f"{holdings.total} dated letters in this corpus"
+        missing.append(entry)
+
+    verdicts["missing"].extend(missing)
+    if verdicts["undetermined"]:
         notes.append(
-            f"{undated} of {len(candidates)} referenced letters carry a date "
-            f"phrase that could not be resolved. A relative date — \"the 3d "
-            f"ult.\" — needs the date of the letter it appears in, and these "
-            f"documents have none stored."
+            f"{len(verdicts['undetermined'])} of {len(considered)} referenced "
+            f"letters could not be checked: their date would not resolve, and a "
+            f"reference with no date cannot be looked up. They are reported "
+            f"separately rather than counted as missing."
         )
-    return candidates
+    return missing
 
 
 async def _cadence(
