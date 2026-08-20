@@ -16,14 +16,19 @@ _RESTART_NOTICE = "[yellow]Restart the MCP server for this change to take effect
 
 @plugin_app.command("install")
 def install(
-    url: str = typer.Argument(..., help="Git URL of the plugin."),
+    source: str = typer.Argument(..., help="Git URL, or path to a directory holding pack.yaml."),
     ref: str = typer.Option("main", "--ref", help="Git ref (tag, branch, or SHA)."),
+    link: bool = typer.Option(
+        False,
+        "--link",
+        help="Symlink a local pack instead of copying it, so edits take effect on restart.",
+    ),
 ):
-    """Install a plugin from a git URL."""
-    asyncio.run(_install(url, ref))
+    """Install a pack from a git URL or a local directory."""
+    asyncio.run(_install(source, ref, link))
 
 
-async def _install(url: str, ref: str):
+async def _install(url: str, ref: str, link: bool = False):
     from research_engine.composition import build_container
     from research_engine.config import load_settings
     from research_engine.domain.errors import PluginError
@@ -38,7 +43,9 @@ async def _install(url: str, ref: str):
             def _update_status(msg: str) -> None:
                 status.update(msg)
 
-            plugin = await installer.install(url, ref, console_callback=_update_status)
+            plugin = await installer.install(
+                url, ref, console_callback=_update_status, link=link
+            )
         console.print(f"[green]Installed {plugin.id}@{plugin.version}[/green]")
         console.print(_RESTART_NOTICE)
     except PluginError as e:
