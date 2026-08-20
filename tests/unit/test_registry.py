@@ -32,17 +32,61 @@ class TestPluginRegistry:
         # Should not raise
         r.validate_document_type("generic")
 
-    def test_conflict_detection(self):
+    def test_two_packs_cannot_own_the_same_document_type(self):
+        """A document type decides which chunker runs, so one owner only."""
         r = PluginRegistry()
-        r.register_entity_type("battle", {}, "history")
+        r.register_document_type("letter", {}, "history")
         with pytest.raises(PluginConflict):
-            r.register_entity_type("battle", {}, "other_plugin")
+            r.register_document_type("letter", {}, "other_plugin")
+
+    def test_two_packs_cannot_own_the_same_tool_id(self):
+        r = PluginRegistry()
+        r.register_mcp_tool("find_things", lambda: None, "history")
+        with pytest.raises(PluginConflict):
+            r.register_mcp_tool("find_things", lambda: None, "other_plugin")
 
     def test_same_plugin_no_conflict(self):
         r = PluginRegistry()
-        r.register_entity_type("battle", {}, "history")
+        r.register_document_type("letter", {}, "history")
         # Same plugin re-registering should not conflict
-        r.register_entity_type("battle", {}, "history")
+        r.register_document_type("letter", {}, "history")
+
+    def test_two_packs_may_declare_the_same_entity_type(self):
+        """Vocabulary is shared, not owned.
+
+        `person` is declared by core and by every domain pack that has people in
+        it. Treating that as a conflict made the whole pack fail to load — which
+        is why the history pack, and with it the `letter` document type, its
+        schemas and its tools, was unreachable.
+        """
+        r = PluginRegistry()
+        r.register_core_types()
+
+        r.register_entity_type("person", {}, "history")
+
+        assert "person" in r.list_entity_types()
+        assert r.list_entity_types()["person"]["plugin"] == "core"
+
+    @pytest.mark.parametrize(
+        ("register", "lister"),
+        [
+            ("register_entity_type", "list_entity_types"),
+            ("register_event_type", "list_event_types"),
+            ("register_relation_type", "list_relation_types"),
+        ],
+    )
+    def test_the_first_declaration_of_a_term_keeps_its_definition(
+        self, register: str, lister: str
+    ):
+        """A later pack must not redefine a type the first one is already using."""
+        r = PluginRegistry()
+        getattr(r, register)("battle", {"description": "armed engagement"}, "history")
+
+        getattr(r, register)("battle", {"description": "something else"}, "other_plugin")
+
+        stored = getattr(r, lister)()["battle"]
+        assert stored["description"] == "armed engagement"
+        assert stored["plugin"] == "history"
 
     def test_register_mcp_tool(self):
         r = PluginRegistry()
