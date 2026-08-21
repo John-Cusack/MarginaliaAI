@@ -192,7 +192,10 @@ def _print(report: ReindexReport, threshold: float) -> None:
     typer.echo(f"Passages {'replaced' if not report.dry_run else 'to replace'}: "
                f"{report.passages_before} -> {report.passages_after}")
     if report.nodes_written:
-        typer.echo(f"Structure nodes written: {report.nodes_written}")
+        typer.echo(
+            f"Structure nodes written: {report.nodes_written} "
+            f"({report.nodes_dated} dated)"
+        )
 
     if report.repointed:
         typer.echo("\nReferences re-anchored:")
@@ -243,4 +246,148 @@ def _print(report: ReindexReport, threshold: float) -> None:
             f"{threshold:.2%} threshold."
         )
     elif not report.dry_run and report.documents_reindexed:
+        typer.echo("\nDone.")
+
+
+@reindex_app.command("structure")
+def structure(
+    document_id: list[str] = typer.Option(
+        None, "--document-id", help="Restrict to these documents. Repeatable."
+    ),
+    only_missing: bool = typer.Option(
+        False, "--only-missing", help="Only documents that have no nodes at all."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Do the work and roll back; report what would happen."
+    ),
+) -> None:
+    """Rebuild structure trees from canonical text, and date their sections.
+
+    Unlike `reindex chunks`, this rewrites nothing but `document_nodes` and the
+    `node_id` of existing passages — no re-chunking and no embedding — so a
+    document whose outline is missing can be repaired without the embedding
+    server. That matters because structure was previously only ever written by
+    commands that need one.
+
+    Sections that open with a date carry it: the date of a letter, a diary
+    entry, or a dated report. A bound volume has one date or none; its letters
+    have hundreds, and this is the level they vary at.
+    """
+    ids = [UUID(d) for d in document_id] if document_id else None
+    report = asyncio.run(_rebuild_structure(ids, only_missing, dry_run))
+    _print_structure(report)
+    if report.failures:
+        raise typer.Exit(code=1)
+
+
+async def _rebuild_structure(document_ids, only_missing, dry_run):
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.services.ingestion.structure import StructureService
+
+    container = await build_container(load_settings())
+    try:
+        service = StructureService(
+            container.engine,
+            container.document_texts,
+            container.document_nodes,
+            container.transaction_factory,
+        )
+        return await service.rebuild(
+            document_ids, dry_run=dry_run, only_missing=only_missing
+        )
+    finally:
+        await container.close()
+
+
+def _print_structure(report) -> None:
+    if report.dry_run:
+        typer.echo("DRY RUN — nothing was written.\n")
+    typer.echo(f"Documents examined:   {report.documents_total}")
+    typer.echo(f"  rebuilt:            {report.documents_rebuilt}")
+    typer.echo(f"Nodes written:        {report.nodes_written}")
+    typer.echo(f"  carrying a date:    {report.nodes_dated}")
+    typer.echo(f"Passages repointed:   {report.passages_repointed}")
+
+    if report.documents_without_text:
+        typer.echo(
+            f"\n{len(report.documents_without_text)} document(s) have no canonical "
+            f"text and were skipped. `research-engine reindex text` recovers it."
+        )
+    if report.failures:
+        typer.echo(f"\nFailed documents: {len(report.failures)}")
+        for doc_id, error in list(report.failures.items())[:10]:
+            typer.echo(f"  {doc_id}: {error}")
+    elif report.documents_rebuilt:
+        typer.echo("\nDone.")
+
+
+@reindex_app.command("offsets")
+def offsets(
+    document_id: list[str] = typer.Option(
+        None, "--document-id", help="Restrict to these documents. Repeatable."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Do the work and roll back; report what would happen."
+    ),
+) -> None:
+    """Give span-less passages their offsets back, by matching their text.
+
+    For passages whose words are right and whose addresses are missing —
+    `prose_window` 1.0 recorded no offsets for anything it wrote. `reindex
+    chunks` repairs them too and re-embeds the corpus to do it; this matches the
+    stored text against the canonical text instead, so it needs no embedding
+    server and changes no passage's words.
+
+    Whitespace is restored to what the source has, because the span and the text
+    must agree exactly. Run `research-engine doctor` afterwards to confirm.
+    """
+    ids = [UUID(d) for d in document_id] if document_id else None
+    report = asyncio.run(_recover_offsets(ids, dry_run))
+    _print_offsets(report)
+    if report.unmatched:
+        raise typer.Exit(code=1)
+
+
+async def _recover_offsets(document_ids, dry_run):
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.services.ingestion.offsets import OffsetRecoveryService
+
+    container = await build_container(load_settings())
+    try:
+        service = OffsetRecoveryService(
+            container.engine,
+            container.document_texts,
+            container.document_nodes,
+            container.transaction_factory,
+        )
+        return await service.recover(document_ids, dry_run=dry_run)
+    finally:
+        await container.close()
+
+
+def _print_offsets(report) -> None:
+    if report.dry_run:
+        typer.echo("DRY RUN — nothing was written.\n")
+    typer.echo(f"Documents examined:        {report.documents_examined}")
+    typer.echo(f"Passages without a span:   {report.passages_without_a_span}")
+    typer.echo(f"  re-anchored:             {report.recovered}")
+    typer.echo(f"  whitespace restored:     {report.text_restored}")
+    typer.echo(f"  attached to a node:      {report.attached_to_a_node}")
+
+    if report.unmatched:
+        typer.echo(
+            f"\n{len(report.unmatched)} passage(s) could not be matched against "
+            f"their document's canonical text, and were left alone:"
+        )
+        for passage_id in report.unmatched[:10]:
+            typer.echo(f"  {passage_id}")
+        if len(report.unmatched) > 10:
+            typer.echo(f"  ... and {len(report.unmatched) - 10} more")
+        typer.echo(
+            "\nThese need `research-engine reindex chunks`, which re-derives "
+            "passages from the text rather than matching against it."
+        )
+    elif report.recovered:
         typer.echo("\nDone.")

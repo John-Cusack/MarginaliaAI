@@ -88,6 +88,13 @@ class PGDocumentNodeRepo:
         )
         return [_to_domain(row) for row in result]
 
+    async def get(self, node_id: UUID) -> DocumentNode | None:
+        """One node, by id."""
+        stmt = document_nodes.select().where(document_nodes.c.id == node_id)
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).first()
+        return _to_domain(row) if row else None
+
     async def get_tree(self, document_id: UUID) -> list[DocumentNode]:
         """Every node of one document, parents before children."""
         stmt = (

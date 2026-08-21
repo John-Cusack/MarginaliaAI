@@ -25,6 +25,7 @@ go back and see what was actually said.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -35,7 +36,6 @@ from research_engine.services.text.dates import parse_fuzzy_date
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from datetime import datetime
     from uuid import UUID
 
     from research_engine.domain.passages import Passage
@@ -56,10 +56,21 @@ MIN_ENTITY_SCORE = 0.8
 class RecordEnricher:
     """Resolves the declared field types that are not really strings."""
 
-    def __init__(self, documents: DocumentRepo, entities: EntityRepo) -> None:
+    def __init__(
+        self,
+        documents: DocumentRepo,
+        entities: EntityRepo,
+        document_nodes: Any = None,
+    ) -> None:
         self._documents = documents
         self._entities = entities
-        self._anchors: dict[UUID, datetime | None] = {}
+        #: Structure nodes carry a date when their section states one — one per
+        #: letter in a bound volume. Without them the only anchor available is
+        #: the document's own date, which for a collected edition is one date
+        #: for hundreds of letters, or none at all.
+        self._nodes = document_nodes
+        self._document_anchors: dict[UUID, datetime | None] = {}
+        self._node_anchors: dict[UUID, datetime | None] = {}
 
     async def enrich(
         self,
@@ -69,7 +80,7 @@ class RecordEnricher:
     ) -> list[ValidatedRecord]:
         if not records:
             return records
-        anchor = await self._anchor_for(passage.document_id)
+        anchor = await self._anchor_for(passage)
         return [
             await self._enrich_one(record, record_types, anchor) for record in records
         ]
@@ -106,17 +117,58 @@ class RecordEnricher:
             evidence_end=record.evidence_end,
         )
 
-    async def _anchor_for(self, document_id: UUID) -> datetime | None:
-        """The document's own date, which is what "the 15th" is relative to.
+    async def _anchor_for(self, passage: Passage) -> datetime | None:
+        """The date "the 15th" is relative to: this letter's, then this book's.
 
-        Memoized per enricher: a run over one letterbook asks for the same
-        document thousands of times, and the answer cannot change mid-run.
+        The containing section first, because that is where the date actually
+        lives in a collected edition — one document, hundreds of letters, each
+        with its own dateline. Falling back to the document covers a single
+        letter ingested on its own, which is what the `letter` document type
+        describes.
+
+        Memoized both ways: a run over one letterbook asks the same questions
+        thousands of times and neither answer can change mid-run.
         """
-        if document_id in self._anchors:
-            return self._anchors[document_id]
+        if passage.node_id is not None:
+            node_anchor = await self._node_anchor(passage.node_id)
+            if node_anchor is not None:
+                return node_anchor
+        return await self._document_anchor(passage.document_id)
+
+    async def _node_anchor(self, node_id: UUID) -> datetime | None:
+        if self._nodes is None:
+            return None
+        if node_id in self._node_anchors:
+            return self._node_anchors[node_id]
+        anchor = await self._read_node_date(node_id)
+        self._node_anchors[node_id] = anchor
+        return anchor
+
+    async def _read_node_date(self, node_id: UUID) -> datetime | None:
+        """This node's date, or the nearest dated ancestor's.
+
+        A passage inside a subsection of a letter is still inside that letter,
+        and the letter is where the dateline is.
+        """
+        try:
+            node = await self._nodes.get(node_id)
+            if (dated := _node_date(node)) is not None:
+                return dated
+            ancestors = await self._nodes.get_ancestors(node_id)
+        except Exception as exc:  # noqa: BLE001 - anchoring is best-effort
+            logger.warning("node_anchor_failed", node_id=str(node_id), error=str(exc))
+            return None
+        for ancestor in sorted(ancestors, key=lambda n: n.depth, reverse=True):
+            if (dated := _node_date(ancestor)) is not None:
+                return dated
+        return None
+
+    async def _document_anchor(self, document_id: UUID) -> datetime | None:
+        if document_id in self._document_anchors:
+            return self._document_anchors[document_id]
         document = await self._documents.get(document_id)
         anchor = document.created_date_start if document else None
-        self._anchors[document_id] = anchor
+        self._document_anchors[document_id] = anchor
         return anchor
 
     async def _resolve_entity(
@@ -147,6 +199,19 @@ class RecordEnricher:
             "entity_type": best.entity_type,
             "match_score": best.match_score,
         }
+
+
+def _node_date(node: Any) -> datetime | None:
+    """The date a structure node's section stated, if it stated one."""
+    if node is None:
+        return None
+    raw = (node.metadata or {}).get("date_start")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _date_to_json(date: Any) -> dict[str, Any] | None:
