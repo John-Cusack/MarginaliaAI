@@ -1,0 +1,45 @@
+name: CI
+
+# Every push and every PR. The suite is hermetic — no database, no GPU, no
+# network — so there is no reason to gate it behind a schedule or a label.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: unit tests and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Lint
+        run: uv run ruff check packages/ tests/
+
+      - name: Unit tests
+        run: uv run pytest tests/unit -q
+
+# Integration tests are deliberately absent. They run against a populated
+# corpus via `load_settings().db_url` and take ~19 minutes, most of it in
+# checks that scan every passage — so against the empty database a service
+# container would give them, they would assert almost nothing while costing
+# the whole runtime. Making them CI-worthy means giving them their own
+# fixture-built corpus, which is real work and belongs in its own change.
+# Until then: `make test-integration` locally, against a real database.

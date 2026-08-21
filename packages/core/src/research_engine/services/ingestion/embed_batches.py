@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
 
+from research_engine.domain.errors import EmbeddingUnavailable, describe_exception
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from uuid import UUID
@@ -81,6 +83,18 @@ async def embed_and_store(
         await store(ids, vectors)
         outcome.embedded += len(ids)
         return outcome
+    except EmbeddingUnavailable:
+        # Halving answers memory pressure. It cannot answer a backend that is
+        # not there: the same call fails identically at size 1, so retrying
+        # costs a full timeout per attempt and the run makes no progress while
+        # looking busy. Let it out and stop the run.
+        logger.error(
+            "embed_backend_unavailable",
+            size=len(ids),
+            depth=depth,
+            action="aborting run; smaller batches cannot help",
+        )
+        raise
     except Exception as exc:  # noqa: BLE001 - recover per batch, never abort the run
         outcome.failed_batches += 1
         if len(ids) == 1 or depth >= MAX_HALVING_DEPTH:
@@ -89,11 +103,14 @@ async def embed_and_store(
                 "embed_batch_failed",
                 passages=[str(i) for i in ids],
                 depth=depth,
-                error=str(exc),
+                error=describe_exception(exc),
             )
             return outcome
         logger.warning(
-            "embed_batch_halving", size=len(ids), depth=depth, error=str(exc)[:120]
+            "embed_batch_halving",
+            size=len(ids),
+            depth=depth,
+            error=describe_exception(exc)[:160],
         )
 
     free_accelerator_memory()

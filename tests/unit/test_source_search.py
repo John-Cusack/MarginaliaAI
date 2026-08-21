@@ -18,7 +18,6 @@ from research_engine.mcp.tools import search_sources
 from research_engine.plugins.manifest import PluginManifest, parse_manifest
 from research_engine.plugins.registry import PluginRegistry
 
-
 # ---------- Fixtures ----------
 
 

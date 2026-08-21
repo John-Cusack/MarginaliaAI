@@ -5,7 +5,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -17,6 +16,7 @@ from research_engine.plugins.compatibility import check_core_api
 from research_engine.plugins.manifest import PluginManifest, parse_manifest
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from research_engine.ports.repositories import InstalledPluginRepo

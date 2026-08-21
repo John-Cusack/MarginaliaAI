@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-from pathlib import Path
+
+# Typer resolves these annotations at runtime to build the CLI options, so
+# Path must exist at runtime and cannot move into a TYPE_CHECKING block.
+from pathlib import Path  # noqa: TC003
 
 import typer
 from rich.console import Console

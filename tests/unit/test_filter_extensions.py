@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
 
 import pytest
 import sqlalchemy as sa
@@ -13,7 +12,6 @@ from research_engine.domain.passages import SearchFilters
 from research_engine.plugins.manifest import (
     FilterExtensionContribution,
     PluginContributions,
-    PluginManifest,
     parse_manifest,
 )
 from research_engine.plugins.registry import PluginRegistry
@@ -21,7 +19,6 @@ from research_engine.services.search.filter_extensions import (
     EventDateRangeFilter,
     HasExtractionFilter,
 )
-
 
 # ---------- Helpers ----------
 

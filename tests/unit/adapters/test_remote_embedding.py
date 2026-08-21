@@ -18,6 +18,7 @@ import pytest
 
 from research_engine.adapters.embedding.remote_api import RemoteEmbeddingClient
 from research_engine.adapters.embedding.wire import ModelMismatch
+from research_engine.domain.errors import EmbeddingUnavailable
 
 pytestmark = pytest.mark.unit
 
@@ -146,8 +147,19 @@ async def test_nothing_is_returned_before_the_handshake_succeeds(server) -> None
         await client.close()
 
 
-async def test_circuit_opens_after_repeated_failures() -> None:
-    """A dead server must not cost `timeout x batches` before anyone notices."""
+async def test_a_transport_failure_is_fatal_on_the_first_call() -> None:
+    """A dead server must not cost `timeout x batches` before anyone notices.
+
+    This previously let two `httpx.ConnectError`s through untranslated and only
+    opened the circuit on the third. Both parts were wrong. The batch layer
+    could not tell a transport error from a batch that was too big, so it halved
+    against a host that was switched off; and the error it logged was empty,
+    because `str(httpx.ConnectTimeout())` is ''. A transport error means the
+    call never arrived, so no batch size and no retry count changes the answer.
+
+    Failing here costs a re-run, which is cheap: reindex commits per document
+    and picks up where it stopped.
+    """
 
     async def always_fails(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
@@ -158,12 +170,34 @@ async def test_circuit_opens_after_repeated_failures() -> None:
     )
     client._verified = True  # noqa: SLF001 - skip the handshake for this test
     try:
+        with pytest.raises(EmbeddingUnavailable, match="Cannot reach"):
+            await client.embed_batch(["x"])
+    finally:
+        await client.close()
+
+
+async def test_the_circuit_still_opens_for_failures_that_retrying_could_have_fixed() -> None:
+    """A server that answers badly is different from one that does not answer.
+
+    A 500 might be transient, so it is retried and counted; the circuit exists
+    for exactly this case and still closes the run down once it is clearly not
+    recovering.
+    """
+
+    async def server_error(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"detail": "overloaded"})
+
+    client = RemoteEmbeddingClient("http://test", MODEL, DIM, failure_threshold=2)
+    client._client = httpx.AsyncClient(  # noqa: SLF001
+        transport=httpx.MockTransport(server_error), base_url="http://test"
+    )
+    client._verified = True  # noqa: SLF001 - skip the handshake for this test
+    try:
         for _ in range(2):
-            with pytest.raises(httpx.ConnectError):
+            with pytest.raises(httpx.HTTPStatusError):
                 await client.embed_batch(["x"])
 
-        # Third call fails fast with an actionable message rather than hanging.
-        with pytest.raises(RuntimeError, match="refusing further calls"):
+        with pytest.raises(EmbeddingUnavailable, match="refusing further calls"):
             await client.embed_batch(["x"])
     finally:
         await client.close()
@@ -201,3 +235,27 @@ async def test_empty_batch_short_circuits(server) -> None:
         assert backend.calls == []
     finally:
         await client.close()
+
+
+async def test_an_unreachable_host_is_reported_as_unavailable_not_as_a_transport_error() -> None:
+    """The failure that cost a day, reproduced against a genuinely closed port.
+
+    The handshake is the first call any run makes, so an unreachable host fails
+    there rather than in `embed_batch`. Untranslated it surfaced as a bare
+    `httpx.ConnectTimeout` — whose `str()` is empty — and the batch layer
+    mistook it for a batch that needed halving.
+    """
+    from research_engine.domain.errors import EmbeddingUnavailable
+
+    # Port 9 (discard) is reserved and closed on a normal machine.
+    client = RemoteEmbeddingClient("http://127.0.0.1:9", "BAAI/bge-m3", dim=1024)
+    try:
+        with pytest.raises(EmbeddingUnavailable) as caught:
+            await client.embed_batch(["anything"])
+    finally:
+        await client.close()
+
+    message = str(caught.value)
+    assert "127.0.0.1:9" in message, "the message must name the server it tried"
+    assert message.strip(), "an empty failure message is the bug being fixed"
+    assert "powered on" in message, "say what to check, not just that it failed"

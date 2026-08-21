@@ -129,8 +129,21 @@ def chunks(
     (`research-engine backup create`) before the real pass: after old passages
     are deleted, rollback needs that backup.
     """
+    from research_engine.domain.errors import EmbeddingUnavailable
+
     ids = [UUID(d) for d in document_id] if document_id else None
-    report = asyncio.run(_reindex(ids, dry_run, orphan_threshold))
+    try:
+        report = asyncio.run(_reindex(ids, dry_run, orphan_threshold))
+    except EmbeddingUnavailable as exc:
+        # One line naming the cause, rather than a traceback under thousands of
+        # halving warnings. This run previously looked healthy for hours while
+        # embedding against a host that was switched off.
+        typer.echo(f"\nStopped: {exc}")
+        typer.echo(
+            "\nNothing was left half-written — each document commits or rolls "
+            "back on its own. Re-run this command once embedding works."
+        )
+        raise typer.Exit(code=1) from exc
     _print(report, orphan_threshold)
     if report.aborted or report.exceeded(orphan_threshold) or report.documents_failed:
         raise typer.Exit(code=1)
@@ -152,6 +165,7 @@ async def _reindex(
             container.embedding,
             orphan_threshold=orphan_threshold,
             embedding_batch_size=container.settings.embedding_batch_size,
+            document_node_repo=container.document_nodes,
         )
         return await service.reindex_chunks(document_ids, dry_run=dry_run)
     finally:
@@ -170,8 +184,15 @@ def _print(report: ReindexReport, threshold: float) -> None:
     typer.echo(f"Documents examined:   {report.documents_total}")
     typer.echo(f"  re-chunked:         {report.documents_reindexed}")
     typer.echo(f"  already current:    {report.documents_up_to_date}")
+    if report.documents_relabelled:
+        typer.echo(
+            f"  relabelled:         {report.documents_relabelled} "
+            f"({report.passages_relabelled} passages unchanged, not re-embedded)"
+        )
     typer.echo(f"Passages {'replaced' if not report.dry_run else 'to replace'}: "
                f"{report.passages_before} -> {report.passages_after}")
+    if report.nodes_written:
+        typer.echo(f"Structure nodes written: {report.nodes_written}")
 
     if report.repointed:
         typer.echo("\nReferences re-anchored:")

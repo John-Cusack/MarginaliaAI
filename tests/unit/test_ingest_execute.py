@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from research_engine.mcp.tools import ingest_execute
 
 
