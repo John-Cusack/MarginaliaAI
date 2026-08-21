@@ -39,6 +39,19 @@ ABSOLUTE_MAX_TOKENS = 2_000
 #: real overshoot is 1.15x.
 OVERSHOOT_TOLERANCE = 1.5
 
+#: How many times over a chunker may emit the characters it was given.
+#:
+#: Overlap means the output legitimately exceeds the input — the core chunkers
+#: run at 1.1x. But overlap is added per passage, so a chunker that finds a
+#: boundary on every line of an index widens each tiny span backwards by a full
+#: overlap budget and emits the same characters many times over. Every copy is
+#: stored, embedded, and returned as a separate search hit.
+#:
+#: This is the assertion the suite lacked. `verse_boundary` emitted 844
+#: passages, 89% overlapping, from a 38,042-character scripture index — 5x
+#: amplification — and passed every other check here.
+MAX_AMPLIFICATION = 2.0
+
 #: Places a chunker could have cut. Whitespace, and the CJK terminators that do
 #: the same job in a script that does not space its words.
 #:
@@ -98,6 +111,19 @@ CONTRACT_TEXTS: dict[str, str] = {
         for n, word in enumerate(
             ["abolition", "archive", "binding", "clerk", "codex", "deed"] * 400
         )
+    ),
+    # A scripture index: every line opens with a verse reference. The existing
+    # `index` fixture above does not catch this, because its lines read
+    # "abolition, 0, 40" — no colon, so a chunker keyed on verse references
+    # finds no boundary and the fixture proves nothing about it.
+    #
+    # Here every line is a boundary, so the sections are one line long and the
+    # overlap pass widens each far past its own length.
+    "scripture_index": "SCRIPTURE INDEX\n\nGenesis\n\n"
+    + "".join(
+        f"{chapter}:{verse}\t{chapter * 7 + verse}\u2013{chapter * 7 + verse + 2}\n"
+        for chapter in range(1, 51)
+        for verse in range(1, 13)
     ),
     # One unbroken paragraph, dense with abbreviations that look like sentence
     # ends but are not — the shape of a lexicon entry.
@@ -224,6 +250,15 @@ async def assert_chunker_contract(
                 )
 
         assert not text[cursor:].strip(), f"{label}: dropped the tail of {name}"
+
+        emitted = sum(len(draft.text) for draft in drafts)
+        amplification = emitted / len(text.strip())
+        assert amplification <= MAX_AMPLIFICATION, (
+            f"{label}: emitted {emitted:,} characters from {len(text.strip()):,} "
+            f"on {name} — {amplification:.1f}x. Overlap is meant to carry "
+            f"context across a boundary, not to restate the passage: at this "
+            f"ratio the same text is embedded and returned several times over."
+        )
 
         again = await call_chunker(chunker, text)
         assert [(d.char_start, d.char_end) for d in again] == [
