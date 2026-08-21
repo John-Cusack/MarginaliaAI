@@ -65,11 +65,26 @@ def get_chunker(chunker_id: str) -> object:
 async def run_chunking(
     text: str, chunker_id: str, metadata: dict | None = None
 ) -> list[PassageDraft]:
-    """Run a chunker on text and return passage drafts."""
+    """Run a chunker on text and return passage drafts.
+
+    The structural chunker needs the parser's section decomposition, which
+    arrives in ``metadata["sections"]`` as offset ranges into *text*. When a
+    parser supplies none — plain text, or a format with no structure to
+    recover — prose windows are the honest fallback rather than a failure.
+    """
     chunker = get_chunker(chunker_id)
+
     if chunker_id == "structural":
-        # Structural chunker expects sections; fall back to prose_window for plain text
-        chunker = ProseWindowChunker()
+        sections = (metadata or {}).get("sections")
+        if not sections:
+            return await ProseWindowChunker().chunk(text, metadata)
+        # The section table addresses this document as a whole; repeating it in
+        # every passage's metadata would store it once per passage.
+        passage_metadata = {
+            key: value for key, value in (metadata or {}).items() if key != "sections"
+        }
+        return await chunker.chunk(sections, passage_metadata, full_text=text)
+
     return await chunker.chunk(text, metadata)
 
 

@@ -5,12 +5,31 @@ from __future__ import annotations
 from research_engine.domain.errors import ChunkingError
 from research_engine.domain.passages import PassageDraft
 from research_engine.services.ingestion.chunking.fixed_window import trim_span
+from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
+from research_engine.services.text.tokens import approx_tokens, chars_per_token
 
 
 class StructuralChunker:
     id = "structural"
-    # 2.0: emits char offsets into the document's canonical text.
-    version = "2.0"
+    #: What `chunk()` takes: "text" or "sections".
+    consumes = "sections"
+    # 3.0: sections longer than `max_tokens` are split into prose windows.
+    # Passage boundaries change, so 2.0 passages are stale — see `reindex`.
+    # 4.0: token estimates are script-aware. Only non-Latin text moves.
+    version = "4.0"
+
+    def __init__(self, max_tokens: int = 500, overlap_tokens: int = 50) -> None:
+        #: A section is a unit of authorship, not of retrieval. A book chapter
+        #: runs to thousands of tokens, and emitting it whole would produce
+        #: passages an order of magnitude larger than every other chunker's,
+        #: diluting their embeddings and blunting the search that reads them.
+        #: Sections stay the addressing unit; oversized ones are windowed.
+        self._max_tokens = max_tokens
+        self._windows = ProseWindowChunker(max_tokens, overlap_tokens)
+
+    @property
+    def max_passage_tokens(self) -> int | None:
+        return self._max_tokens
 
     async def chunk(
         self,
@@ -27,13 +46,25 @@ class StructuralChunker:
         each section's text is located within it, scanning forward so that
         repeated headings resolve to successive occurrences rather than all to
         the first.
+
+        A section that records offsets may omit ``text`` entirely; it is read
+        back from *full_text*. That lets a parser hand over a section table of
+        pure boundaries, which can be stored on the document without keeping a
+        second copy of its prose.
         """
+        if isinstance(sections, str):
+            raise ChunkingError(
+                "StructuralChunker.chunk() takes a section table, not text. "
+                "Pass sections_from_markdown(text) with full_text=text, or use "
+                "a text chunker."
+            )
+
         chunks: list[PassageDraft] = []
         cursor = 0
         position = 0
 
         for section in sections:
-            raw = section.get("text", "")
+            raw = self._section_text(section, full_text)
             if not raw.strip():
                 continue
 
@@ -52,22 +83,79 @@ class StructuralChunker:
             if heading := section.get("heading"):
                 section_meta["section_heading"] = heading
 
-            chunks.append(
+            for draft in await self._drafts_for_section(
+                text, start, locator, section_meta
+            ):
+                chunks.append(draft.model_copy(update={"position": position}))
+                position += 1
+
+        return chunks
+
+    async def _drafts_for_section(
+        self,
+        text: str,
+        start: int,
+        locator: dict,
+        section_meta: dict,
+    ) -> list[PassageDraft]:
+        """One passage for a section that fits; prose windows for one that does not.
+
+        Window offsets come back relative to the section, so they are shifted by
+        the section's own start. That keeps the contract every passage owes —
+        ``canonical_text[char_start:char_end] == text`` — true of the pieces as
+        it was of the whole.
+        """
+        # Measured on the section, not on the document. A section is exactly
+        # where the two diverge: a Greek passage quoted inside an English book
+        # reads as English at the document level, and a section of it estimated
+        # at 472 tokens that way really came to 947 — past the cap, undetected,
+        # because the average it was measured against was not its own.
+        rate = chars_per_token(text)
+        if approx_tokens(text, rate) <= self._max_tokens:
+            return [
                 PassageDraft(
-                    position=position,
+                    position=0,
                     char_start=start,
-                    char_end=end,
+                    char_end=start + len(text),
                     text=text,
-                    token_count=max(1, len(text) // 4),
+                    token_count=approx_tokens(text, rate),
                     chunker=self.id,
                     chunker_version=self.version,
                     metadata=section_meta,
                     locator=locator,
                 )
-            )
-            position += 1
+            ]
 
-        return chunks
+        windows = await self._windows.chunk(text, section_meta)
+        return [
+            window.model_copy(
+                update={
+                    "char_start": start + window.char_start,
+                    "char_end": start + window.char_end,
+                    "chunker": self.id,
+                    "chunker_version": self.version,
+                    # The heading travels with every piece: a fragment that has
+                    # lost its section is exactly the disconnected chunk this
+                    # chunker exists to avoid.
+                    "locator": {
+                        **locator,
+                        "section_part": index + 1,
+                        "section_parts": len(windows),
+                    },
+                }
+            )
+            for index, window in enumerate(windows)
+        ]
+
+    @staticmethod
+    def _section_text(section: dict, full_text: str | None) -> str:
+        """The section's prose, read back from *full_text* when not carried."""
+        if (text := section.get("text")) is not None:
+            return text
+        start, end = section.get("char_start"), section.get("char_end")
+        if full_text is not None and start is not None and end is not None:
+            return full_text[start:end]
+        return ""
 
     @staticmethod
     def _locate(

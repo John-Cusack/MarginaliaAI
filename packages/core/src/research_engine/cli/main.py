@@ -14,6 +14,7 @@ app = typer.Typer(
 # Import and register subcommands
 from research_engine.cli.backup import backup_app
 from research_engine.cli.config import config_app
+from research_engine.cli.doctor import doctor_app
 from research_engine.cli.embed_server import embed_server_app
 from research_engine.cli.embeddings import embeddings_app
 from research_engine.cli.eval import eval_app
@@ -30,6 +31,7 @@ app.add_typer(plugin_app, name="plugin", help="Manage plugins.")
 app.add_typer(serve_app, name="serve", help="Start the MCP server.")
 app.add_typer(backup_app, name="backup", help="Backup and restore.")
 app.add_typer(config_app, name="config", help="Inspect configuration.")
+app.add_typer(doctor_app, name="doctor", help="Check the corpus against its invariants.")
 app.add_typer(embeddings_app, name="embeddings", help="Embedding coverage and repair.")
 app.add_typer(embed_server_app, name="embed-server", help="Serve embeddings from this machine's GPU.")
 app.add_typer(eval_app, name="eval", help="Measure retrieval quality.")
