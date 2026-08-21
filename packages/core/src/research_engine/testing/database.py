@@ -118,33 +118,57 @@ def _safe(url: str) -> str:
 
 @dataclass
 class CorpusFootprint:
-    """Row counts used to assert a suite left nothing behind."""
+    """Row counts used to assert a suite left nothing behind.
 
-    documents: int
-    passages: int
-    embeddings: int
+    Every table in the ``core`` schema, not a chosen few. The earlier version
+    counted documents, passages and embeddings, which meant a suite could leave
+    anything else behind and this would report the corpus unchanged — and one
+    did: ``test_reindex`` plants an event and an edge per run, neither cascades
+    with the document, and 165 of each accumulated in the live corpus over nine
+    days while every isolation test passed.
+
+    Counting everything also means a table added by a later migration is covered
+    without anyone remembering to add it here.
+    """
+
+    counts: dict[str, int]
+
+    #: Named accessors for the three that callers ask about directly.
+    @property
+    def documents(self) -> int:
+        return self.counts.get("documents", 0)
+
+    @property
+    def passages(self) -> int:
+        return self.counts.get("passages", 0)
+
+    @property
+    def embeddings(self) -> int:
+        return self.counts.get("passage_embeddings", 0)
 
     @classmethod
     async def measure(cls, engine: AsyncEngine) -> CorpusFootprint:
-        from research_engine.adapters.storage.postgres.schema import (
-            documents as documents_table,
-        )
-        from research_engine.adapters.storage.postgres.schema import (
-            passage_embeddings,
-            passages,
-        )
-
         async with engine.connect() as conn:
-            counts = []
-            for table in (documents_table, passages, passage_embeddings):
-                counts.append(
-                    (
-                        await conn.execute(
-                            sa.select(sa.func.count()).select_from(table)
+            names = [
+                row[0]
+                for row in (
+                    await conn.execute(
+                        sa.text(
+                            "SELECT table_name FROM information_schema.tables "
+                            "WHERE table_schema = 'core' AND table_type = 'BASE TABLE' "
+                            "AND table_name <> 'alembic_version' ORDER BY table_name"
                         )
-                    ).scalar_one()
-                )
-        return cls(*counts)
+                    )
+                ).all()
+            ]
+            counts = {}
+            for name in names:
+                counts[name] = (
+                    await conn.execute(
+                        sa.text(f'SELECT count(*) FROM core."{name}"')  # noqa: S608
+                    )
+                ).scalar_one()
+        return cls(counts)
 
     def assert_unchanged(self, other: CorpusFootprint) -> None:
         """Raise if a suite added or removed rows.
@@ -153,18 +177,22 @@ class CorpusFootprint:
         and the corpus is exactly as it was.
         """
         drift = {
-            name: (before, after)
-            for name, before, after in (
-                ("documents", self.documents, other.documents),
-                ("passages", self.passages, other.passages),
-                ("embeddings", self.embeddings, other.embeddings),
-            )
-            if before != after
+            name: (before, other.counts.get(name, 0))
+            for name, before in self.counts.items()
+            if before != other.counts.get(name, 0)
         }
+        drift.update({
+            name: (0, count)
+            for name, count in other.counts.items()
+            if name not in self.counts and count
+        })
         if drift:
-            detail = ", ".join(f"{k}: {b} -> {a}" for k, (b, a) in drift.items())
+            detail = ", ".join(
+                f"{k}: {b} -> {a}" for k, (b, a) in sorted(drift.items())
+            )
             raise AssertionError(
                 f"Integration suite changed the corpus ({detail}). Tests must "
                 f"remove exactly the rows they create — use "
-                f"research_engine.testing.Corpus."
+                f"research_engine.testing.Corpus, and `Corpus.track` for rows "
+                f"that do not cascade with a document."
             )

@@ -56,3 +56,37 @@ async def corpus(engine: AsyncEngine) -> AsyncIterator[Corpus]:
         yield helper
     finally:
         await helper.cleanup()
+
+
+@pytest.fixture(scope="session")
+async def _session_engine(db_url: str) -> AsyncIterator[AsyncEngine | None]:
+    eng = create_async_engine(db_url, pool_pre_ping=True)
+    try:
+        async with eng.connect() as conn:
+            await conn.execute(sa.text("SELECT 1"))
+    except Exception:  # noqa: BLE001 - no database means nothing to guard
+        await eng.dispose()
+        yield None
+        return
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def corpus_is_unchanged(_session_engine: AsyncEngine | None) -> AsyncIterator[None]:
+    """Fail the run if the suite as a whole left anything behind.
+
+    Per-test cleanup is where isolation is supposed to happen, but it only
+    covers what a test author remembered to track. This measures every table in
+    `core` around the entire session, so a leak shows up as a failure here even
+    when no individual test knows it is leaking — which is how 165 events and
+    165 edges reached the live corpus while every isolation test passed.
+    """
+    if _session_engine is None:
+        yield
+        return
+    before = await CorpusFootprint.measure(_session_engine)
+    yield
+    before.assert_unchanged(await CorpusFootprint.measure(_session_engine))
