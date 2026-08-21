@@ -216,6 +216,97 @@ async def test_a_node_outside_its_parent_is_caught(
     assert check.severity == "critical"
 
 
+async def _an_extraction(engine: AsyncEngine, corpus: Corpus, records: list):
+    """A document, a passage, a schema, and one extraction over it."""
+    from research_engine.adapters.storage.postgres.schema import (
+        extraction_schemas,
+        extractions,
+    )
+    from research_engine.testing.corpus import new_id
+
+    doc_id = await _document_with_text(engine, corpus)
+    passage_id = await corpus.add_passage(doc_id, TEXT, char_start=0, char_end=len(TEXT))
+    # Schemas outlive their documents and have a unique key, so an untracked one
+    # makes the *next* run fail rather than this one.
+    schema_id = corpus.track(extraction_schemas, new_id())
+    extraction_id = new_id()
+    async with engine.begin() as conn:
+        await conn.execute(
+            extraction_schemas.insert().values(
+                id=schema_id,
+                name=f"check_probe_{schema_id}",
+                version=1,
+                owner="test_corpus_check",
+                schema={"record_types": []},
+                prompt_template="{{ passage_text }}",
+            )
+        )
+        await conn.execute(
+            extractions.insert().values(
+                id=extraction_id,
+                passage_id=passage_id,
+                schema_id=schema_id,
+                extractor_version="probe",
+                llm_model="probe",
+                status="ok",
+                records=records,
+            )
+        )
+    return schema_id, extraction_id, passage_id
+
+
+async def test_an_extracted_record_that_addresses_nothing_is_caught(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """An extracted claim is worth keeping only if it points at real text.
+
+    Offsets past the end of the passage are what a re-anchoring pass leaves
+    behind when a passage is re-chunked under an extraction that cites it.
+    """
+    from research_engine.adapters.storage.postgres.schema import extraction_records
+    from research_engine.testing.corpus import new_id
+
+    schema_id, extraction_id, passage_id = await _an_extraction(
+        engine, corpus, [{"record_type": "claim", "fields": {}}]
+    )
+    record_id = new_id()
+    async with engine.begin() as conn:
+        await conn.execute(
+            extraction_records.insert().values(
+                id=record_id,
+                extraction_id=extraction_id,
+                passage_id=passage_id,
+                schema_id=schema_id,
+                record_type="claim",
+                data={"assertion": "planted"},
+                evidence_start=0,
+                evidence_end=len(TEXT) + 500,
+            )
+        )
+
+    check = await _check(engine, "extraction_evidence_is_anchored")
+    assert str(record_id) in check.samples
+    assert check.severity == "critical"
+
+
+async def test_an_extraction_whose_records_were_never_materialized_is_caught(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """The two representations of a run disagreeing.
+
+    `extractions.records` is what the model said; `extraction_records` is what
+    can be queried. An extraction reporting records with none materialized is
+    the shape of the defect this whole area had — a run that concluded something
+    and stored nothing anyone could ask about.
+    """
+    _, extraction_id, _ = await _an_extraction(
+        engine, corpus, [{"record_type": "claim", "fields": {"assertion": "planted"}}]
+    )
+
+    check = await _check(engine, "extraction_records_are_materialized")
+    assert str(extraction_id) in check.samples
+
+
 async def test_a_check_that_cannot_run_is_not_reported_as_passing(
     engine: AsyncEngine, corpus: Corpus
 ) -> None:

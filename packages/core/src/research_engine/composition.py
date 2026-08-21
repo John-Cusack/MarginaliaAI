@@ -250,6 +250,7 @@ async def build_container(settings: Settings) -> Container:
         passages=passages_repo,
         extractions=extractions_repo,
         extraction_schemas=extraction_schemas_repo,
+        transaction_factory=partial(transaction, sql_engine),
         default_model=settings.default_llm_model,
     )
 

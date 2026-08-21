@@ -68,3 +68,23 @@ class TestPluginRegistry:
     def test_no_hooks_for_type(self):
         r = PluginRegistry()
         assert r.get_post_ingestion_hooks("nonexistent") == []
+
+    def test_extraction_schemas_can_be_read_back(self):
+        """Registering without a reader left pack schemas unrunnable.
+
+        The loader parses a pack's declared schemas into the registry, and the
+        executor resolves schemas from the database — with no way to enumerate
+        what a pack registered, nothing could carry them across, so a pack could
+        ship an extraction schema that could never execute.
+        """
+        r = PluginRegistry()
+        definition = {"id": "scripture_claims", "record_types": []}
+
+        r.register_extraction_schema("scripture_claims", 2, definition, "logos")
+
+        assert r.get_extraction_schemas() == [
+            ("scripture_claims", 2, definition, "logos")
+        ]
+
+    def test_no_extraction_schemas(self):
+        assert PluginRegistry().get_extraction_schemas() == []

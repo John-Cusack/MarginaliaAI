@@ -29,6 +29,7 @@ COMMAND_GROUPS = [
     "config",
     "doctor",
     "embeddings",
+    "extraction",
     "ingest",
     "plugin",
     "reindex",

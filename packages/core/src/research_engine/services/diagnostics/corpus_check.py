@@ -298,6 +298,40 @@ _CHECKS: list[tuple[str, str, str, str | None, str]] = [
         WHERE n.document_id <> p.document_id
         """,
     ),
+    # An extracted claim is only worth keeping if you can get back to the
+    # sentence it came from. These two ask whether that is still true of what
+    # is stored, which is the whole of the engine's first principle expressed
+    # as a query.
+    (
+        "extraction_evidence_is_anchored",
+        "critical",
+        "Extracted record does not address real text in the passage it cites",
+        "re-run that schema over the affected passages with force_refresh",
+        """
+        SELECT r.id::text
+        FROM core.extraction_records r
+        JOIN core.passages p ON p.id = r.passage_id
+        WHERE r.evidence_start IS NULL
+           OR r.evidence_end IS NULL
+           OR r.evidence_start < 0
+           OR r.evidence_end > length(p.text)
+           OR r.evidence_end <= r.evidence_start
+        """,
+    ),
+    (
+        "extraction_records_are_materialized",
+        "warning",
+        "Extraction reported records but none are queryable",
+        "re-run that schema over the affected passages with force_refresh",
+        """
+        SELECT e.id::text
+        FROM core.extractions e
+        LEFT JOIN core.extraction_records r ON r.extraction_id = e.id
+        WHERE e.status = 'ok'
+          AND json_array_length(e.records) > 0
+          AND r.id IS NULL
+        """,
+    ),
 ]
 
 

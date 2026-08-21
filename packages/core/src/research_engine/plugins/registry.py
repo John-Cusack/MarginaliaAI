@@ -122,6 +122,24 @@ class PluginRegistry:
         self._extraction_schemas[key] = schema
         self._owners[("extraction_schema", f"{id}:{version}")] = plugin
 
+    def get_extraction_schemas(self) -> list[tuple[str, int, Any, str]]:
+        """Every pack-contributed schema, as ``(id, version, definition, owner)``.
+
+        Registering without a way to read back left pack schemas in a dictionary
+        nothing consulted: the executor resolves schemas from the database, so a
+        pack could declare one and it could never run. `extraction sync` is what
+        closes that gap, and this is what it reads.
+        """
+        return [
+            (
+                schema_id,
+                version,
+                schema,
+                self._owners.get(("extraction_schema", f"{schema_id}:{version}"), ""),
+            )
+            for (schema_id, version), schema in self._extraction_schemas.items()
+        ]
+
     # --- MCP tools ---
 
     def register_mcp_tool(self, id: str, handler: Any, plugin: str) -> None:

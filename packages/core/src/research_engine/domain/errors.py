@@ -106,6 +106,22 @@ class LLMRateLimited(LLMError):
     """LLM provider rate limit exceeded."""
 
 
+class LLMUnavailable(LLMError):
+    """The LLM is not configured, or will not authenticate. No call can succeed.
+
+    The counterpart of `EmbeddingUnavailable`, and it exists for the same
+    reason: a per-item failure and a dead backend need different handling. An
+    extraction run marks a failed passage and moves on, which is right when one
+    passage tripped a content filter and catastrophic when the API key is
+    missing — the run writes a failed row for every passage in the corpus,
+    reports thousands of errors, and none of them says "there is no key".
+
+    Missing credentials surface from the Anthropic client as a bare `TypeError`
+    raised before any request, so nothing downstream recognised them as an LLM
+    problem at all.
+    """
+
+
 # --- Plugin ---
 
 

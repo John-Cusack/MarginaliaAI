@@ -18,6 +18,7 @@ from research_engine.cli.doctor import doctor_app
 from research_engine.cli.embed_server import embed_server_app
 from research_engine.cli.embeddings import embeddings_app
 from research_engine.cli.eval import eval_app
+from research_engine.cli.extraction import extraction_app
 from research_engine.cli.ingest import ingest_app
 from research_engine.cli.plugin import plugin_app
 from research_engine.cli.reindex import reindex_app
@@ -37,6 +38,7 @@ app.add_typer(embed_server_app, name="embed-server", help="Serve embeddings from
 app.add_typer(eval_app, name="eval", help="Measure retrieval quality.")
 app.add_typer(usage_app, name="usage", help="Report LLM spend.")
 app.add_typer(reindex_app, name="reindex", help="Re-chunk and re-anchor the corpus.")
+app.add_typer(extraction_app, name="extraction", help="Register extraction schemas.")
 
 
 @app.command()
