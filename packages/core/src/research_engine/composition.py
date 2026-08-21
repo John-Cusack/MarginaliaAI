@@ -304,6 +304,7 @@ async def build_container(settings: Settings) -> Container:
         search=search_service,
         documents=docs,
         passages=passages_repo,
+        document_nodes=document_nodes_repo,
         entity_service=entity_service,
         event_service=event_service,
         extraction=extraction_client,

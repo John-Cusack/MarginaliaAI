@@ -39,10 +39,64 @@ class PluginRegistry:
         self._owners: dict[tuple[str, str], str] = {}
 
     def _check_conflict(self, kind: str, id: str, plugin_name: str) -> None:
+        """Claim an id that exactly one provider may own.
+
+        Used for the contributions where a second implementation would have to
+        displace the first: a document type decides which chunker runs, an MCP
+        tool id decides which handler answers. Two claimants is a real conflict
+        and the pack should fail to load.
+        """
         key = (kind, id)
         if key in self._owners and self._owners[key] != plugin_name:
             raise PluginConflict(id, self._owners[key], plugin_name)
         self._owners[key] = plugin_name
+
+    def _claim_vocabulary(self, kind: str, id: str, plugin_name: str) -> bool:
+        """Register a shared vocabulary term. True if this is its first declaration.
+
+        Entity, event and relation types are vocabulary, not resources. `person`
+        is declared by core and by every domain pack that has people in it, and
+        that is agreement rather than contention — nothing has to be displaced,
+        because the type is only a name both parties use.
+
+        Treating it as a conflict meant a pack declaring one common type failed
+        to load *entirely*: the history pack, whose `person` collided with
+        core's, so its letter document type, its schemas and its tools were all
+        unreachable — the whole reason the Civil War volumes were never typed as
+        correspondence.
+
+        The first declaration keeps the definition. A later one that disagrees
+        is logged rather than applied, because silently redefining a type under
+        the pack that already uses it is worse than either.
+        """
+        key = (kind, id)
+        owner = self._owners.get(key)
+        if owner is None:
+            self._owners[key] = plugin_name
+            return True
+        if owner != plugin_name:
+            logger.debug(
+                "vocabulary_shared", kind=kind, id=id, owner=owner, also=plugin_name
+            )
+        return False
+
+    def _note_redefinition(
+        self, kind: str, id: str, plugin: str, existing: dict[str, Any], spec: dict[str, Any]
+    ) -> None:
+        differing = {
+            k: (existing.get(k), v)
+            for k, v in spec.items()
+            if k != "plugin" and existing.get(k) != v
+        }
+        if differing:
+            logger.warning(
+                "vocabulary_redefined_ignored",
+                kind=kind,
+                id=id,
+                plugin=plugin,
+                owner=existing.get("plugin"),
+                differing=sorted(differing),
+            )
 
     # --- Document types ---
 
@@ -60,7 +114,11 @@ class PluginRegistry:
     # --- Entity types ---
 
     def register_entity_type(self, id: str, spec: dict[str, Any], plugin: str) -> None:
-        self._check_conflict("entity_type", id, plugin)
+        if not self._claim_vocabulary("entity_type", id, plugin):
+            self._note_redefinition(
+                "entity_type", id, plugin, self._entity_types.get(id, {}), spec
+            )
+            return
         self._entity_types[id] = {**spec, "plugin": plugin}
 
     def validate_entity_type(self, entity_type: str) -> None:
@@ -73,7 +131,11 @@ class PluginRegistry:
     # --- Event types ---
 
     def register_event_type(self, id: str, spec: dict[str, Any], plugin: str) -> None:
-        self._check_conflict("event_type", id, plugin)
+        if not self._claim_vocabulary("event_type", id, plugin):
+            self._note_redefinition(
+                "event_type", id, plugin, self._event_types.get(id, {}), spec
+            )
+            return
         self._event_types[id] = {**spec, "plugin": plugin}
 
     def list_event_types(self) -> dict[str, dict[str, Any]]:
@@ -82,7 +144,11 @@ class PluginRegistry:
     # --- Relation types ---
 
     def register_relation_type(self, id: str, spec: dict[str, Any], plugin: str) -> None:
-        self._check_conflict("relation_type", id, plugin)
+        if not self._claim_vocabulary("relation_type", id, plugin):
+            self._note_redefinition(
+                "relation_type", id, plugin, self._relation_types.get(id, {}), spec
+            )
+            return
         self._relation_types[id] = {**spec, "plugin": plugin}
 
     def list_relation_types(self) -> dict[str, dict[str, Any]]:

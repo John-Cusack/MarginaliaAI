@@ -29,10 +29,42 @@ class CorpusServiceAdapter:
         search: HybridSearchService,
         documents: DocumentRepo,
         passages: PassageRepo,
+        document_nodes: Any = None,
     ) -> None:
         self._search = search
         self._documents = documents
         self._passages = passages
+        self._nodes = document_nodes
+
+    async def get_document_outline(
+        self, document_id: UUID, dated_only: bool = False
+    ) -> list[dict[str, Any]]:
+        """The document's structural tree — its chapters, entries, or letters.
+
+        A pack could search a corpus and read a passage but had no way to ask
+        what a document is *made of*, which is what any question about holdings
+        needs: "which letters do I have, and when were they written" is a
+        question about sections, not passages.
+
+        ``dated_only`` keeps the sections that state a date of their own, which
+        for correspondence is one entry per letter.
+        """
+        if self._nodes is None:
+            return []
+        nodes = await self._nodes.get_tree(document_id)
+        return [
+            {
+                "id": str(node.id),
+                "title": node.title,
+                "depth": node.depth,
+                "path": node.path,
+                "char_start": node.char_start,
+                "char_end": node.char_end,
+                "metadata": node.metadata,
+            }
+            for node in nodes
+            if not dated_only or (node.metadata or {}).get("date_start")
+        ]
 
     async def find_passages(
         self,
