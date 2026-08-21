@@ -169,6 +169,19 @@ def _field_json_schema(spec: dict[str, Any]) -> dict[str, Any]:
     }
     if declared == EVIDENCE_TYPE and not prop["description"]:
         prop["description"] = "Quote the passage exactly, word for word."
+    if declared == "entity_ref":
+        # A model cannot know this corpus's UUIDs. Asking for one — as
+        # `epistolary_references` did, with "Resolved entity; leave null if
+        # ambiguous" — guarantees the field is null or invented. Ask for the
+        # name and resolve it here, where the entity store is.
+        prop["description"] = (
+            "The name as written in the passage. Do not supply an identifier."
+        )
+    if declared == "fuzzy_date":
+        prop["description"] = (
+            f"{prop['description']} Give the date as the passage words it "
+            f"(\"the 15th ult.\", \"May 1862\"); it is interpreted afterwards."
+        ).strip()
     if declared == "enum":
         prop["enum"] = list(spec.get("values", []))
     if declared == "number" and (bounds := spec.get("range")):

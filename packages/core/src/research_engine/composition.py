@@ -39,6 +39,7 @@ from research_engine.plugins.registry import PluginRegistry
 from research_engine.services.entities.service import EntityService
 from research_engine.services.events.service import EventService
 from research_engine.services.extraction.executor import ExtractionExecutor
+from research_engine.services.extraction.postprocess import RecordEnricher
 from research_engine.services.ingestion.dispatch import ModuleDispatcher
 from research_engine.services.ingestion.orchestrator import IngestionOrchestrator
 from research_engine.services.search.hybrid import HybridSearchService
@@ -252,6 +253,7 @@ async def build_container(settings: Settings) -> Container:
         extraction_schemas=extraction_schemas_repo,
         transaction_factory=partial(transaction, sql_engine),
         default_model=settings.default_llm_model,
+        enricher=RecordEnricher(documents=docs, entities=entities_repo),
     )
 
     search_service = HybridSearchService(

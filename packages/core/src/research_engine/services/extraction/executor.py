@@ -54,6 +54,7 @@ if TYPE_CHECKING:
         ExtractionSchemaRepo,
         PassageRepo,
     )
+    from research_engine.services.extraction.postprocess import RecordEnricher
 
 logger = structlog.get_logger()
 
@@ -67,6 +68,7 @@ class ExtractionExecutor:
         extraction_schemas: ExtractionSchemaRepo,
         transaction_factory: Any,
         default_model: str = "claude-sonnet-4-5-20250929",
+        enricher: RecordEnricher | None = None,
     ) -> None:
         self._llm = llm
         self._passages = passages
@@ -74,6 +76,11 @@ class ExtractionExecutor:
         self._schemas = extraction_schemas
         self._transaction = transaction_factory
         self._default_model = default_model
+        #: Resolves `fuzzy_date` and `entity_ref` fields after validation. The
+        #: composition root always supplies one; without it those field types
+        #: are stored as the strings the model wrote, which is what they were
+        #: before this existed.
+        self._enricher = enricher
 
     async def execute(
         self,
@@ -185,6 +192,10 @@ class ExtractionExecutor:
                     error=str(exc),
                 )
 
+            if self._enricher is not None:
+                validated = await self._enricher.enrich(
+                    validated, passage, record_types
+                )
             records = [_serialize(record) for record in validated]
             await self._store(
                 passage_id, schema, version_key, model, ExtractionStatus.ok,
