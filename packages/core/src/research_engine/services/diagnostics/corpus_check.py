@@ -112,32 +112,6 @@ class CorpusReport:
 #: per offender, with the offending id first; counting and sampling is uniform.
 _CHECKS: list[tuple[str, str, str, str | None, str]] = [
     (
-        "passage_text_matches_its_span",
-        "critical",
-        "Passage text differs from the canonical text at its own offsets",
-        "research-engine reindex chunks",
-        """
-        SELECT p.id::text
-        FROM core.passages p
-        JOIN core.document_texts dt ON dt.document_id = p.document_id
-        WHERE p.char_start IS NOT NULL AND p.char_end IS NOT NULL
-          AND substring(dt.text FROM p.char_start + 1 FOR p.char_end - p.char_start)
-              IS DISTINCT FROM p.text
-        """,
-    ),
-    (
-        "passage_span_within_the_text",
-        "critical",
-        "Passage span runs past the end of its document's canonical text",
-        "research-engine reindex chunks",
-        """
-        SELECT p.id::text
-        FROM core.passages p
-        JOIN core.document_texts dt ON dt.document_id = p.document_id
-        WHERE p.char_end > length(dt.text) OR p.char_start < 0
-        """,
-    ),
-    (
         "passage_span_well_formed",
         "critical",
         "Passage span ends before it starts",
@@ -260,18 +234,6 @@ _CHECKS: list[tuple[str, str, str, str | None, str]] = [
         FROM core.passages p
         LEFT JOIN core.passage_fts f ON f.passage_id = p.id
         WHERE f.passage_id IS NULL
-        """,
-    ),
-    (
-        "node_span_within_the_text",
-        "critical",
-        "Structural node runs past the end of its document's canonical text",
-        "re-ingest the document",
-        """
-        SELECT n.id::text
-        FROM core.document_nodes n
-        JOIN core.document_texts dt ON dt.document_id = n.document_id
-        WHERE n.char_end > length(dt.text)
         """,
     ),
     (
@@ -417,8 +379,124 @@ class CorpusChecker:
                 check.samples = [row[0] for row in rows[:sample_size]]
                 report.checks.append(check)
 
+            report.checks.extend(
+                await self._span_integrity(conn, passage_total, sample_size)
+            )
             report.checks.append(await self._version_drift(conn))
         return report
+
+    async def _span_integrity(
+        self, conn: Any, passage_total: int, sample_size: int
+    ) -> list[Check]:
+        """The two span invariants, with each document's text read once.
+
+        Both were a join whose filter called `substring(dt.text ...)` per
+        passage. The scans took 80ms; the filter took 64 seconds, because a
+        TOASTed text is fetched again for every row that references it — 1.5
+        million buffer hits to check 77,533 passages.
+
+        That was merely slow while a document was one batch of a reference work.
+        It stops being survivable once a document *is* the reference work: at
+        twenty-five megabytes and twenty-three thousand passages, the same query
+        detoasts half a terabyte. Grouping by document reads each text once and
+        compares in memory, which is the same arithmetic without the re-reading.
+        """
+        # Every aggregate below orders by id, never by offset. The columns are
+        # collected by separate subqueries, and on a shared `char_start` those
+        # are free to order differently — which lines one passage's id up
+        # against another's text and reports a mismatch that is not there.
+        mismatched: list[str] = []
+        overrun: list[str] = []
+        stray_nodes: list[str] = []
+
+        # `yield_per` on the statement, not the connection: setting it on the
+        # connection leaves every later query on a server-side cursor, and the
+        # drift check that follows this one then refuses to run at all.
+        result = await conn.stream(
+            sa.text(
+                """
+                SELECT dt.text,
+                       (SELECT array_agg(p.id::text ORDER BY p.id)
+                          FROM core.passages p WHERE p.document_id = dt.document_id
+                           AND p.char_start IS NOT NULL AND p.char_end IS NOT NULL)
+                           AS ids,
+                       (SELECT array_agg(p.char_start ORDER BY p.id)
+                          FROM core.passages p WHERE p.document_id = dt.document_id
+                           AND p.char_start IS NOT NULL AND p.char_end IS NOT NULL)
+                           AS starts,
+                       (SELECT array_agg(p.char_end ORDER BY p.id)
+                          FROM core.passages p WHERE p.document_id = dt.document_id
+                           AND p.char_start IS NOT NULL AND p.char_end IS NOT NULL)
+                           AS ends,
+                       (SELECT array_agg(p.text ORDER BY p.id)
+                          FROM core.passages p WHERE p.document_id = dt.document_id
+                           AND p.char_start IS NOT NULL AND p.char_end IS NOT NULL)
+                           AS texts,
+                       (SELECT array_agg(n.id::text ORDER BY n.id)
+                          FROM core.document_nodes n
+                         WHERE n.document_id = dt.document_id) AS node_ids,
+                       (SELECT array_agg(n.char_end ORDER BY n.id)
+                          FROM core.document_nodes n
+                         WHERE n.document_id = dt.document_id) AS node_ends
+                FROM core.document_texts dt
+                """
+            ).execution_options(yield_per=200)
+        )
+        async for row in result:
+            length = len(row.text)
+            for pid, start, end, text in zip(
+                row.ids or (), row.starts or (), row.ends or (), row.texts or (),
+                strict=True,
+            ):
+                if start < 0 or end > length:
+                    # Out of range first: slicing past the end is silently
+                    # truncated in Python, so an overrun would otherwise be
+                    # reported as a text mismatch and sent to the wrong remedy.
+                    overrun.append(pid)
+                elif row.text[start:end] != text:
+                    mismatched.append(pid)
+            for nid, node_end in zip(
+                row.node_ids or (), row.node_ends or (), strict=True
+            ):
+                if node_end > length:
+                    stray_nodes.append(nid)
+
+        def built(
+            name: str,
+            description: str,
+            offenders: list[str],
+            remedy: str = "research-engine reindex chunks",
+            total: int | None = passage_total,
+        ) -> Check:
+            return Check(
+                name=name,
+                severity="critical",
+                description=description,
+                remedy=remedy,
+                total=total,
+                count=len(offenders),
+                samples=offenders[:sample_size],
+            )
+
+        return [
+            built(
+                "passage_text_matches_its_span",
+                "Passage text differs from the canonical text at its own offsets",
+                mismatched,
+            ),
+            built(
+                "passage_span_within_the_text",
+                "Passage span runs past the end of its document's canonical text",
+                overrun,
+            ),
+            built(
+                "node_span_within_the_text",
+                "Structural node runs past the end of its document's canonical text",
+                stray_nodes,
+                remedy="re-ingest the document",
+                total=None,
+            ),
+        ]
 
     async def _version_drift(self, conn: Any) -> Check:
         """Passages written by a chunker version no longer emitted.
