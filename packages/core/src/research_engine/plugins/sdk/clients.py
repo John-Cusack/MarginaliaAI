@@ -108,6 +108,7 @@ class IngestionClient(Protocol):
         metadata: dict | None = None,
         language: str | None = None,
         full_text: str | None = None,
+        node_drafts: list | None = None,
     ) -> dict: ...
 
     async def find_existing(

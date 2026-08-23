@@ -83,6 +83,38 @@ class PGDocumentTextRepo:
                 )
             ).scalar_one_or_none()
 
+    async def get_span(
+        self, document_id: UUID, start: int, end: int
+    ) -> str | None:
+        """One slice of a document's canonical text, sliced by the database.
+
+        `get_text` then `text[start:end]` reads the whole document to return a
+        fragment of it. That was harmless while a document was a batch of a
+        hundred articles; a merged reference work is twenty-five megabytes, and
+        reading all of it to answer `read_node` on a single lexicon entry is the
+        difference between a query and a stall. `substring` does the slice where
+        the text already lives.
+
+        Returns None when the document has no stored text — the same answer as
+        `get_text`, so callers distinguish "no text" from "empty slice".
+        """
+        # Clamped rather than returned early: an empty span on a document that
+        # has no text must still answer None, and Postgres rejects a negative
+        # substring length outright.
+        length = max(end - start, 0)
+        async with self._engine.connect() as conn:
+            return (
+                await conn.execute(
+                    sa.select(
+                        # SQL substring is 1-indexed and takes a length, not an
+                        # end offset; Python's slice is 0-indexed and half-open.
+                        sa.func.substring(
+                            document_texts.c.text, start + 1, length
+                        )
+                    ).where(document_texts.c.document_id == document_id)
+                )
+            ).scalar_one_or_none()
+
     async def missing_document_ids(self, limit: int | None = None) -> list[UUID]:
         """Documents with no canonical text stored.
 
