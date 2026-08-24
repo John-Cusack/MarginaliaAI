@@ -132,3 +132,13 @@ class SearchResult(BaseModel):
     hits: list[PassageHit]
     total_candidates: int
     applied_filters: dict[str, Any] = Field(default_factory=dict)
+    #: Stages that were skipped because a backend was unreachable, e.g.
+    #: ``["rerank_unavailable"]``. Empty means the search ran in full.
+    #:
+    #: This exists so that degrading is never silent. Reranking is 99.4% of
+    #: query latency, so when the GPU host is down the only sensible thing is to
+    #: return fused results without it — but results ordered by RRF alone are
+    #: measurably different from reranked ones, and a researcher comparing
+    #: today's hits against last week's deserves to know which they are looking
+    #: at rather than inferring it from a mood.
+    degraded: list[str] = Field(default_factory=list)

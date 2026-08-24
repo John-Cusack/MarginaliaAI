@@ -94,15 +94,13 @@ class RemoteEmbeddingClient:
     async def embed_batch(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
+        # Before the handshake, not after. `_ensure_verified` dials /health, so
+        # checking the circuit second meant a corpus run against a powered-off
+        # host paid a connect timeout per batch — the exact cost the breaker
+        # exists to avoid.
+        self._check_circuit()
         await self._ensure_verified()
-
-        if self._consecutive_failures >= self._failure_threshold:
-            raise EmbeddingUnavailable(
-                f"Remote embedding server {self._base_url} failed "
-                f"{self._consecutive_failures} times consecutively; refusing "
-                f"further calls. Fix the server, or unset RE_EMBEDDING_BASE_URL "
-                f"to embed locally, then run `research-engine embeddings backfill`."
-            )
+        self._check_circuit()
 
         payload = EmbedRequest(
             texts=list(texts),
@@ -134,6 +132,16 @@ class RemoteEmbeddingClient:
                 f"{len(texts)} texts."
             )
         return result.embeddings
+
+    def _check_circuit(self) -> None:
+        if self._consecutive_failures >= self._failure_threshold:
+            raise EmbeddingUnavailable(
+                f"Remote embedding server {self._base_url} failed "
+                f"{self._consecutive_failures} times consecutively; refusing "
+                f"further calls. Fix the server, or set "
+                f"RE_EMBEDDING_PROVIDER=local_bge to embed on this machine, "
+                f"then run `research-engine embeddings backfill`."
+            )
 
     async def close(self) -> None:
         await self._client.aclose()

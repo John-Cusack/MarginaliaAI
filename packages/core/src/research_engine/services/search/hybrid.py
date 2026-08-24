@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from research_engine.domain.common import FusionMode
+from research_engine.domain.errors import RerankUnavailable
 from research_engine.domain.passages import (
     PassageHit,
     ScoreBreakdown,
@@ -114,22 +115,36 @@ class HybridSearchService:
 
         # Stage 4: Optional rerank
         top_n = fused[:query.rerank_n] if query.rerank else fused[:query.k]
+        degraded: list[str] = []
+        final_items = top_n[:query.k]
 
         if query.rerank and top_n:
             top_ids = [pid for pid, _, _ in top_n]
             top_texts = await self._load_texts(top_ids)
-            reranked = await self._reranker.rerank(
-                query.text, top_ids, top_texts, query.k,
-            )
-            # Merge rerank scores with existing breakdowns
-            breakdown_map = {pid: bd for pid, _, bd in top_n}
-            final_items = []
-            for pid, rerank_score in reranked:
-                bd = breakdown_map.get(pid, {})
-                bd["rerank"] = rerank_score
-                final_items.append((pid, rerank_score, bd))
-        else:
-            final_items = top_n[:query.k]
+            try:
+                reranked = await self._reranker.rerank(
+                    query.text, top_ids, top_texts, query.k,
+                )
+            except RerankUnavailable as exc:
+                # Return the fused ranking rather than nothing. Reranking
+                # refines an ordering that is already useful, so an unreachable
+                # cross-encoder should cost precision, not the whole answer —
+                # and `degraded` means the caller can tell the difference.
+                logger.warning(
+                    "rerank_skipped",
+                    error=str(exc),
+                    candidates=len(top_n),
+                    detail="Returning fused results unreranked.",
+                )
+                degraded.append("rerank_unavailable")
+            else:
+                # Merge rerank scores with existing breakdowns
+                breakdown_map = {pid: bd for pid, _, bd in top_n}
+                final_items = []
+                for pid, rerank_score in reranked:
+                    bd = breakdown_map.get(pid, {})
+                    bd["rerank"] = rerank_score
+                    final_items.append((pid, rerank_score, bd))
 
         # Stage 5: Hydrate
         hits = await self._hydrate(final_items)
@@ -138,6 +153,7 @@ class HybridSearchService:
             hits=hits,
             total_candidates=total_candidates,
             applied_filters=filters_applied,
+            degraded=degraded,
         )
 
     async def similar_to(

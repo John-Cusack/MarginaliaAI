@@ -22,19 +22,19 @@ from research_engine.cli.extraction import extraction_app
 from research_engine.cli.ingest import ingest_app
 from research_engine.cli.plugin import plugin_app
 from research_engine.cli.reindex import reindex_app
-from research_engine.cli.search import search_app
+from research_engine.cli.search import search_command
 from research_engine.cli.serve import serve_app
 from research_engine.cli.usage import usage_app
 
 app.add_typer(ingest_app, name="ingest", help="Ingest documents into the corpus.")
-app.add_typer(search_app, name="search", help="Search the corpus.")
+app.command("search", help="Search the corpus.")(search_command)
 app.add_typer(plugin_app, name="plugin", help="Manage plugins.")
 app.add_typer(serve_app, name="serve", help="Start the MCP server.")
 app.add_typer(backup_app, name="backup", help="Backup and restore.")
 app.add_typer(config_app, name="config", help="Inspect configuration.")
 app.add_typer(doctor_app, name="doctor", help="Check the corpus against its invariants.")
 app.add_typer(embeddings_app, name="embeddings", help="Embedding coverage and repair.")
-app.add_typer(embed_server_app, name="embed-server", help="Serve embeddings from this machine's GPU.")
+app.add_typer(embed_server_app, name="embed-server", help="Serve embedding and reranking from this machine's GPU.")
 app.add_typer(eval_app, name="eval", help="Measure retrieval quality.")
 app.add_typer(usage_app, name="usage", help="Report LLM spend.")
 app.add_typer(reindex_app, name="reindex", help="Re-chunk and re-anchor the corpus.")

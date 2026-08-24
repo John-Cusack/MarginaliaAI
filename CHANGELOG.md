@@ -1,5 +1,42 @@
 # Changelog
 
+
+### Reranking moved to the GPU host, and outages degrade instead of failing
+
+`RE_EMBEDDING_BASE_URL` used to decide three unrelated things at once — where
+compute runs, which model is authoritative, and whether a failure is fatal — so
+a sleeping desktop took search down entirely, and the only way to disable
+offload was to delete the address.
+
+- **The inference server serves reranking too** (`--rerank-model`, on by
+  default). Measured on this corpus: query embedding is 66 ms locally against
+  ~20 ms remote, a wash, while reranking 30 candidates on a CPU-only host is
+  48.8 s of a 49.1 s search. Reranking is the offload that pays for itself.
+- **`RE_INFERENCE_BASE_URL`** is the new name, since one server now serves both
+  models. `RE_EMBEDDING_BASE_URL` still works.
+- **Three placement modes** for each model: `local_bge` (always here, and it
+  *ignores* a configured host, so it is an off switch that does not make you
+  delete the address), `remote_api` (always there, fail if unreachable), `auto`.
+- **`auto` splits by workload.** A query embedding falls back to local — the
+  vectors are interchangeable, measured bit-identical. A corpus-wide run does
+  not, because silently moving 255k passages onto a laptop turns hours into days
+  while nobody is watching.
+- **An unreachable reranker skips reranking** rather than failing the search or
+  spending 49 s on the CPU. `SearchResult.degraded` says so, the CLI prints it,
+  and `find_passages` returns it.
+- **A server too old to offer `/rerank` degrades under `auto`** and errors only
+  under `remote_api`. The client is always upgraded before the server, so this
+  version skew is the common case, not the exotic one — treating it as a fatal
+  misconfiguration bricked every search against a still-perfectly-good host.
+- **Circuit breakers were checked after the health handshake**, so a dead host
+  was re-dialled on every call and the breaker never broke anything. Fixed in
+  both remote clients.
+- **`research-engine search` never ran.** A Typer group callback carrying a
+  required argument makes Click demand a subcommand, so every invocation died
+  with "Missing argument 'QUERY'". Registered as a plain command.
+- **`search --json` was unparseable** — printed through rich, which wraps to
+  terminal width and breaks lines inside JSON strings.
+
 ## 0.5.0 — 2026-08-11
 
 ### Added

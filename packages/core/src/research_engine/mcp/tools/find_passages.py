@@ -202,6 +202,10 @@ async def handler(
             ],
             "total_candidates": result.total_candidates,
             "applied_filters": result.applied_filters,
+            # An agent comparing today's hits against an earlier run has no
+            # other way to know reranking was skipped, and unreranked results
+            # are measurably differently ordered.
+            "degraded": result.degraded,
         }
     except Exception as e:
         logger.error("find_passages_error", error=str(e))

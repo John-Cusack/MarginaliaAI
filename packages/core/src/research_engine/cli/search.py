@@ -9,12 +9,14 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-search_app = typer.Typer()
 console = Console()
 
 
-@search_app.callback(invoke_without_command=True)
-def search(
+# Registered on the root app as a plain command, not a Typer sub-app. As a
+# sub-app it was unreachable: a group callback carrying a required Argument
+# makes Click demand a subcommand that does not exist, so every invocation died
+# with "Missing argument 'QUERY'" no matter what was typed.
+def search_command(
     query: str = typer.Argument(..., help="Search query."),
     k: int = typer.Option(10, "--k", "-k", help="Number of results."),
     filters: str | None = typer.Option(None, "--filters", "-f", help="JSON filters."),
@@ -43,7 +45,10 @@ async def _search(
         result = await container.search.find_passages(query)
 
         if json_output:
-            console.print(result.model_dump_json(indent=2))
+            # Plain stdout, not the rich console. Rich wraps to terminal width
+            # and will happily break a line inside a JSON string, so anything
+            # piping `--json` into a parser got a syntax error on long text.
+            print(result.model_dump_json(indent=2))
             return
 
         table = Table(title=f"Search: {query_text}")
@@ -63,5 +68,12 @@ async def _search(
 
         console.print(table)
         console.print(f"\n{result.total_candidates} candidates searched")
+        if "rerank_unavailable" in result.degraded:
+            console.print(
+                "[yellow]Results are not reranked[/yellow] — the rerank "
+                "backend did not answer, so these are fused (RRF) rankings. "
+                "Ordering is less precise than usual; see the log line above "
+                "for whether it was unreachable or merely too slow."
+            )
     finally:
         await container.close()
