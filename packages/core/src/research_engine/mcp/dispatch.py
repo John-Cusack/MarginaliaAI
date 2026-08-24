@@ -35,6 +35,7 @@ from research_engine.mcp.tools import (
     upsert_edge,
     upsert_entity,
     upsert_event,
+    verify_quote,
 )
 
 if TYPE_CHECKING:
@@ -88,6 +89,7 @@ CORE_TOOL_MODULES = [
     citations,
     upsert_entity,
     upsert_event,
+    verify_quote,
     upsert_edge,
     list_filters,
     search_sources,

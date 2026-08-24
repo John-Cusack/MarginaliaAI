@@ -305,6 +305,30 @@ class PGPassageRepo:
             )
             return [self._to_domain(row) for row in result]
 
+    async def covering_span(
+        self, document_id: UUID, char_start: int, char_end: int
+    ) -> list[Passage]:
+        """Passages overlapping ``[char_start, char_end)`` in a document.
+
+        A verified quotation is a span of the *document*, not of a passage —
+        quotes straddle chunk boundaries routinely — so this returns every
+        passage the span touches rather than assuming there is one. Served by
+        `passages_doc_span_idx`.
+        """
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    sa.select(passages)
+                    .where(
+                        passages.c.document_id == document_id,
+                        passages.c.char_start < char_end,
+                        passages.c.char_end > char_start,
+                    )
+                    .order_by(passages.c.char_start)
+                )
+            ).all()
+        return [self._to_domain(row) for row in rows]
+
     async def get_context(
         self, passage_id: UUID, before: int = 0, after: int = 0
     ) -> tuple[list[Passage], Passage, list[Passage]]:

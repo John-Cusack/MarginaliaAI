@@ -115,6 +115,85 @@ class PGDocumentTextRepo:
                 )
             ).scalar_one_or_none()
 
+    # --- Quote verification -------------------------------------------------
+    #
+    # These all push the scan into Postgres. The largest document here is 23.2M
+    # characters; a Python pass over it takes seconds, while `strpos` on the
+    # same text is C over a single row, and the `document_texts_norm_trgm` GIN
+    # index turns a corpus-wide LIKE into 200 ms.
+
+    async def find_documents_containing(
+        self, needle: str, limit: int = 10
+    ) -> list[UUID]:
+        """Documents whose normalized text contains *needle* verbatim.
+
+        Index-backed: `gin_trgm_ops` serves `LIKE '%...%'`, which is the whole
+        reason that index exists. *needle* must already be normalized the same
+        way the column was.
+        """
+        if not needle:
+            return []
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT document_id FROM core.document_texts "
+                        "WHERE normalized_text LIKE :pattern ESCAPE '\\' "
+                        "LIMIT :limit"
+                    ),
+                    {"pattern": f"%{_like_escape(needle)}%", "limit": limit},
+                )
+            ).all()
+        return [row[0] for row in rows]
+
+    async def lengths(self, document_id: UUID) -> tuple[int, int] | None:
+        """``(raw_length, normalized_length)``, or None if there is no text.
+
+        Their ratio estimates where a normalized offset sits in the raw text,
+        which is what keeps the offset mapping to a small window instead of a
+        pass over the whole document.
+        """
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    sa.select(
+                        sa.func.length(document_texts.c.text),
+                        sa.func.length(document_texts.c.normalized_text),
+                    ).where(document_texts.c.document_id == document_id)
+                )
+            ).first()
+        return (row[0] or 0, row[1] or 0) if row else None
+
+    async def find_raw(self, document_id: UUID, needle: str) -> int | None:
+        """Offset of *needle* in the raw canonical text, or None."""
+        return await self._strpos(document_texts.c.text, document_id, needle)
+
+    async def find_normalized(self, document_id: UUID, needle: str) -> int | None:
+        """Offset of *needle* in the normalized text, or None."""
+        return await self._strpos(
+            document_texts.c.normalized_text, document_id, needle
+        )
+
+    async def _strpos(self, column, document_id: UUID, needle: str) -> int | None:
+        if not needle:
+            return None
+        async with self._engine.connect() as conn:
+            at = (
+                await conn.execute(
+                    sa.select(sa.func.strpos(column, needle)).where(
+                        document_texts.c.document_id == document_id
+                    )
+                )
+            ).scalar_one_or_none()
+        # strpos is 1-indexed and returns 0 for "not found"; callers want a
+        # 0-indexed offset and None.
+        return at - 1 if at else None
+
+
+def _like_escape(value: str) -> str:
+    """Escape LIKE metacharacters so a quote containing % or _ still matches."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     async def missing_document_ids(self, limit: int | None = None) -> list[UUID]:
         """Documents with no canonical text stored.
 

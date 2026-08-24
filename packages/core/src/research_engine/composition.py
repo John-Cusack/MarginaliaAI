@@ -39,6 +39,7 @@ from research_engine.services.extraction.postprocess import RecordEnricher
 from research_engine.services.ingestion.dispatch import ModuleDispatcher
 from research_engine.services.ingestion.orchestrator import IngestionOrchestrator
 from research_engine.services.search.hybrid import HybridSearchService
+from research_engine.services.verification import QuoteVerifier
 
 if TYPE_CHECKING:
     from research_engine.config.settings import Settings
@@ -71,6 +72,7 @@ class Container:
     installed_plugins: PGInstalledPluginRepo
     ingestion: IngestionOrchestrator
     search: HybridSearchService
+    verification: QuoteVerifier
     extraction: ExtractionExecutor
     entity_service: EntityService
     event_service: EventService
@@ -237,6 +239,12 @@ async def build_container(settings: Settings) -> Container:
         ),
     )
 
+    quote_verifier = QuoteVerifier(
+        document_texts=document_texts_repo,
+        passages=passages_repo,
+        documents=docs,
+    )
+
     search_service = HybridSearchService(
         passages=passages_repo,
         embedding=inference.query_embedding,
@@ -313,6 +321,7 @@ async def build_container(settings: Settings) -> Container:
         installed_plugins=installed_plugins_repo,
         ingestion=ingestion_service,
         search=search_service,
+        verification=quote_verifier,
         extraction=extraction_service,
         entity_service=entity_service,
         event_service=event_service,
