@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 from uuid_utils import uuid7
 
 from research_engine.adapters.storage.postgres.schema import documents
@@ -63,6 +64,24 @@ class PGDocumentRepo:
                 )
             ).first()
             return self._to_domain(row) if row else None
+
+    async def find_by_metadata(self, key: str, value: str) -> list[Document]:
+        """Documents whose metadata has *key* equal to *value*.
+
+        Packs identify their own material by a key they wrote at ingest — the
+        Logos pack uses ``resource_id``. Trusting a stored core_document_id
+        instead goes stale the moment a resource is re-ingested, and points at a
+        document that no longer has passages.
+        """
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    documents.select().where(
+                        sa.cast(documents.c.metadata, JSONB)[key].astext == value
+                    )
+                )
+            ).all()
+        return [self._to_domain(row) for row in rows]
 
     async def update_metadata(self, doc_id: UUID, patch: dict[str, Any]) -> Document:
         async with self._engine.begin() as conn:
