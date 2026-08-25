@@ -23,9 +23,11 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from research_engine.domain.filter_extension import FilterExtension
+    from research_engine.domain.passages import Passage
     from research_engine.ports.embedding import EmbeddingPort
     from research_engine.ports.repositories import PassageRepo
     from research_engine.ports.reranker import RerankerPort
+    from research_engine.services.search.windows import PassageWindowReader
 
 logger = structlog.get_logger()
 
@@ -37,11 +39,17 @@ class HybridSearchService:
         embedding: EmbeddingPort,
         reranker: RerankerPort,
         get_filter_extensions: Callable[[], dict[str, FilterExtension]] | None = None,
+        windows: PassageWindowReader | None = None,
     ) -> None:
         self._passages = passages
         self._embedding = embedding
         self._reranker = reranker
         self._get_filter_extensions = get_filter_extensions
+        # Optional so a service can be constructed without the document-text and
+        # node repositories — tests do, and a corpus with no canonical text has
+        # nothing to widen into. The composition root always supplies one, so
+        # expansion is on in practice rather than opt-in.
+        self._windows = windows
 
     async def find_passages(self, query: SearchQuery) -> SearchResult:
         # Stage 1: Build candidate set from filters
@@ -118,9 +126,17 @@ class HybridSearchService:
         degraded: list[str] = []
         final_items = top_n[:query.k]
 
+        # One read for the whole candidate set, reused by both the reranker and
+        # hydration. What the reranker receives is chunk text and only chunk
+        # text: the expanded window is a read-side concern, and letting it reach
+        # the cross-encoder would make ranking depend on it.
+        top_ids = [pid for pid, _, _ in top_n]
+        loaded = {p.id: p for p in await self._passages.get_many(top_ids)}
+
         if query.rerank and top_n:
-            top_ids = [pid for pid, _, _ in top_n]
-            top_texts = await self._load_texts(top_ids)
+            top_texts = [
+                loaded[pid].text if pid in loaded else "" for pid in top_ids
+            ]
             try:
                 reranked = await self._reranker.rerank(
                     query.text, top_ids, top_texts, query.k,
@@ -147,7 +163,7 @@ class HybridSearchService:
                     final_items.append((pid, rerank_score, bd))
 
         # Stage 5: Hydrate
-        hits = await self._hydrate(final_items)
+        hits = await self._hydrate(final_items, loaded)
 
         return SearchResult(
             hits=hits,
@@ -174,19 +190,30 @@ class HybridSearchService:
         hits = [(pid, s) for pid, s in hits if pid != passage_id][:k]
         return await self._hydrate([(pid, s, {"vector": s}) for pid, s in hits])
 
-    async def _load_texts(self, passage_ids: list[UUID]) -> list[str]:
-        texts = []
-        for pid in passage_ids:
-            passage = await self._passages.get(pid)
-            texts.append(passage.text if passage else "")
-        return texts
+    async def _hydrate(
+        self,
+        items: list[tuple[UUID, float, dict]],
+        loaded: dict[UUID, Passage] | None = None,
+    ) -> list[PassageHit]:
+        """Turn ranked ids into hits.
 
-    async def _hydrate(self, items: list[tuple[UUID, float, dict]]) -> list[PassageHit]:
+        *loaded* is the candidate set `find_passages` already read. `similar_to`
+        has no such set and passes nothing, so the fetch happens here instead —
+        one query either way, never one per hit.
+        """
+        if loaded is None:
+            loaded = {
+                p.id: p for p in await self._passages.get_many([i[0] for i in items])
+            }
+        found = [(i, loaded[i[0]]) for i in items if i[0] in loaded]
+        # After ranking, never before: the window is what a reader reads, and
+        # letting it reach the cross-encoder would make scores depend on it.
+        windows = (
+            await self._windows.read([p for _, p in found]) if self._windows else {}
+        )
+
         hits = []
-        for pid, score, breakdown in items:
-            passage = await self._passages.get(pid)
-            if not passage:
-                continue
+        for (pid, score, breakdown), passage in found:
             hits.append(
                 PassageHit(
                     passage_id=pid,
@@ -201,6 +228,10 @@ class HybridSearchService:
                     text=passage.text,
                     metadata=passage.metadata,
                     locator=passage.locator,
+                    char_start=passage.char_start,
+                    char_end=passage.char_end,
+                    node_id=passage.node_id,
+                    window=windows.get(pid),
                 )
             )
         return hits

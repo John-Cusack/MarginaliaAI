@@ -22,13 +22,21 @@ def search_command(
     filters: str | None = typer.Option(None, "--filters", "-f", help="JSON filters."),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
     no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking."),
+    show_window: bool = typer.Option(
+        False, "--window", help="Show the expanded window instead of the matched chunk."
+    ),
 ):
     """Search the corpus with hybrid retrieval."""
-    asyncio.run(_search(query, k, filters, json_output, no_rerank))
+    asyncio.run(_search(query, k, filters, json_output, no_rerank, show_window))
 
 
 async def _search(
-    query_text: str, k: int, filters_json: str | None, json_output: bool, no_rerank: bool
+    query_text: str,
+    k: int,
+    filters_json: str | None,
+    json_output: bool,
+    no_rerank: bool,
+    show_window: bool = False,
 ):
     from research_engine.composition import build_container
     from research_engine.config import load_settings
@@ -55,15 +63,21 @@ async def _search(
         table.add_column("#", style="dim", width=3)
         table.add_column("Score", width=6)
         table.add_column("Document", width=15)
-        table.add_column("Text", max_width=80)
+        # Narrow, but enough that a regression to no-window is obvious in normal
+        # use rather than only in --json.
+        table.add_column("Ctx", width=13)
+        table.add_column("Window" if show_window else "Text", max_width=80)
 
         for i, hit in enumerate(result.hits, 1):
-            text_preview = hit.text[:200].replace("\n", " ")
+            shown = hit.window.text if show_window and hit.window else hit.text
             table.add_row(
                 str(i),
                 f"{hit.score:.3f}",
                 str(hit.document_id)[:8],
-                text_preview,
+                f"{hit.window.source} {hit.window.approx_tokens}t"
+                if hit.window
+                else "—",
+                shown[:200].replace("\n", " "),
             )
 
         console.print(table)

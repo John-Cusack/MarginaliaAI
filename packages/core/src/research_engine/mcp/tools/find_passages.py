@@ -18,7 +18,17 @@ TOOL_DESCRIPTION = (
     "fused retrieval with optional reranking. The workhorse tool for "
     "finding relevant passages across the corpus. Plugin filter extensions "
     "(e.g. scripture_ref_range, event_date_range) are available under "
-    "filters.extensions when the providing plugin is loaded."
+    "filters.extensions when the providing plugin is loaded.\n\n"
+    "Each hit carries two pieces of text and they are not interchangeable. "
+    "`text` is the fragment that actually matched — it is what was embedded and "
+    "ranked, and it is what to quote. `window` is the surrounding prose read "
+    "back from the document, bounded by the document's own structure, and it is "
+    "what to read: a chunk ends where the ingester cut, which in a lexicon "
+    "lands mid-definition. `window.source == \"node\"` means the window is a "
+    "complete structural unit and read_node would add nothing; any other value "
+    "means it is a slice and read_node on `window.node_id` gives more. "
+    "`window.breadcrumb` is the citation, and `window` is null only when the "
+    "document has no stored text."
 )
 TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -196,7 +206,10 @@ async def handler(
                     "text": h.text,
                     "metadata": h.metadata,
                     "locator": h.locator,
-                    "context_available": h.context_available,
+                    "char_start": h.char_start,
+                    "char_end": h.char_end,
+                    "node_id": str(h.node_id) if h.node_id else None,
+                    "window": h.window.model_dump(mode="json") if h.window else None,
                 }
                 for h in result.hits
             ],

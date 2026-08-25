@@ -75,6 +75,35 @@ class PassageDraft(BaseModel):
         return self
 
 
+class PassageWindow(BaseModel):
+    """The expanded read of a hit — more than matched, bounded by structure.
+
+    Not what was ranked. The chunk is, and it is still on the hit as ``text``.
+    This is what a person or an agent should *read*: a chunk boundary is where
+    the ingester happened to cut, which in a lexicon lands mid-definition and in
+    a monograph mid-argument.
+
+    Keeps the same invariant ``PassageDraft`` keeps —
+    ``text == canonical_text[char_start:char_end]`` — so a window can be quoted
+    and re-located exactly like a passage can.
+    """
+
+    text: str
+    char_start: int
+    char_end: int
+    #: How the boundaries were chosen. ``node`` means the window *is* one
+    #: structural node and `read_node` would add nothing; anything else means it
+    #: is a slice and reading the node would give more.
+    source: Literal["node", "node_window", "document_window", "passage"]
+    #: The node that bounded the window — not always the passage's own node. A
+    #: node narrower than the chunk gets widened inside its parent instead.
+    node_id: UUID | None = None
+    #: Ancestor titles, root first. The citation for this window.
+    breadcrumb: list[str] = Field(default_factory=list)
+    #: Measured on the returned text, not on the estimate that sized it.
+    approx_tokens: int
+
+
 class PassageHit(BaseModel):
     """A passage returned by search with scores."""
 
@@ -82,10 +111,20 @@ class PassageHit(BaseModel):
     document_id: UUID
     score: float
     score_breakdown: ScoreBreakdown | None = None
+    #: The chunk that actually matched — what was embedded, ranked and reranked.
+    #: Quote this. Read ``window``.
     text: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     locator: dict[str, Any] = Field(default_factory=dict)
-    context_available: bool = True
+    #: The chunk's span in the document's canonical text. Carried so a caller can
+    #: widen a hit without re-reading the row; ``None`` on passages written
+    #: before offsets were required.
+    char_start: int | None = None
+    char_end: int | None = None
+    node_id: UUID | None = None
+    #: ``None`` when the document has no canonical text to widen into, or the
+    #: passage has no offsets to widen from.
+    window: PassageWindow | None = None
 
 
 class ScoreBreakdown(BaseModel):

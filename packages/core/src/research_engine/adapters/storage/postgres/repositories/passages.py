@@ -267,6 +267,29 @@ class PGPassageRepo:
             ).first()
             return self._to_domain(row) if row else None
 
+    async def get_many(self, passage_ids: list[UUID]) -> list[Passage]:
+        """Several passages in one round trip, in the order asked for.
+
+        The read path used to fetch one row per id — 50 single-row SELECTs for a
+        reranked k=20 search, 20 of them re-reading rows already read for the
+        cross-encoder. That was tolerable while a hit was just its own text; it
+        stops being tolerable once each hit also needs a window read.
+
+        Ids that no longer resolve are omitted rather than yielding None, so a
+        caller zipping against the input list would notice. Callers that need the
+        correspondence should build a dict on `.id`.
+        """
+        if not passage_ids:
+            return []
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    passages.select().where(passages.c.id.in_(passage_ids))
+                )
+            ).all()
+        by_id = {row.id: self._to_domain(row) for row in rows}
+        return [by_id[pid] for pid in passage_ids if pid in by_id]
+
     async def get_by_document(self, document_id: UUID) -> list[Passage]:
         async with self._engine.connect() as conn:
             result = await conn.execute(

@@ -152,6 +152,42 @@ class PGDocumentNodeRepo:
             rows = await conn.execute(stmt, {"node_id": node_id})
             return [_to_domain(row) for row in rows]
 
+    async def get_ancestors_many(
+        self, node_ids: list[UUID]
+    ) -> dict[UUID, list[DocumentNode]]:
+        """`get_ancestors` for many nodes in one round trip.
+
+        Search expands every hit, so the per-node form would be one query per
+        result. Same self-join, keyed by the node asked about.
+
+        Ordered by ancestor depth rather than by path: the chain is strictly
+        nested, so the two agree, and depth is the cheaper and more obviously
+        correct key.
+        """
+        if not node_ids:
+            return {}
+        n = document_nodes.alias("n")
+        a = document_nodes.alias("a")
+        stmt = (
+            sa.select(n.c.id.label("anchor_id"), a)
+            .select_from(
+                n.join(
+                    a,
+                    sa.and_(
+                        a.c.document_id == n.c.document_id,
+                        n.c.path.op("<@")(a.c.path),
+                    ),
+                )
+            )
+            .where(n.c.id.in_(node_ids))
+            .order_by(n.c.id, a.c.depth)
+        )
+        chains: dict[UUID, list[DocumentNode]] = {}
+        async with self._engine.connect() as conn:
+            for row in await conn.execute(stmt):
+                chains.setdefault(row.anchor_id, []).append(_to_domain(row))
+        return chains
+
     async def find_by_span(
         self, document_id: UUID, char_start: int, char_end: int
     ) -> DocumentNode | None:

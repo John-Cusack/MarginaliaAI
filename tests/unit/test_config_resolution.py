@@ -138,15 +138,15 @@ def test_report_attributes_each_value_to_its_source(
     env = tmp_path / "custom.env"
     env.write_text("RE_DEFAULT_LANGUAGE=de\n")
     monkeypatch.setenv(f"{ENV_PREFIX}ENV_FILE", str(env))
-    monkeypatch.setenv(f"{ENV_PREFIX}SEARCH_DEFAULT_K", "50")
+    monkeypatch.setenv(f"{ENV_PREFIX}SEARCH_WINDOW_MAX_TOKENS", "50")
 
     resolution = find_env_file(tmp_path)
     settings = Settings(_env_file=resolution.path)  # type: ignore[arg-type]
     by_name = {r.name: r for r in describe_settings(settings, resolution)}
 
     assert by_name["default_language"].source == "env file"
-    assert by_name["search_default_k"].source == "environment"
-    assert by_name["rrf_k"].source == "default"
+    assert by_name["search_window_max_tokens"].source == "environment"
+    assert by_name["search_window_min_tokens"].source == "default"
 
 
 def test_report_never_prints_secret_values(
@@ -193,7 +193,7 @@ def test_env_file_keys_tolerate_comments_blanks_and_export(
     env.write_text(
         "# a comment\n\n"
         "export RE_DEFAULT_LANGUAGE=en\n"
-        "  RE_SEARCH_DEFAULT_K = 40 \n"
+        "  RE_SEARCH_WINDOW_MAX_TOKENS = 40 \n"
         "MALFORMED_LINE\n"
     )
     monkeypatch.setenv(f"{ENV_PREFIX}ENV_FILE", str(env))
@@ -203,4 +203,4 @@ def test_env_file_keys_tolerate_comments_blanks_and_export(
     by_name = {r.name: r for r in describe_settings(settings, resolution)}
 
     assert by_name["default_language"].source == "env file"
-    assert by_name["search_default_k"].source == "env file"
+    assert by_name["search_window_max_tokens"].source == "env file"
