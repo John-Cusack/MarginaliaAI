@@ -1,6 +1,48 @@
 # Changelog
 
 
+
+### `verify_quote` — check a quotation against what the source actually says
+
+Search could find passages; nothing could take a quotation already written down
+and confirm it, with a locator to cite. This closes that.
+
+Five answers, and the distinctions are the point:
+
+- **`exact`** — the source says precisely this.
+- **`normalized`** — it says this apart from typography: curly quotes, dashes,
+  line-break hyphenation, collapsed whitespace. **Never collapsed into
+  `exact`.** Someone deciding whether to use quotation marks is relying on that
+  difference, and merging the two would give a confident wrong answer instead of
+  an honest hedged one.
+- **`near`** — part of it matches; the response says where it diverges, and what
+  the source has there instead.
+- **`not_found`** — no document contains it.
+- **`no_canonical_text`** — the named document has nothing stored to check
+  against. Reporting that as `not_found` would teach a researcher to distrust a
+  tool that was never given anything to read.
+
+Three implementation notes worth knowing:
+
+- **It searches document text, not passage text.** A quotation routinely
+  straddles a chunk boundary, where it matches no passage at all. The resulting
+  span is mapped back onto every passage it touches, and `straddles_passages`
+  says when that happened.
+- **`normalize_with_map`** folds typography while keeping a map back to raw
+  offsets, so a `normalized` hit still reports the exact characters of the
+  source. NFKC is applied per character rather than whole-string, because
+  whole-string NFKC recombines a base character and a combining mark into one
+  and a 2->1 contraction has no single raw offset — common in a corpus with
+  Hebrew pointing and Greek accents. Safe only because the query goes through
+  the same function.
+- **Offset mapping runs on a window, not the document.** The largest document
+  here is 23.2M characters; Postgres locates the match and the raw:normalized
+  length ratio narrows it to a few KB before any Python touches it. Widening
+  steps and a whole-document fallback cover the cases where that estimate is
+  wrong.
+
+Exposed as the `verify_quote` MCP tool and `research-engine verify-quote`.
+
 ### Reranking moved to the GPU host, and outages degrade instead of failing
 
 `RE_EMBEDDING_BASE_URL` used to decide three unrelated things at once — where

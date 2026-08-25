@@ -75,3 +75,76 @@ def normalize_whitespace(text: str) -> str:
     canonical text, which is what lets P1-5 find it again.
     """
     return _WHITESPACE.sub(" ", text).strip()
+
+
+def normalize_with_map(text: str) -> tuple[str, list[int]]:
+    """`normalize`, plus a map from each output character to its raw offset.
+
+    ``index_map[i]`` is the offset in *text* of ``out[i]``. This is what lets a
+    quotation that only matches after typographic folding still report the exact
+    characters of the source it was found at — without it, the `normalized` tier
+    could say "yes, it's in there" but not where, which is half an answer for
+    someone who needs a page number.
+
+    Divergence from `normalize` is deliberate and small: NFKC is applied per
+    character rather than to the whole string, because whole-string NFKC
+    recombines a base character and a following combining mark into one, and a
+    2->1 contraction spanning input characters has no single raw offset to point
+    at. Hebrew pointing and Greek accents make that common in this corpus rather
+    than exotic.
+
+    That divergence is safe **only because both sides go through this same
+    function**. A decomposed source and a composed quotation both stay
+    decomposed here, so they still match each other. Compare against
+    `normalize`'s output and they would not — which is why the matching path
+    uses `normalize_for_matching` on the query rather than `normalize`.
+    """
+    deleted = _linebreak_hyphen_deletions(text)
+    out: list[str] = []
+    index_map: list[int] = []
+    in_whitespace = False
+
+    for i, ch in enumerate(text):
+        if i in deleted or ch == _SOFT_HYPHEN:
+            continue
+        if ch.isspace():
+            if not in_whitespace and out:
+                out.append(" ")
+                index_map.append(i)
+                in_whitespace = True
+            continue
+        in_whitespace = False
+        folded = unicodedata.normalize(
+            "NFKC", ch.translate(_QUOTES).translate(_DASHES)
+        )
+        for folded_ch in folded:
+            out.append(folded_ch)
+            index_map.append(i)
+
+    # Leading whitespace is never emitted (the `and out` guard); trailing can be.
+    while out and out[-1] == " ":
+        out.pop()
+        index_map.pop()
+    return "".join(out), index_map
+
+
+def normalize_for_matching(text: str) -> str:
+    """The query-side counterpart of `normalize_with_map`.
+
+    Same transforms, no map. Use this rather than `normalize` whenever the
+    result is compared against `normalize_with_map` output.
+    """
+    return normalize_with_map(text)[0]
+
+
+def _linebreak_hyphen_deletions(text: str) -> set[int]:
+    """Raw offsets removed by de-hyphenating across a line break.
+
+    `_LINEBREAK_HYPHEN` replaces the whole match with its two captured
+    characters, so everything strictly between them — the hyphen and the
+    surrounding whitespace — disappears.
+    """
+    deleted: set[int] = set()
+    for match in _LINEBREAK_HYPHEN.finditer(text):
+        deleted.update(range(match.start() + 1, match.end() - 1))
+    return deleted

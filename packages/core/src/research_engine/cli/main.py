@@ -25,9 +25,11 @@ from research_engine.cli.reindex import reindex_app
 from research_engine.cli.search import search_command
 from research_engine.cli.serve import serve_app
 from research_engine.cli.usage import usage_app
+from research_engine.cli.verify import verify_quote_command
 
 app.add_typer(ingest_app, name="ingest", help="Ingest documents into the corpus.")
 app.command("search", help="Search the corpus.")(search_command)
+app.command("verify-quote", help="Check a quotation against its source.")(verify_quote_command)
 app.add_typer(plugin_app, name="plugin", help="Manage plugins.")
 app.add_typer(serve_app, name="serve", help="Start the MCP server.")
 app.add_typer(backup_app, name="backup", help="Backup and restore.")
