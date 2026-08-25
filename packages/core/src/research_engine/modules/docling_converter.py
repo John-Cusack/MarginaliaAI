@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from research_engine.services.text.sections import sections_from_markdown
-
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -154,10 +152,100 @@ def _pdf_has_text(source_path: Path, sample_pages: int = 3) -> bool:
         return True
 
 
+#: How items are joined into canonical text. Matches what `export_to_markdown`
+#: produces closely enough that the two differ by a trailing newline: measured
+#: on a real PDF, 19,665 characters against 19,667.
+_ITEM_SEPARATOR = "\n\n"
+
+#: Docling labels that mark a heading. Everything else is body text, and a
+#: section per item would turn a 600-page book into forty thousand nodes.
+_HEADING_LABELS = frozenset({"section_header", "title"})
+
+
+def _item_markdown(item: object, doc: object) -> str:
+    """One item's markdown, falling back to its plain text."""
+    try:
+        return item.export_to_markdown(doc)  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - an item we cannot serialise is not fatal
+        return str(getattr(item, "text", "") or "")
+
+
+def _item_page(item: object) -> int | None:
+    """The page an item sits on, from its first provenance record."""
+    prov = getattr(item, "prov", None)
+    return prov[0].page_no if prov else None
+
+
+def _text_and_structure(doc: object) -> tuple[str, list[dict], list[dict]]:
+    """Canonical text, its section table, and its page boundaries — in one pass.
+
+    Structure used to be recovered by exporting markdown and running a heading
+    regex back over it. That is cheap and it caps the structure layer at whatever
+    survives the export: Docling writes every heading as `##`, so a 2.9M-character
+    book became 213 flat siblings, and page provenance — which Docling records for
+    every single item — was discarded entirely, leaving PDF locators at 0%.
+
+    Walking the item stream instead makes offsets exact by construction rather
+    than recovered, which is what `EPUBModule` already does with the spine.
+
+    Returns `(text, sections, pages)`. *pages* is a boundary table rather than a
+    per-section field because a section spanning pages 42-45 has no single page;
+    the section's own starting page is carried too, since that is what
+    `StructuralChunker` reads today.
+    """
+    parts: list[str] = []
+    sections: list[dict] = []
+    pages: list[dict] = []
+    cursor = 0
+    last_page: int | None = None
+
+    for item, _depth in doc.iterate_items():  # type: ignore[attr-defined]
+        markdown = _item_markdown(item, doc)
+        if not markdown.strip():
+            continue
+
+        start = cursor
+        parts.append(markdown)
+        cursor += len(markdown) + len(_ITEM_SEPARATOR)
+
+        page = _item_page(item)
+        if page is not None and page != last_page:
+            pages.append({"char_start": start, "page": page})
+            last_page = page
+
+        label = str(getattr(item, "label", "") or "")
+        if label.rsplit(".", 1)[-1] in _HEADING_LABELS:
+            sections.append(
+                {
+                    "char_start": start,
+                    # Provisional: extended to the next heading below, so a
+                    # section holds its prose and not just its own title.
+                    "char_end": start + len(markdown),
+                    "heading": str(getattr(item, "text", "") or "").strip() or None,
+                    "level": getattr(item, "level", None) or 1,
+                    "page": page,
+                    "label": label,
+                }
+            )
+
+    text = _ITEM_SEPARATOR.join(parts)
+    for index, section in enumerate(sections):
+        following = sections[index + 1]["char_start"] if index + 1 < len(sections) else len(text)
+        section["char_end"] = max(section["char_end"], following)
+    return text, sections, pages
+
+
 def _convert_page_range(
     source_path_str: str, start: int, end: int, *, ocr: bool, device: str = "cpu"
-) -> str:
-    """Convert a page range of a PDF in a worker process."""
+) -> tuple[str, list[dict], list[dict]]:
+    """Convert a page range of a PDF in a worker process.
+
+    Returns the same triple as `_text_and_structure`. Sending that back rather
+    than the `DoclingDocument` itself keeps the pickle small — the document
+    carries every bounding box for every item — while losing nothing the caller
+    uses. Docling numbers pages absolutely, so the page table needs no shifting;
+    only the character offsets do.
+    """
     from docling.datamodel.base_models import InputFormat
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
@@ -169,10 +257,12 @@ def _convert_page_range(
         }
     )
     result = converter.convert(source_path_str, page_range=(start, end))
-    return result.document.export_to_markdown()
+    return _text_and_structure(result.document)
 
 
-def _convert_parallel(source_path: Path, *, ocr: bool, total_pages: int) -> str:
+def _convert_parallel(
+    source_path: Path, *, ocr: bool, total_pages: int
+) -> tuple[str, list[dict], list[dict]]:
     """Split a large PDF into chunks and process in parallel CPU workers."""
     num_workers = min(
         _default_workers(), math.ceil(total_pages / _MIN_PAGES_PER_WORKER)
@@ -207,7 +297,49 @@ def _convert_parallel(source_path: Path, *, ocr: bool, total_pages: int) -> str:
         ]
         chunks = [f.result() for f in futures]
 
-    return "\n\n".join(chunks)
+    return _join_chunks(chunks)
+
+
+def _join_chunks(
+    chunks: list[tuple[str, list[dict], list[dict]]],
+) -> tuple[str, list[dict], list[dict]]:
+    """Concatenate worker results, shifting each one's offsets onto the whole.
+
+    The same arithmetic a book assembled from articles needs: offsets are
+    relative to the piece they were measured in, and they have to address the
+    document they end up in. Page numbers are already absolute.
+    """
+    parts: list[str] = []
+    sections: list[dict] = []
+    pages: list[dict] = []
+    cursor = 0
+
+    for text, chunk_sections, chunk_pages in chunks:
+        for section in chunk_sections:
+            sections.append(
+                {
+                    **section,
+                    "char_start": section["char_start"] + cursor,
+                    "char_end": section["char_end"] + cursor,
+                }
+            )
+        for page in chunk_pages:
+            pages.append({**page, "char_start": page["char_start"] + cursor})
+        parts.append(text)
+        cursor += len(text) + len(_ITEM_SEPARATOR)
+
+    joined = _ITEM_SEPARATOR.join(parts)
+    # A section that ran to the end of its own chunk should run to the start of
+    # the next chunk's first section instead, or the prose between them belongs
+    # to no section at all.
+    for index, section in enumerate(sections):
+        following = (
+            sections[index + 1]["char_start"]
+            if index + 1 < len(sections)
+            else len(joined)
+        )
+        section["char_end"] = max(section["char_end"], following)
+    return joined, sections, pages
 
 
 def _default_workers() -> int:
@@ -263,7 +395,11 @@ def _extract_title(full_text: str, source_path: Path) -> str:
 
 class DoclingModule:
     id = "docling"
-    version = "1.0"
+    # 2.0: canonical text is built from Docling's item stream rather than its
+    # markdown export, so structure and page provenance survive. The text moves
+    # by a trailing newline and the offsets move with it — a re-ingest, not a
+    # re-chunk. 1.0 documents are stale.
+    version = "2.0"
 
     async def detect(self, source_path: Path) -> tuple[float, str]:
         """Return high confidence for formats Docling handles well."""
@@ -310,13 +446,13 @@ class DoclingModule:
 
         # Use parallel processing for large PDFs
         if is_pdf and total_pages > _MIN_PAGES_PER_WORKER:
-            full_text = _convert_parallel(
+            full_text, sections, pages = _convert_parallel(
                 source_path, ocr=needs_ocr, total_pages=total_pages
             )
         else:
             converter = _get_converter(ocr=needs_ocr)
             result = converter.convert(str(source_path))
-            full_text = result.document.export_to_markdown()
+            full_text, sections, pages = _text_and_structure(result.document)
 
         title = _extract_title(full_text, source_path)
 
@@ -325,10 +461,16 @@ class DoclingModule:
             "char_count": len(full_text),
             "parser": "docling",
             "ocr_applied": needs_ocr,
-            # Docling's headings survive the markdown export, so the structure
-            # is recoverable from the canonical text itself — no second pass
-            # over the DoclingDocument, and offsets exact by construction.
-            "sections": sections_from_markdown(full_text),
+            # Read off the item stream, not recovered by a heading regex over
+            # the export. Docling writes every heading as `##`, so the regex saw
+            # one level however deep the document went, and never saw a page
+            # number at all.
+            "sections": sections,
+            # Offset -> page boundaries for the whole document. Sections carry
+            # the page they *start* on, which is what `StructuralChunker` reads;
+            # this table is what a span crossing a page break needs, and is the
+            # same shape the Logos pack's page markers already use.
+            "pages": pages,
         }
         if total_pages:
             metadata["page_count"] = total_pages

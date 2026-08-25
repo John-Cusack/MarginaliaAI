@@ -4,6 +4,44 @@
 
 
 
+
+### Docling structure comes from the document, not from its markdown
+
+Structure was recovered by exporting markdown and running a heading regex back
+over it. That is cheap, and it caps the structure layer at whatever survives the
+export. Docling writes **every** heading as `##`, so a 2.9M-character book became
+213 flat siblings, and page provenance — which Docling records for every single
+item — was discarded entirely, leaving PDF locators at **0%**.
+
+`DoclingModule` now walks the item stream and builds canonical text itself,
+which is what `EPUBModule` already does with the spine. Offsets are exact by
+construction rather than recovered. Measured against a real PDF, the built text
+is 19,665 characters where `export_to_markdown()` gives 19,667 — a trailing
+newline apart — and every section slices back out of it exactly.
+
+- **Page provenance survives.** 31 page boundaries across pages 30–60 of
+  *Campaigns of Napoleon*, where before there were none. Sections carry the page
+  they start on, which is the slot `StructuralChunker` already reads
+  (`chunking/structural.py`) and no module has ever filled, so passages get a
+  page locator with no schema change.
+- **`metadata["pages"]`** is a full offset→page boundary table, for spans that
+  cross a page break. Same shape as the Logos pack's page markers.
+- **Item labels survive**, so footnotes are distinguishable from body text.
+- **Hierarchy does not improve, and cannot.** Docling detects a single heading
+  level for these PDFs — `SectionHeaderItem.level` is 1 for all of them — so
+  walking the model buys page numbers and labels, not nesting. Two other
+  approaches were tried and rejected: `export_to_markdown(page_break_placeholder=…)`
+  does not round-trip (stripping the placeholder gives 19,679 against 19,667,
+  because it brings newlines with it), and pickling `DoclingDocument` across the
+  worker boundary carries every bounding box for nothing the caller uses.
+
+The parallel path now returns `(text, sections, pages)` per page range and the
+parent shifts offsets onto the whole — page numbers are already absolute, so
+only the offsets move.
+
+Version 2.0: canonical text moves, so this is a re-ingest rather than a
+re-chunk, and 1.0 documents are stale.
+
 ### Search returns what to read, not just what matched
 
 A chunk is the right unit to embed and rank and the wrong unit to read: it ends
