@@ -12,7 +12,11 @@ import structlog
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.domain.documents import DocumentDraft
 from research_engine.domain.errors import IngestionError
-from research_engine.domain.nodes import attach_nodes, build_node_tree
+from research_engine.domain.nodes import (
+    DocumentNodeDraft,
+    attach_nodes,
+    build_node_tree,
+)
 from research_engine.services.ingestion.pipeline import build_document_draft, run_chunking
 from research_engine.services.search.langconfig import pg_config
 
@@ -139,6 +143,7 @@ class IngestionOrchestrator:
         metadata: dict[str, Any] | None = None,
         language: str | None = None,
         full_text: str | None = None,
+        node_drafts: list[DocumentNodeDraft] | None = None,
     ) -> dict:
         """Ingest pre-chunked PassageDrafts directly, skipping parse/chunk stages.
 
@@ -149,6 +154,14 @@ class IngestionOrchestrator:
         ``char_end`` index into. Supply it: without it the offsets address text
         that is not stored, so the passages cannot be quote-verified or
         re-anchored, and `reindex chunks` will skip the document.
+
+        *node_drafts* is the document's structure, when the caller knows it. A
+        pack that walks a table of contents already has the tree; without a way
+        to hand it over it was discarded at the door, and every plugin-ingested
+        document ended up with a bare root node — which is why a lexicon's
+        passages cited the volume rather than the entry they sit in. Supplying
+        it also attaches each passage to its deepest containing node, so the
+        structure is usable by `locate_passage` rather than merely present.
         """
 
         # Hash the *content*, not `source:title`. The old form meant a document
@@ -205,6 +218,14 @@ class IngestionOrchestrator:
                         "Pass full_text= to make them verifiable and re-anchorable."
                     ),
                 )
+            # Before the passages: `attach_nodes` needs the nodes' ids, which
+            # only exist once they are written.
+            if node_drafts and self._document_nodes is not None:
+                stored_nodes = await self._document_nodes.insert_many(
+                    tx, doc.id, node_drafts
+                )
+                passage_drafts = attach_nodes(passage_drafts, stored_nodes)
+
             saved_passages = await self._passages.insert_many(
                 tx, doc.id, passage_drafts
             )
@@ -242,6 +263,7 @@ class IngestionOrchestrator:
         return {
             "document_id": str(doc.id),
             "passage_count": len(saved_passages),
+            "node_count": len(node_drafts or []),
         }
 
     async def _ingest_one(

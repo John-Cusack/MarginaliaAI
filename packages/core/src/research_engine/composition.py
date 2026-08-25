@@ -8,15 +8,12 @@ from typing import TYPE_CHECKING, Any
 
 from research_engine.adapters.clock import SystemClock
 from research_engine.adapters.edge_client import EdgeServiceAdapter
-from research_engine.adapters.embedding.local_bge import LocalBGEEmbedding
-from research_engine.adapters.embedding.remote_api import RemoteEmbeddingClient
 from research_engine.adapters.extraction_client import ExtractionServiceAdapter
 from research_engine.adapters.http.httpx_adapter import HttpxAdapter
+from research_engine.adapters.inference import InferenceBackends, build_inference
 from research_engine.adapters.llm.anthropic import AnthropicLLMAdapter
 from research_engine.adapters.llm.budget_guard import BudgetGuard
 from research_engine.adapters.llm.openai_compatible import OpenAICompatibleLLMAdapter
-from research_engine.adapters.reranker.local_bge import LocalBGEReranker
-from research_engine.adapters.reranker.noop import NoopReranker
 from research_engine.adapters.storage.postgres.engine import build_engine, transaction
 from research_engine.adapters.storage.postgres.repositories import (
     PGDocumentNodeRepo,
@@ -33,7 +30,6 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGMentionRepo,
     PGPassageRepo,
 )
-from research_engine.domain.errors import ConfigurationError
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
 from research_engine.services.entities.service import EntityService
@@ -52,8 +48,12 @@ if TYPE_CHECKING:
 class Container:
     settings: Settings
     llm: Any
+    #: The *bulk* embedder — CLI backfill and reindex use this, and both
+    #: should fail rather than silently move a corpus-wide run onto a laptop.
+    #: Search holds `inference.query_embedding` instead.
     embedding: Any
     reranker: Any
+    inference: InferenceBackends
     http: Any
     clock: Any
     docs: PGDocumentRepo
@@ -139,6 +139,7 @@ class Container:
 
     async def close(self) -> None:
         await self.http.close()
+        await self.inference.close()
         await self.engine.dispose()
 
 
@@ -190,37 +191,13 @@ async def build_container(settings: Settings) -> Container:
             window_days=settings.llm_budget_window_days,
         )
 
-    # `embedding_provider` was declared but never read — the engine always built
-    # the local model, so setting it did nothing. A base_url implies remote, so
-    # pointing at a GPU host is one variable rather than two that must agree.
-    use_remote = (
-        settings.embedding_provider == "remote_api" or settings.embedding_base_url
-    )
-    if use_remote:
-        if not settings.embedding_base_url:
-            raise ConfigurationError(
-                "embedding_provider is 'remote_api' but RE_EMBEDDING_BASE_URL is "
-                "unset. Point it at a `research-engine embed-server`, e.g. "
-                "http://john-super-server:9882"
-            )
-        embedding = RemoteEmbeddingClient(
-            settings.embedding_base_url,
-            settings.embedding_model,
-            settings.embedding_dim,
-            timeout=settings.embedding_timeout,
-            api_key=(
-                settings.embedding_api_key.get_secret_value()
-                if settings.embedding_api_key
-                else None
-            ),
-        )
-    else:
-        embedding = LocalBGEEmbedding(settings.embedding_model, settings.embedding_dim)
-
-    if settings.reranker_provider == "local_bge":
-        reranker = LocalBGEReranker(settings.reranker_model)
-    else:
-        reranker = NoopReranker()
+    # Embedding and reranking are placed by `adapters/inference/routing.py`,
+    # which also decides what an unreachable GPU host means. The query and bulk
+    # embedders may be different objects with the same model identity: a query
+    # can fall back to this machine, a corpus-wide run must not.
+    inference = build_inference(settings)
+    embedding = inference.bulk_embedding
+    reranker = inference.reranker
 
     # Plugin registry
     registry = PluginRegistry()
@@ -262,7 +239,7 @@ async def build_container(settings: Settings) -> Container:
 
     search_service = HybridSearchService(
         passages=passages_repo,
-        embedding=embedding,
+        embedding=inference.query_embedding,
         reranker=reranker,
         get_filter_extensions=registry.get_filter_extensions,
     )
@@ -318,6 +295,7 @@ async def build_container(settings: Settings) -> Container:
         llm=llm,
         embedding=embedding,
         reranker=reranker,
+        inference=inference,
         http=http,
         clock=clock,
         docs=docs,

@@ -211,6 +211,22 @@ class EmbeddingUnavailable(ResearchEngineError):
     """
 
 
+class RerankUnavailable(ResearchEngineError):
+    """The reranker backend cannot be reached.
+
+    Unlike `EmbeddingUnavailable` this is *not* fatal to the operation that hit
+    it. A rerank score is consumed immediately and never stored, so a search
+    that cannot reach the reranker can still return its fused results — worse
+    ordered, but in 291 ms rather than not at all.
+
+    It is a distinct type precisely so `HybridSearchService` can make that
+    choice deliberately. Reranking is 99.4% of query latency when it runs on a
+    CPU, so the two wrong answers here are symmetrical and both bad: fail the
+    search outright, or silently spend 49 seconds. Degrading and saying so is
+    the only option that leaves the researcher informed.
+    """
+
+
 # --- Storage ---
 
 

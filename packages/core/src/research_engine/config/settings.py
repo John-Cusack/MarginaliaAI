@@ -16,7 +16,9 @@ logger = structlog.get_logger()
 ENV_PREFIX = "RE_"
 
 #: Fields whose values must never be printed or logged.
-SECRET_FIELDS = frozenset({"anthropic_api_key", "openai_compatible_api_key"})
+SECRET_FIELDS = frozenset(
+    {"anthropic_api_key", "openai_compatible_api_key", "embedding_api_key"}
+)
 
 
 class Settings(BaseSettings):
@@ -36,19 +38,42 @@ class Settings(BaseSettings):
     llm_budget_usd: float | None = None
     llm_budget_window_days: int = 30
 
-    # Embedding
-    embedding_provider: Literal["local_bge", "remote_api"] = "local_bge"
+    # Inference (embedding + reranking, optionally offloaded to a GPU host)
+    #: Base URL of a `research-engine embed-server`, e.g.
+    #: "http://john-super-server:9882". One server serves both models, so this
+    #: is one address rather than two that must agree.
+    inference_base_url: str | None = None
+
+    #: Where embedding runs.
+    #:
+    #: - ``local_bge``  — always this machine. A set base URL is ignored, which
+    #:   is the point: it is the off switch that does not make you delete the
+    #:   address to use it.
+    #: - ``remote_api`` — always the GPU host; fail if it is unreachable. Right
+    #:   for a headless box with no usable accelerator of its own.
+    #: - ``auto``       — GPU host when it answers; queries fall back to local,
+    #:   corpus-wide work still fails loudly. See `adapters/inference/routing.py`
+    #:   for why those two differ.
+    embedding_provider: Literal["local_bge", "remote_api", "auto"] = "local_bge"
     embedding_model: str = "BAAI/bge-m3"
     embedding_dim: int = 1024
-    #: Base URL of a `research-engine embed-server` on a GPU host, e.g.
-    #: "http://john-super-server:9882". Setting this implies remote_api.
+    #: Deprecated alias for `inference_base_url`, kept so existing .env files
+    #: keep working. Setting it no longer implies remote — the provider decides.
     embedding_base_url: str | None = None
     embedding_timeout: float = 120.0
     embedding_api_key: SecretStr | None = None
 
     # Reranker
-    reranker_provider: Literal["local_bge", "none"] = "local_bge"
+    #: Same modes as `embedding_provider`, plus ``none`` to skip reranking
+    #: entirely. Under ``auto`` an unreachable server means results come back
+    #: unreranked and flagged, *not* reranked slowly on the CPU — measured, that
+    #: costs 48.8 s of a 49.1 s search. Choose ``local_bge`` if this machine has
+    #: a working accelerator and you want it used as a fallback.
+    reranker_provider: Literal["local_bge", "remote_api", "auto", "none"] = "local_bge"
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    #: Reranking is interactive; a request slower than this has already failed
+    #: the researcher whether or not it eventually returns.
+    reranker_timeout: float = 30.0
 
     # Paths
     data_dir: Path = Path.home() / ".research-engine"
@@ -87,6 +112,11 @@ class Settings(BaseSettings):
     @property
     def resolved_plugins_dir(self) -> Path:
         return self.plugins_dir or self.data_dir / "plugins"
+
+    @property
+    def resolved_inference_base_url(self) -> str | None:
+        """The GPU host address, honouring the deprecated embedding-only name."""
+        return self.inference_base_url or self.embedding_base_url or None
 
 
 @dataclass(frozen=True)

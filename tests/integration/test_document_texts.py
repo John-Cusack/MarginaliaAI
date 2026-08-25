@@ -109,3 +109,44 @@ async def test_canonical_text_is_deleted_with_its_document(
 
     await corpus.cleanup()
     assert await repo.get(doc_id) is None
+
+
+async def test_get_span_matches_slicing_the_whole_text(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """`get_span` exists so `read_node` need not read a whole book to quote a line.
+
+    It has to agree with the slice it replaces at every edge, because passages
+    and nodes are addressed by exactly these offsets: SQL `substring` is
+    1-indexed and takes a length, Python's slice is 0-indexed and half-open, and
+    an off-by-one here silently misquotes the corpus.
+    """
+    repo = PGDocumentTextRepo(engine)
+    doc_id = await corpus.add_document()
+    async with transaction(engine) as tx:
+        await repo.put(tx, doc_id, DOC_TEXT, "test", "1.0")
+
+    end = len(DOC_TEXT)
+    cases = [
+        (0, end),            # the whole document
+        (0, 1),              # first character
+        (end - 1, end),      # last character
+        (4, 17),             # an interior span
+        (10, 10),            # empty span
+    ]
+    for start, stop in cases:
+        assert await repo.get_span(doc_id, start, stop) == DOC_TEXT[start:stop], (
+            f"get_span({start}, {stop}) disagrees with the Python slice"
+        )
+
+
+async def test_get_span_reports_missing_text_as_none(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """Distinguishable from an empty slice, which is a real answer."""
+    repo = PGDocumentTextRepo(engine)
+    no_text = await corpus.add_document()
+
+    assert await repo.get_span(no_text, 0, 10) is None
+    # Including for an empty span, which on a real document is "" not None.
+    assert await repo.get_span(no_text, 0, 0) is None

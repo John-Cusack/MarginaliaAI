@@ -101,7 +101,7 @@ async def handler(
                 }
             }
 
-        text = await container.document_texts.get_text(node.document_id)
+        text = await container.document_texts.get_span(node.document_id, start, end)
         if text is None:
             return {
                 "error": {
@@ -124,7 +124,7 @@ async def handler(
             "char_start": start,
             "char_end": end,
             "include_descendants": include_descendants,
-            "text": text[start:end],
+            "text": text,
         }
     except ValueError as e:
         return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
