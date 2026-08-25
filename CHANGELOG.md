@@ -2,6 +2,22 @@
 
 
 
+
+### Locators can be recovered without re-ingesting
+
+Two repository additions that let a pack attach page numbers to material already
+in the corpus:
+
+- **`PassageRepo.set_locators`** — bulk-attach locators to existing passages. A
+  locator is derived from the source rather than from the text, so learning it
+  late invalidates nothing: not the chunk, not its offsets, not its embedding.
+  Re-ingesting TDNT to add page numbers would re-embed 25,852 passages to change
+  one JSON column on each.
+- **`DocumentRepo.find_by_metadata`** — resolve documents by a key the pack
+  wrote at ingest. The Logos pack had been storing a `core_document_id` on its
+  staged chunks, which goes stale the moment a resource is re-ingested and then
+  points at a document with no passages.
+
 ### `verify_quote` — check a quotation against what the source actually says
 
 Search could find passages; nothing could take a quotation already written down

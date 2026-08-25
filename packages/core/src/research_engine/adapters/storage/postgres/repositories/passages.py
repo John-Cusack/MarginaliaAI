@@ -329,6 +329,26 @@ class PGPassageRepo:
             ).all()
         return [self._to_domain(row) for row in rows]
 
+    async def set_locators(self, updates: list[tuple[UUID, dict]]) -> int:
+        """Attach locators to existing passages, leaving everything else alone.
+
+        A locator is the one part of a passage that can be recovered *after*
+        ingestion: it is derived from the source, not from the text, so learning
+        it later does not invalidate the chunk, its offsets, or its embedding.
+        Re-ingesting a book to add page numbers would re-embed 25,852 passages
+        to change one JSON column on each.
+        """
+        if not updates:
+            return 0
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                passages.update()
+                .where(passages.c.id == sa.bindparam("_pid"))
+                .values(locator=sa.bindparam("_locator")),
+                [{"_pid": pid, "_locator": locator} for pid, locator in updates],
+            )
+            return result.rowcount or len(updates)
+
     async def get_context(
         self, passage_id: UUID, before: int = 0, after: int = 0
     ) -> tuple[list[Passage], Passage, list[Passage]]:
