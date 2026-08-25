@@ -39,6 +39,7 @@ from research_engine.services.extraction.postprocess import RecordEnricher
 from research_engine.services.ingestion.dispatch import ModuleDispatcher
 from research_engine.services.ingestion.orchestrator import IngestionOrchestrator
 from research_engine.services.search.hybrid import HybridSearchService
+from research_engine.services.search.windows import PassageWindowReader
 from research_engine.services.verification import QuoteVerifier
 
 if TYPE_CHECKING:
@@ -245,11 +246,22 @@ async def build_container(settings: Settings) -> Container:
         documents=docs,
     )
 
+    # What a hit is *read* as, rather than what it was ranked as. Always on:
+    # a chunk boundary is where the ingester happened to cut, and there is no
+    # query for which that is the right thing to hand a reader.
+    window_reader = PassageWindowReader(
+        document_nodes=document_nodes_repo,
+        document_texts=document_texts_repo,
+        max_tokens=settings.search_window_max_tokens,
+        min_tokens=settings.search_window_min_tokens,
+    )
+
     search_service = HybridSearchService(
         passages=passages_repo,
         embedding=inference.query_embedding,
         reranker=reranker,
         get_filter_extensions=registry.get_filter_extensions,
+        windows=window_reader,
     )
 
     # Dispatcher with built-in modules

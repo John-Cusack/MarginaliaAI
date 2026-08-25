@@ -3,6 +3,51 @@
 
 
 
+
+### Search returns what to read, not just what matched
+
+A chunk is the right unit to embed and rank and the wrong unit to read: it ends
+where the ingester happened to cut, which in a lexicon lands mid-definition. Every
+hit now carries a `window` as well — prose read back from the document's canonical
+text, bounded by the document's own structure and capped by a token budget.
+
+Retrieval is untouched. Expansion happens after reranking, and a test asserts the
+cross-encoder still receives chunk text, because letting a window reach it would
+make scores depend on the read path and invalidate every stored baseline.
+
+- **`PassageHit.text` still means "what matched"** — quote that. `window.text` is
+  what to read. `window.source == "node"` means the window is a complete
+  structural unit and `read_node` would add nothing.
+- **Bounded by structure, then by budget.** Node spans here are wildly uneven —
+  Louw-Nida's median is 68 characters, A Marginal Jew's p90 is 24,267, and the
+  root node is the whole 23.2M-character document. So "read the containing node"
+  fails at both ends and the rule needs a minimum as well as a maximum.
+- **A window must be wider than the chunk to count as one.** Median
+  passages-per-node is 1, so the deepest node is routinely the chunk itself; it
+  clears any minimum while expanding nothing. Measured on the live corpus this
+  returned `source="passage"` at 1.0x for a third of lexicon hits before it was a
+  condition. On BDAG a 16-character fragment now expands to 3,077 characters.
+- **The budget is script-aware**, sized from the hit's own text: the same token
+  budget is a much shorter character window in Greek or Hebrew than in English.
+  `approx_tokens` is measured on the returned text, not on the estimate that
+  sized it.
+
+**The read path lost its N+1 on the way.** It previously issued one `SELECT` per
+id in two places — 50 single-row queries for a reranked `k=20` search, 20 of them
+re-reading rows already read for the cross-encoder. Now three queries total,
+constant in `k`: one for passages, one for ancestor chains, one for spans.
+
+| | before | after |
+|---|---|---|
+| passage rows | 50 | 1 |
+| ancestors | — | 1 |
+| spans | — | 1 |
+
+Also: `search_default_k`, `search_rerank_n` and `rrf_k` were declared and never
+read — deleted rather than left as fiction alongside two settings that are real.
+`PassageHit.context_available` was hardcoded `True` and never assigned; `window
+is None` says the same thing honestly.
+
 ### Locators can be recovered without re-ingesting
 
 Two repository additions that let a pack attach page numbers to material already

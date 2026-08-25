@@ -74,7 +74,10 @@ async def handler(
                     "text": h.text,
                     "metadata": h.metadata,
                     "locator": h.locator,
-                    "context_available": h.context_available,
+                    "char_start": h.char_start,
+                    "char_end": h.char_end,
+                    "node_id": str(h.node_id) if h.node_id else None,
+                    "window": h.window.model_dump(mode="json") if h.window else None,
                 }
                 for h in hits
             ],

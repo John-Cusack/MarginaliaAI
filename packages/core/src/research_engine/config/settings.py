@@ -94,9 +94,19 @@ class Settings(BaseSettings):
     #: which is safe for a mixed corpus but costs recall on a single-language
     #: one — set it to e.g. "en" if the corpus really is all English.
     default_language: str | None = None
-    search_default_k: int = 20
-    search_rerank_n: int = 30
-    rrf_k: int = 60
+    #: Token budget for the window search returns beside each hit. The chunk is
+    #: what was embedded and ranked; the window is what gets read, so this buys
+    #: context, not recall — raising it costs the caller's context window and
+    #: nothing else. Converted to characters against the *hit's own* script mix,
+    #: so the same budget is a much shorter window in HALOT than in a monograph.
+    search_window_max_tokens: int = 1500
+
+    #: Widen past the containing node when that node is smaller than this. The
+    #: structural node is the right boundary until it is not: Louw-Nida's median
+    #: entry is 68 characters — narrower than the chunk that matched it — so
+    #: returning the node alone would give a reader less than search already
+    #: showed them. Below this the window climbs to an ancestor that can hold it.
+    search_window_min_tokens: int = 200
     #: HNSW search breadth. Higher trades latency for recall. Measured on a
     #: 271k-vector corpus: 40 -> ~2.1 ms, 100 -> ~2.7 ms, 400 -> ~3.5 ms, against
     #: a 416 ms exact scan. 100 is the default because the extra millisecond is

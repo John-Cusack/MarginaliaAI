@@ -122,6 +122,48 @@ class PGDocumentTextRepo:
     # same text is C over a single row, and the `document_texts_norm_trgm` GIN
     # index turns a corpus-wide LIKE into 200 ms.
 
+    async def get_spans(
+        self, requests: list[tuple[UUID, int, int]]
+    ) -> list[str | None]:
+        """Many slices, one round trip, answers in the order asked for.
+
+        Search expands every hit, so the single-span form would be one query per
+        result. Requests are not deduplicated: two hits in the same document want
+        two different slices of it.
+
+        The join is an OUTER join so a document with no stored text yields None
+        in its position rather than dropping out and shifting every later answer
+        onto the wrong request.
+        """
+        if not requests:
+            return []
+        rows = [
+            # Clamp here, not in SQL. Postgres `substring(t, -2, 5)` is not an
+            # error — negative positions are consumed by the length, so an
+            # unclamped window near offset 0 silently returns a fraction of what
+            # was asked for.
+            (idx, document_id, max(start, 0), max(end - max(start, 0), 0))
+            for idx, (document_id, start, end) in enumerate(requests)
+        ]
+        req = sa.values(
+            sa.column("idx", sa.Integer),
+            sa.column("document_id", sa.Uuid),
+            sa.column("start_at", sa.Integer),
+            sa.column("width", sa.Integer),
+            name="req",
+        ).data(rows)
+        stmt = sa.select(
+            req.c.idx,
+            sa.func.substring(document_texts.c.text, req.c.start_at + 1, req.c.width),
+        ).select_from(
+            req.outerjoin(
+                document_texts, document_texts.c.document_id == req.c.document_id
+            )
+        )
+        async with self._engine.connect() as conn:
+            found = {row[0]: row[1] for row in (await conn.execute(stmt)).all()}
+        return [found.get(idx) for idx in range(len(requests))]
+
     async def find_documents_containing(
         self, needle: str, limit: int = 10
     ) -> list[UUID]:

@@ -29,10 +29,28 @@ class FakePassages:
     async def keyword_search(self, text, lang, candidates, k):
         return [(pid, 0.5) for pid in IDS[:k]]
 
-    async def get(self, pid):
+    def __init__(self) -> None:
+        self.get_many_calls = 0
+
+    def _passage(self, pid):
+        index = IDS.index(pid) if pid in IDS else 0
         return SimpleNamespace(
-            document_id=DOC, text=f"passage {pid}", metadata={}, locator={}
+            id=pid,
+            document_id=DOC,
+            text=f"passage {pid}",
+            metadata={},
+            locator={},
+            char_start=index * 100,
+            char_end=index * 100 + 60,
+            node_id=None,
         )
+
+    async def get(self, pid):
+        return self._passage(pid)
+
+    async def get_many(self, passage_ids):
+        self.get_many_calls += 1
+        return [self._passage(pid) for pid in passage_ids]
 
 
 class FakeEmbedding:
@@ -105,3 +123,52 @@ async def test_reranking_actually_reorders_when_it_works():
     assert [h.passage_id for h in working.hits] != [
         h.passage_id for h in degraded.hits
     ]
+
+
+class RecordingReranker:
+    """Captures what the cross-encoder was actually given."""
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    async def rerank(self, query, passage_ids, texts, k):
+        self.texts = list(texts)
+        return [(pid, 1.0 - i * 0.01) for i, pid in enumerate(passage_ids)][:k]
+
+
+@pytest.mark.asyncio
+async def test_the_candidate_set_is_read_once_not_once_per_hit():
+    """Guards the read path against regressing to N+1.
+
+    It previously issued one SELECT per id in each of two places — 50 single-row
+    queries for a reranked k=20 search, 20 of them re-reading rows already read
+    for the cross-encoder. Nothing about the returned results would look wrong if
+    that came back, which is why it needs a test rather than a review.
+    """
+    passages = FakePassages()
+    service = HybridSearchService(
+        passages=passages, embedding=FakeEmbedding(), reranker=ReversingReranker()
+    )
+
+    await service.find_passages(SearchQuery(text="mishpat", k=3, rerank=True))
+
+    assert passages.get_many_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_the_reranker_is_given_chunk_text():
+    """Ranking must not depend on anything the read path adds.
+
+    Expansion happens after this point, on the way out. If a future refactor let
+    a widened window reach the cross-encoder, scores would silently change and
+    every stored evaluation baseline would be wrong.
+    """
+    reranker = RecordingReranker()
+    service = HybridSearchService(
+        passages=FakePassages(), embedding=FakeEmbedding(), reranker=reranker
+    )
+
+    await service.find_passages(SearchQuery(text="mishpat", k=3, rerank=True))
+
+    assert reranker.texts
+    assert all(t.startswith("passage ") for t in reranker.texts)
