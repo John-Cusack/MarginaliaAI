@@ -190,10 +190,6 @@ class PGDocumentTextRepo:
         return at - 1 if at else None
 
 
-def _like_escape(value: str) -> str:
-    """Escape LIKE metacharacters so a quote containing % or _ still matches."""
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
     async def missing_document_ids(self, limit: int | None = None) -> list[UUID]:
         """Documents with no canonical text stored.
 
@@ -222,3 +218,8 @@ def _like_escape(value: str) -> str:
                     sa.select(sa.func.count()).select_from(document_texts)
                 )
             ).scalar_one()
+
+
+def _like_escape(value: str) -> str:
+    """Escape LIKE metacharacters so a quote containing % or _ still matches."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
