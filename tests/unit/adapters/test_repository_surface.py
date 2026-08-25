@@ -29,10 +29,10 @@ EXPECTED = {
         "find_documents_containing", "lengths", "find_raw", "find_normalized",
     ],
     PGPassageRepo: [
-        "get", "get_by_document", "covering_span",
+        "get", "get_by_document", "covering_span", "set_locators",
         "vector_search", "keyword_search", "insert_many",
     ],
-    PGDocumentRepo: ["get", "insert", "find_by_hash"],
+    PGDocumentRepo: ["get", "insert", "find_by_hash", "find_by_metadata"],
 }
 
 
