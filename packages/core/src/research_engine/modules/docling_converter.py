@@ -161,6 +161,12 @@ _ITEM_SEPARATOR = "\n\n"
 #: section per item would turn a 600-page book into forty thousand nodes.
 _HEADING_LABELS = frozenset({"section_header", "title"})
 
+#: Docling's own label for a table of contents. A book's front matter is, by
+#: definition, what comes before one — which is the only signal available here.
+#: `content_layer` does not help: Docling marks a dedication and a chapter alike
+#: as `ContentLayer.BODY`, with no furniture classification at all.
+_INDEX_LABEL = "document_index"
+
 
 def _item_markdown(item: object, doc: object) -> str:
     """One item's markdown, falling back to its plain text."""
@@ -198,6 +204,7 @@ def _text_and_structure(doc: object) -> tuple[str, list[dict], list[dict]]:
     pages: list[dict] = []
     cursor = 0
     last_page: int | None = None
+    first_index_at: int | None = None
 
     for item, _depth in doc.iterate_items():  # type: ignore[attr-defined]
         markdown = _item_markdown(item, doc)
@@ -214,7 +221,10 @@ def _text_and_structure(doc: object) -> tuple[str, list[dict], list[dict]]:
             last_page = page
 
         label = str(getattr(item, "label", "") or "")
-        if label.rsplit(".", 1)[-1] in _HEADING_LABELS:
+        short_label = label.rsplit(".", 1)[-1]
+        if short_label == _INDEX_LABEL and first_index_at is None:
+            first_index_at = start
+        if short_label in _HEADING_LABELS:
             sections.append(
                 {
                     "char_start": start,
@@ -229,10 +239,53 @@ def _text_and_structure(doc: object) -> tuple[str, list[dict], list[dict]]:
             )
 
     text = _ITEM_SEPARATOR.join(parts)
+    sections = _merge_adjacent_headings(sections, text)
+    sections = _drop_front_matter(sections, first_index_at)
     for index, section in enumerate(sections):
         following = sections[index + 1]["char_start"] if index + 1 < len(sections) else len(text)
         section["char_end"] = max(section["char_end"], following)
     return text, sections, pages
+
+
+def _merge_adjacent_headings(sections: list[dict], text: str) -> list[dict]:
+    """Join headings separated by nothing but whitespace.
+
+    Layout splits one heading across lines and Docling reports each line as its
+    own item: `COMMAND IN THE WESTERN` then `THEATER`, `PART ONE` then
+    `Apprenticeship to Arms`. Left alone they become sibling nodes, one of which
+    is a fragment. Whether a given heading arrives split is not even stable
+    between runs, so this is a repair rather than a preference.
+    """
+    merged: list[dict] = []
+    for section in sections:
+        if merged and not text[merged[-1]["char_end"] : section["char_start"]].strip():
+            previous = merged[-1]
+            titles = [previous.get("heading"), section.get("heading")]
+            previous["heading"] = " ".join(t for t in titles if t) or None
+            previous["char_end"] = section["char_end"]
+            continue
+        merged.append(section)
+    return merged
+
+
+def _drop_front_matter(sections: list[dict], first_index_at: int | None) -> list[dict]:
+    """Discard headings that precede the table of contents.
+
+    A dedication, a copyright line and a calligrapher's credit are all set like
+    headings and all detected as headings, so a passage on page 3 would cite
+    itself as belonging to "Donated In Memory Of ROBERT EDWARD PATOW".
+
+    The first `document_index` item is the cut. The *first*, not the last: a
+    contents list runs over several pages with headings interleaved, and cutting
+    at the last one takes real sections such as `APPENDICES` with it.
+
+    Only the headings are dropped, never the text — it stays in the canonical
+    text and simply belongs to the node above. And when no contents page is
+    detected there is nothing to cut against, so nothing is dropped.
+    """
+    if first_index_at is None:
+        return sections
+    return [s for s in sections if s["char_start"] >= first_index_at]
 
 
 def _convert_page_range(

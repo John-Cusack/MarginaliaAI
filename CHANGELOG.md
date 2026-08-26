@@ -5,6 +5,33 @@
 
 
 
+
+### Docling headings: drop the front matter, rejoin the split ones
+
+Docling sets a dedication, a copyright line and a calligrapher's credit like
+headings and detects them as headings, so a passage on page 3 cited itself as
+belonging to `"Donated In Memory Of ROBERT EDWARD PATOW"`. Layout also splits one
+heading across lines and reports each line as its own item, leaving a sibling
+node that is a fragment — `COMMAND IN THE WESTERN` and then `THEATER`.
+
+- **Headings before the table of contents are dropped.** Docling's own
+  `document_index` label is the cut, and it is the *first* such item, not the
+  last: a contents list runs over several pages with headings interleaved, and
+  cutting at the last one takes real sections like `APPENDICES` with it. Only the
+  heading goes — the text stays in the canonical text and belongs to the node
+  above. A document with no detected contents page keeps every heading, because
+  there is nothing to cut against.
+- **Adjacent headings are merged** when only whitespace separates them. Whether
+  a heading arrives split is not stable between Docling runs, so this is a repair
+  rather than a preference.
+
+`content_layer` was tried first and is no help: Docling marks a dedication and a
+chapter alike as `ContentLayer.BODY`, with no furniture classification at all.
+
+**Not fixed, and not fixable this way:** Docling also marks letter closings as
+headings — `"Yours affectionately Geo B McClellan"` on page 26 of the McClellan
+papers. Those sit in the body, so no positional rule reaches them.
+
 ### Docling structure comes from the document, not from its markdown
 
 Structure was recovered by exporting markdown and running a heading regex back
