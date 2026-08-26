@@ -207,3 +207,197 @@ class TestJoinChunks:
         ])
 
         assert sections[0]["char_end"] == sections[1]["char_start"]
+
+
+class TestHeadingRepair:
+    """Docling's heading classifier is noisy, and two faults are repairable.
+
+    A dedication, a copyright line and a calligrapher's credit are all set like
+    headings and all detected as headings — so a passage on page 3 cited itself
+    as belonging to 'Donated In Memory Of ROBERT EDWARD PATOW'. And layout
+    splits one heading across lines, which arrives as two sibling items, one of
+    them a fragment.
+    """
+
+    def _built(self, items):
+        from research_engine.modules.docling_converter import _text_and_structure
+
+        return _text_and_structure(FakeDoc(items))
+
+    def test_a_heading_split_across_lines_becomes_one(self):
+        """'COMMAND IN THE WESTERN' / 'THEATER' is one heading, not two."""
+        items = [
+            FakeItem("COMMAND IN THE WESTERN", label="section_header",
+                     markdown="## COMMAND IN THE WESTERN"),
+            FakeItem("THEATER", label="section_header", markdown="## THEATER"),
+            FakeItem("Body text follows here at length."),
+        ]
+
+        _, sections, _ = self._built(items)
+
+        assert [s["heading"] for s in sections] == ["COMMAND IN THE WESTERN THEATER"]
+
+    def test_headings_separated_by_real_text_are_not_merged(self):
+        items = [
+            FakeItem("First", label="section_header", markdown="## First"),
+            FakeItem("Prose between them."),
+            FakeItem("Second", label="section_header", markdown="## Second"),
+        ]
+
+        _, sections, _ = self._built(items)
+
+        assert [s["heading"] for s in sections] == ["First", "Second"]
+
+    def test_front_matter_before_the_contents_page_is_dropped(self):
+        items = [
+            FakeItem("Donated In Memory Of R E PATOW", label="section_header",
+                     markdown="## Donated In Memory Of R E PATOW"),
+            FakeItem("Some dedication prose."),
+            FakeItem("Copyright 1989", label="section_header",
+                     markdown="## Copyright 1989"),
+            FakeItem("All rights reserved."),
+            FakeItem("1. Chapter One .... 7", label="document_index",
+                     markdown="1. Chapter One .... 7"),
+            FakeItem("INTRODUCTION", label="section_header",
+                     markdown="## INTRODUCTION"),
+            FakeItem("The real book starts here."),
+        ]
+
+        _, sections, _ = self._built(items)
+
+        assert [s["heading"] for s in sections] == ["INTRODUCTION"]
+
+    def test_the_dropped_text_is_still_in_the_canonical_text(self):
+        """Only the heading goes. Nothing is removed from the document."""
+        items = [
+            FakeItem("Copyright 1989", label="section_header",
+                     markdown="## Copyright 1989"),
+            FakeItem("index", label="document_index", markdown="index"),
+            FakeItem("INTRODUCTION", label="section_header",
+                     markdown="## INTRODUCTION"),
+        ]
+
+        text, sections, _ = self._built(items)
+
+        assert "Copyright 1989" in text
+        assert [s["heading"] for s in sections] == ["INTRODUCTION"]
+
+    def test_a_document_with_no_contents_page_keeps_every_heading(self):
+        """No signal to cut against, so nothing is cut."""
+        items = [
+            FakeItem("Chapter One", label="section_header", markdown="## Chapter One"),
+            FakeItem("Prose."),
+            FakeItem("Chapter Two", label="section_header", markdown="## Chapter Two"),
+        ]
+
+        _, sections, _ = self._built(items)
+
+        assert [s["heading"] for s in sections] == ["Chapter One", "Chapter Two"]
+
+    def test_the_cut_is_the_first_contents_item_not_the_last(self):
+        """A contents list runs over pages with headings interleaved; cutting at
+        the last one takes real sections such as APPENDICES with it."""
+        items = [
+            FakeItem("Copyright", label="section_header", markdown="## Copyright"),
+            FakeItem("toc page 1", label="document_index", markdown="toc page 1"),
+            FakeItem("APPENDICES", label="section_header", markdown="## APPENDICES"),
+            FakeItem("toc page 2", label="document_index", markdown="toc page 2"),
+            FakeItem("Chapter One", label="section_header", markdown="## Chapter One"),
+        ]
+
+        _, sections, _ = self._built(items)
+
+        assert [s["heading"] for s in sections] == ["APPENDICES", "Chapter One"]
+
+
+class FakeBBox:
+    def __init__(self, left: float, right: float) -> None:
+        self.l = left  # noqa: E741 - matches Docling's own attribute name
+        self.r = right
+
+
+class FakeSize:
+    def __init__(self, width: float) -> None:
+        self.width = width
+
+
+class FakePage:
+    def __init__(self, width: float) -> None:
+        self.size = FakeSize(width)
+
+
+class PlacedItem(FakeItem):
+    """A heading with geometry, so alignment can be judged."""
+
+    def __init__(self, text, left, right, page=1, **kw):
+        super().__init__(text, label="section_header", page=page,
+                         markdown=f"## {text}", **kw)
+        self.prov[0].bbox = FakeBBox(left, right)
+
+
+class PagedDoc(FakeDoc):
+    def __init__(self, items, page_width=1886.0):
+        super().__init__(items)
+        self.pages = {1: FakePage(page_width)}
+
+
+class TestAlignmentRepair:
+    """Docling reads visual salience, so a signature looks like a heading.
+
+    `"Yours affectionately Geo B McClellan"` arrived as a `section_header` and
+    became a node, and passages beneath it cited themselves as belonging to a
+    signature. Alignment is what separates the two: measured on the McClellan
+    papers, every genuine heading starts between 5% and 14% across the page and
+    the closing starts at 57%.
+    """
+
+    def _headings(self, items, width=1886.0):
+        from research_engine.modules.docling_converter import _text_and_structure
+
+        _, sections, _ = _text_and_structure(PagedDoc(items, width))
+        return [s["heading"] for s in sections]
+
+    def test_a_right_set_closing_is_not_a_heading(self):
+        items = [
+            PlacedItem("To Thomas C. English", 181, 682),
+            FakeItem("The body of the letter runs on for a while."),
+            PlacedItem("Yours affectionately Geo B McClellan", 1072, 1468),
+        ]
+
+        assert self._headings(items) == ["To Thomas C. English"]
+
+    def test_a_left_aligned_heading_survives(self):
+        assert self._headings([PlacedItem("To Winfield Scott", 90, 499)]) == [
+            "To Winfield Scott"
+        ]
+
+    def test_a_centred_heading_survives(self):
+        """A centred heading of width w starts at (W-w)/2, always left of W/2.
+
+        So the midpoint test cannot reject centring however wide the heading.
+        """
+        assert self._headings([PlacedItem("COMMAND IN THE WESTERN THEATER", 257, 1483)]) == [
+            "COMMAND IN THE WESTERN THEATER"
+        ]
+
+    def test_a_very_wide_centred_heading_still_survives(self):
+        assert self._headings([PlacedItem("A HEADING SPANNING NEARLY THE PAGE", 40, 1840)]) == [
+            "A HEADING SPANNING NEARLY THE PAGE"
+        ]
+
+    def test_a_heading_with_no_geometry_is_kept(self):
+        """Falls open, not closed: a document without provenance keeps its
+        headings rather than losing all of them."""
+        from research_engine.modules.docling_converter import _text_and_structure
+
+        _, sections, _ = _text_and_structure(
+            FakeDoc([FakeItem("Chapter One", label="section_header",
+                              markdown="## Chapter One")])
+        )
+
+        assert [s["heading"] for s in sections] == ["Chapter One"]
+
+    def test_a_page_of_unknown_width_keeps_its_headings(self):
+        assert self._headings(
+            [PlacedItem("Something Right", 1500, 1800)], width=0
+        ) == ["Something Right"]
