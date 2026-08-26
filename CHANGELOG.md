@@ -1,5 +1,111 @@
 # Changelog
 
+### Docling's process pool is sized from measurement, and survives being wrong
+
+Re-ingesting a 1,224-page book killed a worker on a 64 GB machine —
+`Out of memory: Killed process 53655 (python) anon-rss:8238088kB` — and lost the
+document ten minutes in. The same workload had already caused a laptop to power
+off hard, which was attributed at the time to heat. It was memory both times.
+
+**The constant was a guess.** `_WORKER_MEMORY_MB` was 2,048 with a comment
+claiming "measured empirically at ~1.5–2GB peak per worker". Nothing had measured
+it. On 32 cores and 64 GB the sizing returned 13 workers, and 13 workers at the
+real cost is about 70 GB. The manual override in use at the time was 12; the
+shipped default would have failed identically.
+
+**What the measurement actually says**, converting Campaigns of Napoleon on the
+server, one range per fresh process:
+
+| range | pages | peak RSS |
+|---|---|---|
+| 1–25 | 25 | 5,109 MB |
+| 1–50 | 50 | 5,434 MB |
+| 1–100 | 100 | 5,359 MB |
+| 1–200 | 200 | 5,333 MB |
+| 26–50 | 25 | 3,232 MB |
+| 51–75 | 25 | 3,287 MB |
+| 76–100 | 25 | 3,242 MB |
+
+Peak is **flat in page count** — eight times the pages for the same memory —
+while two different 25-page ranges differ by 1.9 GB. Cost follows content
+(plates, maps, tables), not volume. So total memory is simply
+`workers × per-worker peak`, and the worker count is the only lever with real
+leverage.
+
+A worker's *lifetime* high-water mark is roughly twice what any single range
+suggests, because it runs several: three full conversions of the book reported
+**9,828**, **9,673** and **8,391 MB** — a 17% spread on the same document, since
+which expensive ranges land on which worker is luck. `_WORKER_MEMORY_MB` is therefore **10,240**, and
+it is deliberately pessimistic — it assumes every worker peaks at once, which
+measured runs say they do not (6 × 9.7 GB predicts 58 GB against an observed
+37 GB). Relying on peaks staying staggered is exactly the assumption that breaks
+on a document where every range is expensive, and the failure mode is the OOM
+killer. On a 64 GB machine that means 4 workers where the old code chose 13: the
+book takes about six minutes longer and finishes.
+
+The unexplained `// 2` that half-compensated for the old figure is gone, as is
+the `max(2, ...)` floor that guaranteed parallelism on the machine least able to
+afford it.
+
+**Each worker builds its converter once, not once per task.** Doing it per task
+made a *smaller* `pages_per_task` quietly worse, since more tasks per worker
+means more model loads. Over a full book this cut steady-state memory from
+37.4 GB to 34.0 GB and pulled the spread across non-peak workers from
+4,373–6,162 MB down to 3,792–4,073 MB. It does not lower the peak — that is set
+by one expensive range, and no amount of tidiness afterwards undoes a high-water
+mark.
+
+**Task size no longer derives from the worker count.** It was
+`ceil(total_pages / workers)`, so how much one worker held was a property of the
+document and no single budget could suit both a 320-page thesis and a 1,224-page
+book. It is now a fixed `docling_pages_per_task`, default 50. This buys less than
+expected — it does not bound memory, per the table above — but it makes the
+budget a measurable constant, spreads expensive pages across workers rather than
+concentrating them, and caps what a dead worker costs to redo.
+
+**A killed worker no longer costs the document.** `BrokenProcessPool` was
+unhandled; its message, "A process in the process pool was terminated abruptly",
+names no cause, and attributing it the first time took reading kernel logs. It is
+now treated the way `embed_batches` treats a batch too large for the accelerator:
+halve and retry. Concurrency comes down first — it cannot change the output, and
+it is the rung with the leverage — and task size only once one worker remains.
+The raised exception now says what it means and how to confirm it in `dmesg`.
+
+**Workers are made the preferred OOM victims.** The ladder can only run if the
+process supervising it survives, and left to its own scoring the kernel may pick
+the parent — it holds the whole document's text. Each worker raises its own
+`oom_score_adj`, which needs no privileges, so the reaper takes something
+recoverable. Without this the recovery path is a coin flip on which process dies.
+
+**Retries keep the work that survived.** One dead worker breaks the executor for
+everything pending, but ranges that already finished are still good; in the
+failure this was written for, eleven of twelve workers had completed and all of
+it was discarded. Results are now keyed by page range and carried into the next
+attempt, so a retry converts only what is missing — and they are dropped when the
+task size changes, because a different split is a different set of ranges.
+
+**It reports what it cost.** Each worker returns its own `ru_maxrss`, logged as
+`peak_worker_mb` at INFO alongside the budget it is meant to predict, and stored
+in the document's `metadata["conversion"]` with the halving count — the role
+`BackfillReport.halvings` already plays for `embedding_batch_size`. The sizing
+decision itself moved from `logger.debug` to `logger.info`; at DEBUG, none of the
+numbers that mattered were printed during the run that ran out of memory.
+
+**`docling_device` now does something.** It was declared in settings and read
+nowhere, while the converter looked at `RE_DOCLING_DEVICE` itself. `DoclingModule`
+was the only component the composition root did not configure; it now takes
+`device`, `max_workers` and `pages_per_task`, joined by `RE_DOCLING_MAX_WORKERS`
+and `RE_DOCLING_PAGES_PER_TASK`. The device is also part of the converter cache
+key, which it was not — the first converter built decided the device for every
+later conversion in the process.
+
+**No re-ingest.** Splitting a PDF differently produces byte-identical canonical
+text: 1×100, 2×50 and 4×25 pages all yield the same 244,294 characters, asserted
+now in `tests/integration/test_docling_conversion.py`. That file is also the first
+test ever to run a real PDF through this path. Converting the whole 1,224-page
+book at the new defaults reproduces what the corpus already holds exactly —
+2,907,621 characters and 1,211 page markers — with no halvings.
+
 
 
 

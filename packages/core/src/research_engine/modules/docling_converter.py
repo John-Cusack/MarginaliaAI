@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import math
+import contextlib
 import os
 import threading
 from concurrent.futures import ProcessPoolExecutor
-from typing import TYPE_CHECKING
+from concurrent.futures.process import BrokenProcessPool
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import structlog
+
+from research_engine.domain.errors import describe_exception
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,30 +37,70 @@ _DOCTYPE_BY_EXT = {
     ".pptx": "presentation",
 }
 
-# Minimum pages per worker before parallelism is worthwhile (~10s startup cost
-# per worker for model loading). Also the threshold to enable parallelism at all.
-_MIN_PAGES_PER_WORKER = 20
+#: Below this a PDF converts in the calling process. Parallelism costs roughly
+#: ten seconds of model loading per worker, which is not worth paying to split a
+#: pamphlet. This is only the gate; it no longer doubles as a task size.
+#:
+#: The real gate is `_wants_parallel` below, which also requires more than one
+#: task: a pool of one worker running one range is not parallelism, it is the
+#: single-process path with an extra model load and no accelerator.
+_MIN_PAGES_FOR_PARALLEL = 20
 
-# Estimated peak memory per worker process: ~766MB for model loading + page buffers
-# during processing. Measured empirically at ~1.5–2GB peak per worker.
-_WORKER_MEMORY_MB = 2048
+#: Pages one worker converts in a single task, fixed rather than derived from
+#: the worker count.
+#:
+#: It does **not** bound memory, which is what it was expected to do. Measured on
+#: Campaigns of Napoleon, peak RSS is flat in page count — 5,109 MB for pages
+#: 1-25, 5,434 for 1-50, 5,359 for 1-100, 5,333 for 1-200 — while two different
+#: 25-page ranges differ by 1.9 GB (3,232 MB of plain prose against 5,109 MB of
+#: plates and maps). Cost follows content, not volume.
+#:
+#: What a fixed size does buy: `_WORKER_MEMORY_MB` becomes a property of a task
+#: rather than of the document, expensive pages spread across workers instead of
+#: landing on one, and a worker that dies costs 50 pages to redo rather than its
+#: share of the whole book. 50 gives ~25 tasks for a book-length PDF, which
+#: balances across any worker count this will size.
+_DEFAULT_PAGES_PER_TASK = 50
 
-# Always leave this much memory free for the OS, main process, and breathing room.
+#: Peak resident memory to budget for one worker.
+#:
+#: Sized to the worst peak actually observed, not to a mean or an estimate. Three
+#: full conversions of the same 1,224-page book reported 9,828, 9,673 and
+#: 8,391 MB; the worker the kernel killed reached 8,045 MB. Single ranges measured
+#: in isolation run 3,232-5,434 MB, so a worker's lifetime high-water mark is
+#: roughly twice what any one task suggests — budget for the former.
+#:
+#: Note the 17% spread across runs of the *same* document: which expensive ranges
+#: land on which worker is luck, so there is no single right answer to measure
+#: towards, only a worst case to stay above.
+#:
+#: This is deliberately pessimistic: it assumes every worker peaks at once, which
+#: measured runs say they do not (6 workers x 9.7 GB predicts 58 GB against an
+#: observed 37 GB). Relying on peaks staying staggered is exactly the assumption
+#: that fails on a document where every range is expensive, and the failure mode
+#: is the OOM killer.
+#:
+#: The value this replaces was 2,048 MB with no measurement behind it. Since
+#: total memory is `workers * this`, being 5x low is the whole difference between
+#: finishing and being killed.
+_WORKER_MEMORY_MB = 10240
+
+#: Never hand the whole machine to Docling. The OS, Postgres and the parent
+#: process all have to keep running while a long conversion is under way.
 _RESERVED_MEMORY_MB = 4096
+
+#: How far the recovery ladder will climb down before giving up. Concurrency
+#: halves first and task size second, so this has to cover both: eight steps
+#: takes 16 workers down to 1 and then a 50-page task down to the floor.
+_MAX_RECOVERY_ATTEMPTS = 8
+
+#: The floor on task size. Below this the per-task model load dominates and a
+#: conversion that still cannot fit is not going to fit.
+_MIN_PAGES_PER_TASK = 5
 
 # Reuse a single converter per pipeline config to avoid reloading models.
 _converter_lock = threading.Lock()
 _converters: dict[str, object] = {}
-
-
-def _configured_device() -> str:
-    """Read the user-configured device from RE_DOCLING_DEVICE env var.
-
-    Values: "cpu" (default, safe), "auto" (use GPU if available), "cuda" (force GPU).
-    Set RE_DOCLING_DEVICE=auto or RE_DOCLING_DEVICE=cuda to enable GPU acceleration
-    for small documents processed in a single process.
-    """
-    return os.environ.get("RE_DOCLING_DEVICE", "cpu")
 
 
 def _build_pipeline_options(*, ocr: bool, device: str = "auto") -> object:
@@ -93,17 +136,21 @@ def _build_pipeline_options(*, ocr: bool, device: str = "auto") -> object:
     )
 
 
-def _get_converter(*, ocr: bool) -> object:
-    """Return a cached DocumentConverter for the given OCR setting."""
+def _get_converter(*, ocr: bool, device: str) -> object:
+    """Return a cached DocumentConverter for the given OCR and device setting.
+
+    The device is part of the cache key. It was not, and the cache was keyed on
+    `ocr=` alone, so the first converter built decided the device for every later
+    conversion in the process.
+    """
     from docling.datamodel.base_models import InputFormat
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    cache_key = f"ocr={ocr}"
+    cache_key = f"ocr={ocr},device={device}"
     with _converter_lock:
         if cache_key in _converters:
             return _converters[cache_key]
 
-    device = _configured_device()
     converter = DocumentConverter(
         format_options={
             InputFormat.PDF: PdfFormatOption(
@@ -322,67 +369,360 @@ def _drop_front_matter(sections: list[dict], first_index_at: int | None) -> list
 
 def _convert_page_range(
     source_path_str: str, start: int, end: int, *, ocr: bool, device: str = "cpu"
-) -> tuple[str, list[dict], list[dict]]:
+) -> tuple[str, list[dict], list[dict], float]:
     """Convert a page range of a PDF in a worker process.
 
-    Returns the same triple as `_text_and_structure`. Sending that back rather
-    than the `DoclingDocument` itself keeps the pickle small — the document
-    carries every bounding box for every item — while losing nothing the caller
-    uses. Docling numbers pages absolutely, so the page table needs no shifting;
-    only the character offsets do.
-    """
-    from docling.datamodel.base_models import InputFormat
-    from docling.document_converter import DocumentConverter, PdfFormatOption
+    Returns `_text_and_structure`'s triple plus this worker's peak resident
+    memory in MB. Sending the triple back rather than the `DoclingDocument`
+    itself keeps the pickle small — the document carries every bounding box for
+    every item — while losing nothing the caller uses. Docling numbers pages
+    absolutely, so the page table needs no shifting; only the character offsets do.
 
-    converter = DocumentConverter(
-        format_options={
-            InputFormat.PDF: PdfFormatOption(
-                pipeline_options=_build_pipeline_options(ocr=ocr, device=device),
-            ),
-        }
-    )
+    The peak is measured rather than modelled because modelling it is what
+    failed: a constant nobody checked sized the pool at thirteen workers on a
+    machine that could hold five, and the kernel resolved the disagreement.
+
+    Note `ru_maxrss` is the high-water mark for the *process*, and a pool worker
+    outlives the task that reports it. So this is what the worker has occupied
+    across every range it has handled, not the cost of this range alone — which
+    is the number the pool sizing wants, since that is what the machine has to
+    hold. It also means a gap between this and the same range measured in a
+    fresh process is Docling accumulating across tasks.
+    """
+    import resource
+
+    # The per-process cache, not a fresh converter each time. Building one per
+    # task made every worker pay the model load again per range, which also made
+    # a *smaller* `pages_per_task` quietly worse: more tasks per worker means
+    # more converters. Measured over a full book it cut steady-state memory from
+    # 37.4 GB to 34.0 GB and pulled the spread across non-peak workers from
+    # 4,373-6,162 MB down to 3,792-4,073 MB.
+    #
+    # It does *not* lower the peak — 9,828 MB before, 9,673 MB after. The peak is
+    # set by one expensive range, and a lifetime high-water mark cannot be
+    # undone by being tidier afterwards. `_WORKER_MEMORY_MB` covers that.
+    converter = _get_converter(ocr=ocr, device=device)
     result = converter.convert(source_path_str, page_range=(start, end))
-    return _text_and_structure(result.document)
+    text, sections, pages = _text_and_structure(result.document)
+    # kB on Linux, bytes on macOS. Only Linux is supported here (the memory
+    # probe reads /proc/meminfo), so kB it is.
+    peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    return text, sections, pages, peak_mb
+
+
+class ConversionPlan(NamedTuple):
+    """How a PDF will be split, how many workers will run, and why."""
+
+    ranges: list[tuple[int, int]]
+    workers: int
+    reason: str
+
+
+def plan_conversion(
+    total_pages: int,
+    *,
+    cpu_count: int,
+    available_mb: int,
+    per_worker_mb: int,
+    pages_per_task: int,
+    override: int | None = None,
+) -> ConversionPlan:
+    """Decide the page ranges and the worker count.
+
+    Pure — no `/proc`, no pool, no clock — because the decision it makes is the
+    one that went wrong, and the version it replaces could only be tested by
+    running it on the machine whose memory it was misjudging.
+
+    Total memory is `workers * per_worker_mb`, because measured peak per worker
+    barely moves with the number of pages in a task. So the worker count is the
+    lever that matters, and `per_worker_mb` has to be the worst case rather than
+    the typical one — the spread across ranges of the same size is 2.5x.
+    """
+    pages_per_task = max(_MIN_PAGES_PER_TASK, pages_per_task)
+    ranges = [
+        (start, min(start + pages_per_task - 1, total_pages))
+        for start in range(1, total_pages + 1, pages_per_task)
+    ]
+    tasks = len(ranges)
+
+    if override is not None:
+        workers = max(1, min(override, tasks))
+        return ConversionPlan(
+            ranges, workers, f"worker count set explicitly to {override}"
+        )
+
+    # Leave two cores for the parent and the OS; a fully subscribed box makes the
+    # run slower, not faster, because each worker already runs four threads.
+    by_cpu = max(1, cpu_count - 2)
+    usable_mb = max(0, available_mb - _RESERVED_MEMORY_MB)
+    by_memory = max(1, usable_mb // per_worker_mb)
+    workers = max(1, min(by_cpu, by_memory, tasks))
+
+    # No floor above one. The previous `max(2, ...)` guaranteed parallelism even
+    # on a machine with no memory to spare, which is exactly the machine that
+    # cannot afford it. Parallelism is an optimisation; finishing is not.
+    return ConversionPlan(
+        ranges,
+        workers,
+        f"{tasks} tasks of {pages_per_task}p; cores allow {by_cpu}, "
+        f"memory allows {by_memory} ({usable_mb} MB usable / {per_worker_mb} MB per worker)",
+    )
+
+
+#: One worker's answer for one page range: the usual triple plus its peak RSS.
+Converted = tuple[str, list[dict], list[dict], float]
+
+
+class PoolBroken(Exception):
+    """A worker died, carrying the work that survived it.
+
+    One dead worker breaks the executor for everything still pending, but the
+    ranges that already finished are still good. In the failure this was written
+    for, eleven of twelve workers had completed and every one of them was thrown
+    away — eight minutes of conversion discarded to retry a single range.
+    """
+
+    def __init__(self, completed: dict[tuple[int, int], Converted], cause: Exception):
+        # Say what it means, not what the executor called it. The stock message
+        # is "A process in the process pool was terminated abruptly", which
+        # names no cause; attributing it the first time took reading `dmesg`.
+        super().__init__(
+            "A Docling worker was terminated abruptly, which on this path is "
+            "almost always the kernel OOM killer reclaiming its memory "
+            "(confirm with `dmesg | grep -i 'killed process'`). Lower "
+            "RE_DOCLING_MAX_WORKERS or RE_DOCLING_PAGES_PER_TASK if it recurs."
+        )
+        self.completed = completed
+        self.cause = cause
+
+
+#: How much more attractive an OOM victim a worker should be than its parent.
+#: The kernel's own scale, where 0 is neutral and 1000 is "kill this first".
+_WORKER_OOM_SCORE_ADJ = 500
+
+
+def _prefer_killing_this_worker() -> None:
+    """Ask the kernel to reap workers before the process supervising them.
+
+    The recovery ladder only helps if there is something left to run it. Left to
+    itself the OOM killer picks by badness score, and the parent — holding the
+    whole document's text — is a plausible choice; if it goes, nothing retries
+    and nothing reports why.
+
+    Raising a process's own `oom_score_adj` needs no privileges (only lowering
+    it does), and failure here is not worth aborting a conversion over: it means
+    the previous, unmanaged behaviour, which is what the ladder already had to
+    cope with.
+    """
+    # `open` rather than pathlib, matching `_available_memory_mb` below.
+    # Suppressed: not Linux, or a sandbox that forbids the write.
+    with contextlib.suppress(OSError), open("/proc/self/oom_score_adj", "w") as handle:
+        handle.write(str(_WORKER_OOM_SCORE_ADJ))
+
+
+def _run_pool(
+    source_path: Path,
+    ranges: list[tuple[int, int]],
+    *,
+    workers: int,
+    ocr: bool,
+    completed: dict[tuple[int, int], Converted] | None = None,
+) -> dict[tuple[int, int], Converted]:
+    """Convert every range not already in *completed*, across *workers* processes.
+
+    Returns results keyed by page range rather than a joined document, so a retry
+    can pick up where the last attempt died. Raises `PoolBroken` carrying
+    whatever finished.
+    """
+    done: dict[tuple[int, int], Converted] = dict(completed or {})
+    path_str = str(source_path)
+    submitted: dict[Any, tuple[int, int]] = {}
+
+    try:
+        with ProcessPoolExecutor(
+            max_workers=workers, initializer=_prefer_killing_this_worker
+        ) as pool:
+            for start, end in ranges:
+                if (start, end) in done:
+                    continue
+                # CPU for parallel workers — forked processes can't share GPU
+                # VRAM effectively. The single-process path uses the configured
+                # device.
+                submitted[
+                    pool.submit(
+                        _convert_page_range,
+                        path_str, start, end, ocr=ocr, device="cpu",
+                    )
+                ] = (start, end)
+            for future, page_range in submitted.items():
+                done[page_range] = future.result()
+    except BrokenProcessPool as exc:
+        for future, page_range in submitted.items():
+            if future.done() and not future.cancelled() and future.exception() is None:
+                done[page_range] = future.result()
+        raise PoolBroken(done, exc) from exc
+
+    return done
+
+
+def _assemble(
+    ranges: list[tuple[int, int]], results: dict[tuple[int, int], Converted]
+) -> tuple[tuple[str, list[dict], list[dict]], float]:
+    """Join the per-range results in page order and report the peak.
+
+    Order comes from *ranges*, not from the dict: results accumulate across
+    retries and a document assembled in completion order would interleave its
+    own chapters.
+    """
+    ordered = [results[page_range] for page_range in ranges]
+    # Max, not sum: this sizes one worker, and the pool holds `workers` of them.
+    peak_mb = max((r[3] for r in ordered), default=0.0)
+    return _join_chunks([(t, s, p) for t, s, p, _ in ordered]), peak_mb
 
 
 def _convert_parallel(
-    source_path: Path, *, ocr: bool, total_pages: int
-) -> tuple[str, list[dict], list[dict]]:
-    """Split a large PDF into chunks and process in parallel CPU workers."""
-    num_workers = min(
-        _default_workers(), math.ceil(total_pages / _MIN_PAGES_PER_WORKER)
-    )
-    chunk_size = math.ceil(total_pages / num_workers)
+    source_path: Path,
+    *,
+    ocr: bool,
+    total_pages: int,
+    max_workers: int | None,
+    pages_per_task: int,
+) -> tuple[str, list[dict], list[dict], dict]:
+    """Convert a large PDF in parallel, climbing down when a worker is killed.
 
-    ranges: list[tuple[int, int, str]] = []  # (start, end, device)
-    for i in range(num_workers):
-        start = i * chunk_size + 1  # 1-indexed
-        end = min((i + 1) * chunk_size, total_pages)
-        if start <= end:
-            # CPU for parallel workers — forked processes can't share GPU VRAM
-            # effectively. The single-process path uses GPU via device="auto".
-            ranges.append((start, end, "cpu"))
+    A worker killed by the kernel's OOM reaper surfaces as `BrokenProcessPool`,
+    whose message — "A process in the process pool was terminated abruptly" —
+    names no cause. Left unhandled it lost a 1,224-page book ten minutes into
+    its conversion, and attributing it took reading kernel logs.
 
-    logger.info(
-        "docling_parallel_convert",
-        file=source_path.name,
-        total_pages=total_pages,
-        workers=len(ranges),
-        pages_per_worker=chunk_size,
-    )
+    So the failure is treated the way `embed_batches` treats a batch too large
+    for the accelerator: reduce and retry rather than abort. Concurrency halves
+    first because it cannot change the output; task size halves only once there
+    is one worker left and nothing else to give.
+    """
+    attempts = 0
+    workers_override = max_workers
+    halvings = 0
+    completed: dict[tuple[int, int], Converted] = {}
 
-    path_str = str(source_path)
-    with ProcessPoolExecutor(max_workers=len(ranges)) as pool:
-        futures = [
-            pool.submit(
-                _convert_page_range, path_str, start, end,
-                ocr=ocr, device=device,
+    while True:
+        plan = plan_conversion(
+            total_pages,
+            cpu_count=_usable_cpus(),
+            available_mb=_safe_available_memory_mb(),
+            per_worker_mb=_WORKER_MEMORY_MB,
+            pages_per_task=pages_per_task,
+            override=workers_override,
+        )
+        logger.info(
+            "docling_parallel_convert",
+            file=source_path.name,
+            total_pages=total_pages,
+            workers=plan.workers,
+            tasks=len(plan.ranges),
+            pages_per_task=pages_per_task,
+            detail=plan.reason,
+        )
+        try:
+            results = _run_pool(
+                source_path,
+                plan.ranges,
+                workers=plan.workers,
+                ocr=ocr,
+                completed=completed,
             )
-            for start, end, device in ranges
-        ]
-        chunks = [f.result() for f in futures]
+        except PoolBroken as broken:
+            exc = broken.cause
+            attempts += 1
+            reduced = _reduce(plan.workers, pages_per_task)
+            if reduced is None or attempts > _MAX_RECOVERY_ATTEMPTS:
+                logger.error(
+                    "docling_conversion_failed",
+                    file=source_path.name,
+                    workers=plan.workers,
+                    pages_per_task=pages_per_task,
+                    attempts=attempts,
+                    error=describe_exception(exc),
+                    detail=(
+                        "A worker died and there is nothing left to reduce. This "
+                        "is usually the kernel OOM killer; check `dmesg` for "
+                        "'Killed process'."
+                    ),
+                )
+                raise
+            workers_override, next_pages_per_task = reduced
+            # Ranges that already converted are still good, but only while the
+            # split stays the same. A different task size is a different set of
+            # page ranges, and results keyed by the old ones no longer address
+            # anything.
+            completed = broken.completed if next_pages_per_task == pages_per_task else {}
+            pages_per_task = next_pages_per_task
+            halvings += 1
+            logger.warning(
+                "docling_conversion_retry",
+                file=source_path.name,
+                attempt=attempts,
+                workers=plan.workers,
+                retry_workers=workers_override,
+                pages_per_task=pages_per_task,
+                reusing_ranges=len(completed),
+                of_ranges=len(plan.ranges),
+                detail=(
+                    "A worker was terminated abruptly, which on this path almost "
+                    "always means the kernel reclaimed its memory. Retrying smaller."
+                ),
+            )
+            continue
 
-    return _join_chunks(chunks)
+        (text, sections, pages), peak_mb = _assemble(plan.ranges, results)
+        logger.info(
+            "docling_parallel_done",
+            file=source_path.name,
+            workers=plan.workers,
+            peak_worker_mb=round(peak_mb, 1),
+            budget_mb=_WORKER_MEMORY_MB,
+            detail=(
+                "peak_worker_mb is the measurement _WORKER_MEMORY_MB is supposed "
+                "to predict; a sustained gap means the constant needs revisiting."
+            ),
+        )
+        return text, sections, pages, {
+            "peak_worker_mb": round(peak_mb, 1),
+            "workers": plan.workers,
+            "pages_per_task": pages_per_task,
+            "halvings": halvings,
+        }
+
+
+def _wants_parallel(total_pages: int, pages_per_task: int) -> bool:
+    """Whether splitting this PDF across processes is worth doing at all.
+
+    Two conditions, and the second is easy to lose: the document has to be big
+    enough to be worth the model loads, *and* it has to split into more than one
+    task. A 30-page PDF against a 50-page task size yields a single range, and
+    running that in a worker buys nothing while costing a fresh model load and
+    the configured accelerator — the parallel path is always CPU.
+    """
+    return total_pages > max(_MIN_PAGES_FOR_PARALLEL, pages_per_task)
+
+
+def _reduce(workers: int, pages_per_task: int) -> tuple[int, int] | None:
+    """The next rung down: fewer workers, or failing that, smaller tasks.
+
+    Workers first, and not only because changing them cannot change the output:
+    it is the rung with the leverage. Total memory is `workers * peak`, while
+    peak is nearly flat in task size — 25 pages and 200 pages of the same book
+    cost the same. Shrinking tasks is a weak last resort, kept because at one
+    worker it is the only thing left and it costs nothing to try.
+
+    Returns None when both are already at their floor, which means the failure
+    is not memory pressure and retrying would only cost another conversion.
+    """
+    if workers > 1:
+        return workers // 2, pages_per_task
+    if pages_per_task > _MIN_PAGES_PER_TASK:
+        return 1, max(_MIN_PAGES_PER_TASK, pages_per_task // 2)
+    return None
 
 
 def _join_chunks(
@@ -427,35 +767,36 @@ def _join_chunks(
     return joined, sections, pages
 
 
-def _default_workers() -> int:
-    """Scale workers with available cores, capped by available memory."""
-    cpu_count = os.cpu_count() or 4
-    max_by_cpu = cpu_count - 2
+def _usable_cpus() -> int:
+    """Cores this process may actually run on.
 
+    `os.cpu_count()` reports the machine's cores whether or not they are ours;
+    under `taskset`, a cpuset or a container quota the affinity mask is the real
+    answer and can be far smaller.
+    """
     try:
-        available_mb = _available_memory_mb()
-    except Exception:
-        available_mb = 8192  # conservative fallback: assume 8GB
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # pragma: no cover - not Linux
+        return os.cpu_count() or 4
 
-    # Use at most half the available memory for workers — leaves headroom for
-    # page buffers, kernel caches, and other processes during processing.
-    usable_mb = max(0, available_mb - _RESERVED_MEMORY_MB) // 2
-    max_by_memory = int(usable_mb / _WORKER_MEMORY_MB)
 
-    workers = max(2, min(max_by_cpu, max_by_memory))
-    logger.debug(
-        "docling_worker_scaling",
-        cpu_count=cpu_count,
-        available_memory_mb=available_mb,
-        max_by_cpu=max_by_cpu,
-        max_by_memory=max_by_memory,
-        workers=workers,
-    )
-    return workers
+def _safe_available_memory_mb() -> int:
+    """Available system memory, or a deliberately small guess."""
+    try:
+        return _available_memory_mb()
+    except Exception:  # noqa: BLE001 - an unreadable /proc is not fatal
+        # Small on purpose. Guessing high here is how the pool ends up sized for
+        # memory the machine does not have.
+        return 8192
 
 
 def _available_memory_mb() -> int:
-    """Get available system memory in MB from /proc/meminfo (Linux)."""
+    """Get available system memory in MB from /proc/meminfo (Linux).
+
+    Note this is the *host's* memory. Inside a container with a memory cgroup
+    limit it overstates what is available, and the limit is what the OOM killer
+    enforces. Nothing here runs in a container today.
+    """
     with open("/proc/meminfo") as f:
         for line in f:
             if line.startswith("MemAvailable:"):
@@ -486,6 +827,24 @@ class DoclingModule:
     # re-chunk. 1.0 documents are stale.
     version = "2.0"
 
+    def __init__(
+        self,
+        *,
+        device: str = "cpu",
+        max_workers: int | None = None,
+        pages_per_task: int = _DEFAULT_PAGES_PER_TASK,
+    ) -> None:
+        """Configured by the composition root, like everything else.
+
+        It was configured by nothing: `RE_DOCLING_DEVICE` was read straight from
+        the environment here while `settings.docling_device` sat declared and
+        unread, so the documented setting did nothing at all. Defaults are kept
+        on the parameters so the module is still usable zero-arg in tests.
+        """
+        self._device = device
+        self._max_workers = max_workers
+        self._pages_per_task = pages_per_task
+
     async def detect(self, source_path: Path) -> tuple[float, str]:
         """Return high confidence for formats Docling handles well."""
         suffix = source_path.suffix.lower()
@@ -510,8 +869,7 @@ class DoclingModule:
         """Infer document type from file extension."""
         return _DOCTYPE_BY_EXT.get(source_path.suffix.lower(), "generic")
 
-    @staticmethod
-    def _convert(source_path: Path) -> tuple[str, str, dict]:
+    def _convert(self, source_path: Path) -> tuple[str, str, dict]:
         is_pdf = source_path.suffix.lower() == ".pdf"
 
         # Auto-detect whether OCR is needed for PDFs
@@ -530,12 +888,17 @@ class DoclingModule:
             )
 
         # Use parallel processing for large PDFs
-        if is_pdf and total_pages > _MIN_PAGES_PER_WORKER:
-            full_text, sections, pages = _convert_parallel(
-                source_path, ocr=needs_ocr, total_pages=total_pages
+        conversion: dict = {}
+        if is_pdf and _wants_parallel(total_pages, self._pages_per_task):
+            full_text, sections, pages, conversion = _convert_parallel(
+                source_path,
+                ocr=needs_ocr,
+                total_pages=total_pages,
+                max_workers=self._max_workers,
+                pages_per_task=self._pages_per_task,
             )
         else:
-            converter = _get_converter(ocr=needs_ocr)
+            converter = _get_converter(ocr=needs_ocr, device=self._device)
             result = converter.convert(str(source_path))
             full_text, sections, pages = _text_and_structure(result.document)
 
@@ -559,6 +922,12 @@ class DoclingModule:
         }
         if total_pages:
             metadata["page_count"] = total_pages
+        if conversion:
+            # What the conversion actually cost. `peak_worker_mb` is the number
+            # `_WORKER_MEMORY_MB` exists to predict, and `halvings` is the signal
+            # that it predicted badly — the same role `BackfillReport.halvings`
+            # plays for `embedding_batch_size`.
+            metadata["conversion"] = conversion
 
         # Remove empty values
         metadata = {k: v for k, v in metadata.items() if v not in ("", None)}

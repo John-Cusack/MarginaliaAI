@@ -266,7 +266,7 @@ async def build_container(settings: Settings) -> Container:
 
     # Dispatcher with built-in modules
     dispatcher = ModuleDispatcher()
-    _register_builtin_modules(dispatcher)
+    _register_builtin_modules(dispatcher, settings)
 
     ingestion_service = IngestionOrchestrator(
         docs=docs,
@@ -343,7 +343,9 @@ async def build_container(settings: Settings) -> Container:
     )
 
 
-def _register_builtin_modules(dispatcher: ModuleDispatcher) -> None:
+def _register_builtin_modules(
+    dispatcher: ModuleDispatcher, settings: Settings
+) -> None:
     """Register core ingestion modules."""
     from research_engine.modules.docling_converter import DoclingModule
     from research_engine.modules.epub import EPUBModule
@@ -355,5 +357,16 @@ def _register_builtin_modules(dispatcher: ModuleDispatcher) -> None:
 
     # DoclingModule first — highest confidence for supported formats.
     # Existing modules remain as fallbacks.
-    for mod_cls in [DoclingModule, PlainTextModule, MarkdownModule, PDFTextModule, EPUBModule, HTMLModule, TEIXMLModule]:
+    #
+    # It is the only module that needs configuring, and until now it was the only
+    # component `build_container` did not configure: it read the environment
+    # directly and sized its process pool from constants no operator could reach.
+    dispatcher.register(
+        DoclingModule(
+            device=settings.docling_device,
+            max_workers=settings.docling_max_workers,
+            pages_per_task=settings.docling_pages_per_task,
+        )
+    )
+    for mod_cls in [PlainTextModule, MarkdownModule, PDFTextModule, EPUBModule, HTMLModule, TEIXMLModule]:
         dispatcher.register(mod_cls())
