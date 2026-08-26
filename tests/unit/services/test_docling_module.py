@@ -308,3 +308,96 @@ class TestHeadingRepair:
         _, sections, _ = self._built(items)
 
         assert [s["heading"] for s in sections] == ["APPENDICES", "Chapter One"]
+
+
+class FakeBBox:
+    def __init__(self, left: float, right: float) -> None:
+        self.l = left  # noqa: E741 - matches Docling's own attribute name
+        self.r = right
+
+
+class FakeSize:
+    def __init__(self, width: float) -> None:
+        self.width = width
+
+
+class FakePage:
+    def __init__(self, width: float) -> None:
+        self.size = FakeSize(width)
+
+
+class PlacedItem(FakeItem):
+    """A heading with geometry, so alignment can be judged."""
+
+    def __init__(self, text, left, right, page=1, **kw):
+        super().__init__(text, label="section_header", page=page,
+                         markdown=f"## {text}", **kw)
+        self.prov[0].bbox = FakeBBox(left, right)
+
+
+class PagedDoc(FakeDoc):
+    def __init__(self, items, page_width=1886.0):
+        super().__init__(items)
+        self.pages = {1: FakePage(page_width)}
+
+
+class TestAlignmentRepair:
+    """Docling reads visual salience, so a signature looks like a heading.
+
+    `"Yours affectionately Geo B McClellan"` arrived as a `section_header` and
+    became a node, and passages beneath it cited themselves as belonging to a
+    signature. Alignment is what separates the two: measured on the McClellan
+    papers, every genuine heading starts between 5% and 14% across the page and
+    the closing starts at 57%.
+    """
+
+    def _headings(self, items, width=1886.0):
+        from research_engine.modules.docling_converter import _text_and_structure
+
+        _, sections, _ = _text_and_structure(PagedDoc(items, width))
+        return [s["heading"] for s in sections]
+
+    def test_a_right_set_closing_is_not_a_heading(self):
+        items = [
+            PlacedItem("To Thomas C. English", 181, 682),
+            FakeItem("The body of the letter runs on for a while."),
+            PlacedItem("Yours affectionately Geo B McClellan", 1072, 1468),
+        ]
+
+        assert self._headings(items) == ["To Thomas C. English"]
+
+    def test_a_left_aligned_heading_survives(self):
+        assert self._headings([PlacedItem("To Winfield Scott", 90, 499)]) == [
+            "To Winfield Scott"
+        ]
+
+    def test_a_centred_heading_survives(self):
+        """A centred heading of width w starts at (W-w)/2, always left of W/2.
+
+        So the midpoint test cannot reject centring however wide the heading.
+        """
+        assert self._headings([PlacedItem("COMMAND IN THE WESTERN THEATER", 257, 1483)]) == [
+            "COMMAND IN THE WESTERN THEATER"
+        ]
+
+    def test_a_very_wide_centred_heading_still_survives(self):
+        assert self._headings([PlacedItem("A HEADING SPANNING NEARLY THE PAGE", 40, 1840)]) == [
+            "A HEADING SPANNING NEARLY THE PAGE"
+        ]
+
+    def test_a_heading_with_no_geometry_is_kept(self):
+        """Falls open, not closed: a document without provenance keeps its
+        headings rather than losing all of them."""
+        from research_engine.modules.docling_converter import _text_and_structure
+
+        _, sections, _ = _text_and_structure(
+            FakeDoc([FakeItem("Chapter One", label="section_header",
+                              markdown="## Chapter One")])
+        )
+
+        assert [s["heading"] for s in sections] == ["Chapter One"]
+
+    def test_a_page_of_unknown_width_keeps_its_headings(self):
+        assert self._headings(
+            [PlacedItem("Something Right", 1500, 1800)], width=0
+        ) == ["Something Right"]

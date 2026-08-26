@@ -28,9 +28,21 @@ node that is a fragment — `COMMAND IN THE WESTERN` and then `THEATER`.
 `content_layer` was tried first and is no help: Docling marks a dedication and a
 chapter alike as `ContentLayer.BODY`, with no furniture classification at all.
 
-**Not fixed, and not fixable this way:** Docling also marks letter closings as
-headings — `"Yours affectionately Geo B McClellan"` on page 26 of the McClellan
-papers. Those sit in the body, so no positional rule reaches them.
+- **Right-set text is not a heading.** Docling's layout model reads visual
+  salience, so an isolated short line is a heading whether it is a chapter title
+  or the closing of a letter: `"Yours affectionately Geo B McClellan"` became a
+  node, and passages beneath it cited themselves as belonging to a signature.
+  Alignment separates them, and the test is simple because of how alignment
+  works — a left-aligned heading starts at the margin, a centred one of width
+  `w` on a page of width `W` starts at `(W - w) / 2`, which is left of `W / 2`
+  for any width. Only text set to the right begins past the midpoint. Measured
+  on the McClellan papers, every genuine heading starts between 5% and 14%
+  across and the closing starts at 57%. It falls open rather than closed: a
+  document with no geometry keeps every heading.
+
+**Still not fixed:** an address line set flush left — `"SLM B Esq"` under
+`"To Samuel L. M. Barlow"` — is geometrically identical to a real heading. Only
+semantics separates those two, and no rule here can.
 
 ### Docling structure comes from the document, not from its markdown
 
