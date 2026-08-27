@@ -496,9 +496,25 @@ class PoolBroken(Exception):
         self.cause = cause
 
 
-#: How much more attractive an OOM victim a worker should be than its parent.
-#: The kernel's own scale, where 0 is neutral and 1000 is "kill this first".
-_WORKER_OOM_SCORE_ADJ = 500
+#: How much *more* attractive an OOM victim a worker should be than its parent,
+#: on the kernel's -1000..1000 scale. Relative, not absolute: a container may
+#: already place the whole process tree well above zero, and an absolute value
+#: then expresses no preference at all. Setting 500 inside a tree already at 500
+#: is what CI does, and it silently did nothing.
+_WORKER_OOM_SCORE_BOOST = 500
+
+#: The kernel's ceiling. Nothing above this is expressible.
+_MAX_OOM_SCORE_ADJ = 1000
+
+
+def _boosted_oom_score(inherited: int) -> int:
+    """Where a worker should sit given the score it inherited from its parent.
+
+    Pure, because the interesting cases are environments this machine is not:
+    a container starting at 500, a supervisor that has already protected itself
+    into negative territory.
+    """
+    return min(_MAX_OOM_SCORE_ADJ, inherited + _WORKER_OOM_SCORE_BOOST)
 
 
 def _prefer_killing_this_worker() -> None:
@@ -509,15 +525,19 @@ def _prefer_killing_this_worker() -> None:
     whole document's text — is a plausible choice; if it goes, nothing retries
     and nothing reports why.
 
-    Raising a process's own `oom_score_adj` needs no privileges (only lowering
-    it does), and failure here is not worth aborting a conversion over: it means
-    the previous, unmanaged behaviour, which is what the ladder already had to
-    cope with.
+    A forked child inherits its parent's `oom_score_adj`, so reading it here
+    reads the parent's, and the boost goes on top. Raising one's own score needs
+    no privileges (only lowering it does), and failure is not worth aborting a
+    conversion over: it means the previous, unmanaged behaviour, which the ladder
+    already had to cope with.
     """
     # `open` rather than pathlib, matching `_available_memory_mb` below.
-    # Suppressed: not Linux, or a sandbox that forbids the write.
-    with contextlib.suppress(OSError), open("/proc/self/oom_score_adj", "w") as handle:
-        handle.write(str(_WORKER_OOM_SCORE_ADJ))
+    # Suppressed: not Linux, or a sandbox that forbids the read or the write.
+    with contextlib.suppress(OSError, ValueError):
+        with open("/proc/self/oom_score_adj") as handle:
+            inherited = int(handle.read().strip())
+        with open("/proc/self/oom_score_adj", "w") as handle:
+            handle.write(str(_boosted_oom_score(inherited)))
 
 
 def _run_pool(

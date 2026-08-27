@@ -439,9 +439,26 @@ class TestOomPreference:
     makes them the preferred victims, which needs no privileges.
     """
 
-    def test_a_worker_is_a_more_attractive_victim_than_its_parent(self, monkeypatch):
-        import os
+    def test_the_boost_is_relative_to_whatever_was_inherited(self):
+        """Absolute values express no preference inside a container.
 
+        CI runs the whole tree at 500 already, where setting a worker to 500 is
+        a no-op that reads like a working safeguard. Only the *gap* matters.
+        """
+        from research_engine.modules.docling_converter import _boosted_oom_score
+
+        assert _boosted_oom_score(0) == 500
+        assert _boosted_oom_score(500) == 1000  # the CI container's starting point
+        assert _boosted_oom_score(-500) == 0  # a parent that protected itself
+        assert _boosted_oom_score(800) == 1000  # clamped to the kernel ceiling
+        assert _boosted_oom_score(1000) == 1000  # nothing higher exists
+
+    def test_a_worker_is_a_more_attractive_victim_than_its_parent(self, monkeypatch):
+        """The relationship, asserted against a live worker.
+
+        Stated as a gap rather than a number, because the number depends on the
+        machine: 500 here, 1000 under CI's container.
+        """
         from research_engine.modules import docling_converter as dc
 
         with open("/proc/self/oom_score_adj") as handle:
@@ -453,9 +470,9 @@ class TestOomPreference:
         )
 
         worker_score = int(results[(1, 50)][0])
-        assert worker_score == dc._WORKER_OOM_SCORE_ADJ
-        assert worker_score > parent_score
-        assert os.getpid() and parent_score < 1000  # the parent was left alone
+        assert worker_score == dc._boosted_oom_score(parent_score)
+        if parent_score < dc._MAX_OOM_SCORE_ADJ:
+            assert worker_score > parent_score
 
     def test_it_does_not_raise_where_proc_is_unwritable(self, monkeypatch):
         """A sandbox that forbids the write must not cost a conversion."""

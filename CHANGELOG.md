@@ -77,6 +77,11 @@ the parent — it holds the whole document's text. Each worker raises its own
 `oom_score_adj`, which needs no privileges, so the reaper takes something
 recoverable. Without this the recovery path is a coin flip on which process dies.
 
+The boost is **relative to the score the worker inherited**, clamped to the
+kernel's ceiling of 1000. An absolute value expresses no preference inside a
+container that already places the whole process tree above zero — CI runs at 500,
+where setting a worker to 500 is a no-op that reads like a working safeguard.
+
 **Retries keep the work that survived.** One dead worker breaks the executor for
 everything pending, but ranges that already finished are still good; in the
 failure this was written for, eleven of twelve workers had completed and all of
