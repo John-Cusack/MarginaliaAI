@@ -3,6 +3,8 @@
 #
 # GPU vs CPU:
 #   Docling (PDF parsing):    CPU parallel for large PDFs. RE_DOCLING_DEVICE=auto for GPU on small PDFs.
+#                             RE_DOCLING_MAX_WORKERS / RE_DOCLING_PAGES_PER_TASK cap memory use;
+#                             unset sizes them from this machine's cores and free RAM.
 #   Embedding (bge-m3):       GPU auto-detected by sentence-transformers. Strongly benefits from CUDA.
 #   Reranking (bge-reranker): GPU auto-detected. Strongly benefits from CUDA.
 

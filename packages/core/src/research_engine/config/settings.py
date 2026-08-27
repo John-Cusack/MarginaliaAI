@@ -82,7 +82,23 @@ class Settings(BaseSettings):
     # Ingestion
     ingest_concurrency: int = 4
     embedding_batch_size: int = 32
+    #: Accelerator for the single-process Docling path (small documents). The
+    #: parallel path always runs on CPU — forked workers cannot share VRAM
+    #: usefully. This was declared and never read for as long as it existed; the
+    #: converter looked at `RE_DOCLING_DEVICE` itself.
     docling_device: Literal["cpu", "auto", "cuda"] = "cpu"
+    #: Cap on concurrent Docling worker processes. Unset means size it from the
+    #: cores and free memory of whatever machine is running. Set it when the
+    #: automatic answer is wrong — and if you have to, say so in an issue,
+    #: because a wrong automatic answer here is what the OOM killer resolves.
+    docling_max_workers: int | None = None
+    #: Pages one Docling worker converts per task. Note this is *not* the memory
+    #: knob it looks like — measured, peak memory per worker is flat from 25
+    #: pages to 200, because cost follows content (plates, tables) rather than
+    #: volume. Lower it to spread expensive pages across more workers and to cut
+    #: what a dead worker costs to redo; lower `docling_max_workers` to use less
+    #: memory. Changing it does not change the resulting text.
+    docling_pages_per_task: int = 50
 
     # Extraction
     extraction_concurrency: int = 8
