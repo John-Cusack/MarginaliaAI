@@ -9,13 +9,15 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine.services.text.sections import sections_from_markdown
+
 if TYPE_CHECKING:
     from pathlib import Path
 
 logger = structlog.get_logger()
 
-# Patterns for stripping markdown formatting
-_HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
+# Patterns for stripping markdown formatting. Heading markers are
+# deliberately absent — see `_strip_markdown`.
 _BOLD_ITALIC = re.compile(r"(\*{1,3}|_{1,3})(.+?)\1")
 _STRIKETHROUGH = re.compile(r"~~(.+?)~~")
 _INLINE_CODE = re.compile(r"`([^`]+)`")
@@ -30,7 +32,19 @@ _ORDERED_LIST = re.compile(r"^(\s*)\d+\.\s+", re.MULTILINE)
 
 
 def _strip_markdown(text: str) -> str:
-    """Remove markdown formatting, keeping the readable text."""
+    """Remove markdown formatting, keeping the readable text and the headings.
+
+    Heading markers stay. They are not decoration to be cleaned away: they are
+    the document's structure, and `sections_from_markdown` reads them back out
+    of the canonical text to build the node tree and to bound a search window.
+    Stripping them here destroyed that structure at the only moment it existed
+    — the canonical text is what every later pass reads, so a heading deleted
+    on the way in cannot be recovered by any reindex, only by parsing the
+    source file again.
+
+    Docling already leaves `#` lines in the markdown it exports, so a markdown
+    file and a converted PDF now reach storage in the same shape.
+    """
     result = text
     result = _CODE_BLOCK.sub("", result)
     result = _IMAGE.sub(r"\1", result)
@@ -38,7 +52,6 @@ def _strip_markdown(text: str) -> str:
     result = _BOLD_ITALIC.sub(r"\2", result)
     result = _STRIKETHROUGH.sub(r"\1", result)
     result = _INLINE_CODE.sub(r"\1", result)
-    result = _HEADING.sub("", result)
     result = _HTML_TAG.sub("", result)
     result = _BLOCKQUOTE.sub("", result)
     result = _HORIZONTAL_RULE.sub("", result)
@@ -57,13 +70,13 @@ def _extract_title(text: str, fallback: str) -> str:
     return fallback
 
 
-def _count_headings(text: str) -> int:
-    return len(re.findall(r"^#{1,6}\s+", text, re.MULTILINE))
-
-
 class MarkdownModule:
     id = "markdown"
-    version = "1.0"
+    # 2.0: heading markers survive into the canonical text and a section table
+    # is emitted. Documents parsed at 1.0 have their headings stripped out for
+    # good, so they need re-ingesting — a reindex reads the stored text and
+    # would find nothing there either.
+    version = "2.0"
     supported_extensions = {".md", ".markdown", ".mdown", ".mkd"}
     supported_mime_types = {"text/markdown", "text/x-markdown"}
 
@@ -95,12 +108,19 @@ class MarkdownModule:
 
         title = _extract_title(raw, source_path.stem)
         full_text = _strip_markdown(raw)
+        sections = sections_from_markdown(full_text)
 
         metadata = {
             "char_count": len(full_text),
-            "heading_count": _count_headings(raw),
+            "heading_count": len(sections),
             "file_name": source_path.name,
             "format": "markdown",
+            # Boundaries only, addressed into the canonical text — the same
+            # contract EPUB's table keeps. Without it the structural chunker
+            # this module asks for silently fell back to prose windows, because
+            # the pipeline reads a missing table as "this format has no
+            # structure" rather than "this parser forgot to say".
+            "sections": sections,
         }
 
         return full_text, title, metadata

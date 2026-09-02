@@ -1,5 +1,34 @@
 # Changelog
 
+### Markdown headings survive ingestion
+
+`MarkdownModule` treated `#` as formatting and stripped it alongside the
+emphasis and link syntax. Headings are not formatting — they are the only
+structure the document has, and the canonical text is what every later pass
+reads. A heading deleted on the way in is therefore gone for good: no reindex
+can recover it, because reindexing re-reads the stored text and finds the same
+absence. The one markdown document in the corpus was stored with all 39 of its
+headings removed, 50,740 characters on disk arriving as 49,949.
+
+The same module also declared `structural` as its chunker and then handed the
+pipeline no section table. The pipeline reads a missing table as "this format
+has no structure" rather than "this parser forgot to say", so it fell back to
+prose windows — correct behaviour for plain text, silently wrong here. It now
+emits `metadata["sections"]` from `sections_from_markdown`, the boundaries-only
+table EPUB already supplies.
+
+Docling leaves `#` lines in the markdown it exports, so with this a markdown
+file and a converted PDF finally reach storage in the same shape.
+
+`heading_count` now counts the section table rather than the raw file, which
+makes the two agree: a `#` line inside a fenced code block is stripped before
+headings are read, and is not a heading.
+
+`MarkdownModule.version` goes to `2.0`. Documents parsed at `1.0` need
+re-ingesting rather than reindexing. The corpus's one such document was
+re-ingested: 1 node became 40 across four levels, its 30 prose windows became 46
+sections, and every passage now points at a node.
+
 ### Chapters recovered from plain-text books
 
 Sixteen books arrived as flat text from library and e-reader exports — no
@@ -44,7 +73,6 @@ from canonical text at ingest, so one document stores 49,949 characters where it
 source file has 50,740, and its 39 real headings are gone from the text for good.
 No reindex can recover them; it needs a re-ingest once the markdown module stops
 destroying them.
-
 
 ### Docling's process pool is sized from measurement, and survives being wrong
 
