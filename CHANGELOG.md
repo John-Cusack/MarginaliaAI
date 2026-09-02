@@ -1,5 +1,51 @@
 # Changelog
 
+### Chapters recovered from plain-text books
+
+Sixteen books arrived as flat text from library and e-reader exports — no
+markdown, no tags — so each had a structure layer of exactly one node covering
+the whole book. Window expansion had nothing to bound against, and a breadcrumb
+could say no more than the title.
+
+The chapter headings were in the prose all along. Finding `Chapter N` is easy;
+the difficulty is that a contents list, a back-of-book index, a notes section and
+a reference list all contain it and look identical to a chapter start one line at
+a time. Every rule in `sections_from_chapters` exists to separate a chapter
+*start* from a chapter *mention*, and each was added because it was measured to
+be necessary on a real book here:
+
+- **Ascent.** A contents list and the chapters it lists are both numbered from
+  one, so they form two runs rather than one confused sequence.
+- **Median gap ≥ 5,000 characters.** This is the rule that does the real work.
+  Chapters have a book between them — measured, 24k–105k characters — while a
+  contents list, an index and a notes section sit 30–3,400 apart. Without it the
+  detector chose a contents list for one book and a 27-entry back index spanning
+  0.5% of the text for another.
+- **Runs that continue each other are rejoined.** A list naming chapters 4–8
+  sits between chapter 8 and chapter 9 in one book, breaking the ascent so it
+  read as two shorter books.
+- **The sequence must reach 55% of the way through.** A section runs to the next
+  heading or to the end of the text, so a run that gives up at 8 of 27 would
+  title chapter 8 over the remaining 63% of the book. Better no structure than
+  wrong structure.
+
+Six of the sixteen yield a sequence — 68 chapters across them — and ten
+correctly yield none: four are activity books with numbered steps rather than
+chapters, one has its only run in a notes section 84% of the way through, and one
+breaks at 8 of 27 and is refused.
+
+This runs through `reindex structure`, so nothing is re-parsed, re-chunked or
+re-embedded: only `document_nodes` and the `node_id` of existing passages change.
+Markdown headings still win where a document has them — chapter detection is
+inference over prose and must never override an author's own structure.
+
+**Found on the way, not fixed here:** `modules/markdown.py` strips `#` markers
+from canonical text at ingest, so one document stores 49,949 characters where its
+source file has 50,740, and its 39 real headings are gone from the text for good.
+No reindex can recover them; it needs a re-ingest once the markdown module stops
+destroying them.
+
+
 ### Docling's process pool is sized from measurement, and survives being wrong
 
 Re-ingesting a 1,224-page book killed a worker on a 64 GB machine —

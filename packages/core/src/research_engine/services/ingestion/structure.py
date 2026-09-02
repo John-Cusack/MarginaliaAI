@@ -32,7 +32,10 @@ from research_engine.domain.nodes import (
     deepest_containing,
 )
 from research_engine.services.text.dates import dominant_century, scan_dates
-from research_engine.services.text.sections import sections_from_markdown
+from research_engine.services.text.sections import (
+    sections_from_chapters,
+    sections_from_markdown,
+)
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -163,8 +166,14 @@ def node_tree_for(text: str, *, title: str | None = None) -> list[DocumentNodeDr
 
 
 def dated_sections(text: str) -> list[dict[str, Any]]:
-    """Markdown sections, each carrying its own date where it states one."""
-    sections = sections_from_markdown(text)
+    """Sections, each carrying its own date where it states one.
+
+    Markdown headings first, chapter lines only when there are none. The order
+    matters and the fallback is not a second opinion: a document with `#`
+    headings has an author's own structure, while chapter detection is inference
+    over prose and should never override it.
+    """
+    sections = sections_from_markdown(text) or sections_from_chapters(text)
     if not sections:
         return sections
     century = dominant_century(text)
