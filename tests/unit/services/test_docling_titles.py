@@ -16,7 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from research_engine.modules.docling_converter import _extract_title, _usable_title
+from research_engine.modules.docling_converter import (
+    _extract_title,
+    _usable_author,
+    _usable_title,
+)
 
 
 class TestTitlesWorthTaking:
@@ -94,3 +98,56 @@ class TestFallbackChain:
             pytest.skip("corpus PDF not present on this machine")
 
         assert _extract_title("fies\n\nmore text", pdf) == "The campaigns of napoleon"
+
+
+class TestAuthors:
+    """`/Author` is junkier than `/Title`: 15 of the 22 PDFs here that fill it
+    name something that is not a person."""
+
+    @pytest.mark.parametrize(
+        "declared",
+        [
+            "Nicholas Wolterstorff",
+            "Amanda L. Bailey",
+            "Mott, Stephen Charles",
+            "McClellan, George B. (George Brinton), 1826-1885",
+            "Miranda, José Porfirio",
+            "US Government IRS",  # an institution is still an author
+        ],
+    )
+    def test_a_real_author_is_kept(self, declared):
+        assert _usable_author(declared) == declared
+
+    @pytest.mark.parametrize(
+        ("declared", "because"),
+        [
+            ("Registered to: GEICO", "a software licensee"),
+            ("Registered to: SGFS", "a software licensee"),
+            ("PWinter", "a login name"),
+            ("SBenigno", "a login name"),
+            ("Administrator", "an authoring default"),
+            ("(anonymous)", "an authoring default"),
+            ("CamScanner", "the scanning app"),
+            ("PP53454", "an internal identifier"),
+            ("Pagination_Cover", "a production tool"),
+            ("", "empty"),
+            (None, "absent"),
+        ],
+    )
+    def test_junk_is_refused(self, declared, because):
+        assert _usable_author(declared) is None, because
+
+    def test_a_surname_beginning_with_two_capitals_is_not_a_login(self):
+        """The login rule must not eat real names. `McClellan` and `MacArthur`
+        have a lowercase second character; `PWinter` does not."""
+        assert _usable_author("McClellan") == "McClellan"
+        assert _usable_author("MacArthur") == "MacArthur"
+
+    def test_a_compound_library_field_is_kept_whole(self):
+        """Archive.org crams contributors and a subtitle into one field.
+        Splitting it is a different problem; guessing loses what was claimed."""
+        declared = (
+            "McClellan, George Brinton, 1826-1885; Prime, William Cowper, "
+            "1825-1905. Life, services, and character of George B. McClellan"
+        )
+        assert _usable_author(declared) == declared

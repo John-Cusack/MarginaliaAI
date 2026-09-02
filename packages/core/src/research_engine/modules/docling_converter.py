@@ -877,18 +877,77 @@ def _usable_title(raw: str | None) -> str | None:
     return title
 
 
-def _pdf_metadata_title(source_path: Path) -> str | None:
-    """The title the PDF states about itself, if it is worth having."""
+#: An author field naming whoever was logged in, or what licensed the tool.
+_GENERIC_AUTHORS = frozenset(
+    {
+        "anonymous", "(anonymous)", "administrator", "admin", "user",
+        "windows user", "owner", "guest", "unknown", "author", "default",
+        "none", "(none)",
+    }
+)
+_AUTHORING_TOOLS = frozenset(
+    {"camscanner", "adobe acrobat", "microsoft word", "pdfkit", "scansnap", "prince"}
+)
+_LICENSEE = re.compile(r"^registered to\s*:", re.I)
+#: "PWinter", "SBenigno" — an initial welded to a surname is a login, not a name.
+#: "McClellan" and "MacArthur" are safe: the second character is lowercase.
+_LOGIN_NAME = re.compile(r"^[A-Z]{2}[a-z]+$")
+
+
+def _usable_author(raw: str | None) -> str | None:
+    """A PDF `/Author` worth keeping, or None.
+
+    Junkier than `/Title`: of the 22 PDFs here that declare an author, 15 name
+    something that is not one. Each rule below rejects one of them — a login
+    (`SBenigno`, `PWinter`), a software licensee (`Registered to: GEICO`), the
+    scanning app (`CamScanner`), an authoring default (`Administrator`,
+    `(anonymous)`), or an internal identifier (`PP53454`, `Pagination_Cover`).
+
+    What survives is stored verbatim, including the compound fields a library
+    scan carries (`McClellan, George Brinton, 1826-1885; Prime, William Cowper,
+    ...`). Splitting those into separate people is a different problem, and
+    guessing at it would lose the record of what the document actually claims.
+    """
+    author = (raw or "").strip()
+    if not author:
+        return None
+    lowered = author.lower()
+    if lowered in _GENERIC_AUTHORS or lowered in _AUTHORING_TOOLS:
+        return None
+    if _LICENSEE.match(author) or _MACHINE_IDENTIFIER.search(author):
+        return None
+    if _LOGIN_NAME.match(author):
+        return None
+    letters = sum(character.isalpha() for character in author)
+    dense = sum(not character.isspace() for character in author)
+    if letters < 3 or letters / dense < 0.5:
+        return None
+    return author
+
+
+def _declared(source_path: Path, field: str) -> str | None:
+    """One field of a PDF's own metadata, unjudged."""
     try:
         import fitz
 
         doc = fitz.open(str(source_path))
         try:
-            return _usable_title((doc.metadata or {}).get("title"))
+            value = (doc.metadata or {}).get(field)
         finally:
             doc.close()
     except Exception:
         return None
+    return (value or "").strip() or None
+
+
+def _pdf_metadata_title(source_path: Path) -> str | None:
+    """The title the PDF states about itself, if it is worth having."""
+    return _usable_title(_declared(source_path, "title"))
+
+
+def _pdf_metadata_author(source_path: Path) -> str | None:
+    """The author the PDF states, if it is a person rather than a tool."""
+    return _usable_author(_declared(source_path, "author"))
 
 
 def _extract_title(full_text: str, source_path: Path) -> str:
@@ -1011,6 +1070,9 @@ class DoclingModule:
             # the export. Docling writes every heading as `##`, so the regex saw
             # one level however deep the document went, and never saw a page
             # number at all.
+            # Stated by the file, not inferred from the prose. Dropped below
+            # when absent, like every other empty value here.
+            "author": _pdf_metadata_author(source_path),
             "sections": sections,
             # Offset -> page boundaries for the whole document. Sections carry
             # the page they *start* on, which is what `StructuralChunker` reads;
