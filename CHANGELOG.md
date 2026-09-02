@@ -1,5 +1,36 @@
 # Changelog
 
+### The author a PDF names is kept, when it names one
+
+Three of the four Docling documents in the corpus carry an author in their
+metadata — `McClellan, George B. (George Brinton), 1826-1885` and the like —
+and it was read by nothing. EPUB has stored `metadata["author"]` since it was
+written; this brings the PDF path level with it.
+
+`/Author` is junkier than `/Title`: of the 22 PDFs here that fill it, 15 name
+something that is not a person. Every rule in `_usable_author` rejects one of
+them — a login welded from an initial and a surname (`PWinter`, `SBenigno`), a
+software licensee (`Registered to: GEICO`), the scanning app (`CamScanner`), an
+authoring default (`Administrator`, `(anonymous)`), or an internal identifier
+(`PP53454`, `Pagination_Cover`).
+
+The login rule is the one with a real edge: `^[A-Z]{2}[a-z]+$` catches `PWinter`
+while leaving `McClellan` and `MacArthur` alone, because a genuine name of that
+shape has a lowercase second character.
+
+What survives is stored verbatim, including the compound fields a library scan
+carries — `McClellan, George Brinton, 1826-1885; Prime, William Cowper,
+1825-1905. Life, services, and character of...` is one string holding two people
+and a subtitle. Splitting that into separate contributors is a different
+problem, and guessing at it would destroy the record of what the file claims.
+
+`_pdf_metadata_title` and `_pdf_metadata_author` now share `_declared`, so the
+gate and the file access stay separate concerns.
+
+As with the title fix: no re-ingest and no version bump. The three authors were
+derived by the new function and merged into the existing `documents.metadata`,
+leaving `sections` and `pages` untouched.
+
 ### A PDF's title comes from the PDF, not from its first line of OCR
 
 `_extract_title` took the first non-blank line of converted text. On a scanned
