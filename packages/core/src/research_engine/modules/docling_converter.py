@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import threading
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -826,8 +827,85 @@ def _available_memory_mb() -> int:
     raise OSError(msg)
 
 
+#: Titles an authoring tool wrote because nobody gave it one.
+_GENERIC_TITLES = frozenset(
+    {
+        "untitled", "unknown", "document", "documento", "presentation",
+        "powerpoint presentation", "(anonymous)", "anonymous", "no title",
+        "title", "new document", "book1", "sheet1",
+    }
+)
+#: "Microsoft Word - report.doc" is the filename, not the title.
+_AUTHORING_PREFIX = re.compile(r"^microsoft (word|powerpoint|excel) - ", re.I)
+_DOCUMENT_EXTENSION = re.compile(
+    r"\.(pdf|docx?|indd|pptx?|odt|rtf|tex|qxd|fm|pages|epub)$", re.I
+)
+_NUMBERED_DEFAULT = re.compile(r"^(document|doc|file|untitled|book|sheet)\s*\d+$", re.I)
+#: An underscore not followed by a space. Real titles use "Letter_ John" where a
+#: colon was stripped; machine identifiers use "output_CSantiago_fmlrKYMGCeW3Nj3".
+_MACHINE_IDENTIFIER = re.compile(r"_(?!\s)")
+
+
+def _usable_title(raw: str | None) -> str | None:
+    """A PDF `/Title` worth using, or None to fall back.
+
+    Measured on 88 PDFs here: 54 declare a title and 19 of those are junk, so
+    the field cannot simply be trusted. Every rule below rejects something real
+    from that sample — an authoring default (`Document1`, `(anonymous)`), an
+    account number (`1099`, `749537 NCM9JP01`), a filename the tool copied in
+    (`Microsoft Word - PFS Editable.doc`, `B87023352[1].pdf`), or an export
+    identifier (`output_CSantiago_fmlrKYMGCeW3Nj3`).
+
+    A trailing extension is stripped rather than rejected: `Rape Gang Inquiry
+    Report.docx` is a real title wearing one, while `B87023352[1].pdf` fails the
+    letter rules once it is off. Rejecting on the extension alone lost the first.
+    """
+    title = (raw or "").strip()
+    if not title:
+        return None
+    if title.lower() in _GENERIC_TITLES or _NUMBERED_DEFAULT.match(title):
+        return None
+    if _AUTHORING_PREFIX.match(title):
+        return None
+    title = _DOCUMENT_EXTENSION.sub("", title).strip()
+    if not title or _MACHINE_IDENTIFIER.search(title):
+        return None
+    letters = sum(character.isalpha() for character in title)
+    dense = sum(not character.isspace() for character in title)
+    if letters < 3 or letters / dense < 0.5:
+        return None
+    return title
+
+
+def _pdf_metadata_title(source_path: Path) -> str | None:
+    """The title the PDF states about itself, if it is worth having."""
+    try:
+        import fitz
+
+        doc = fitz.open(str(source_path))
+        try:
+            return _usable_title((doc.metadata or {}).get("title"))
+        finally:
+            doc.close()
+    except Exception:
+        return None
+
+
 def _extract_title(full_text: str, source_path: Path) -> str:
-    """Extract a title from the converted text or fall back to filename."""
+    """The document's title: what it declares, then what it looks like.
+
+    The first line of converted text was the only source, and on a scanned book
+    that is whatever the layout model happened to read first — a library stamp
+    (`CENTRAL`), a torn word (`fies`), a fragment of a plate caption (`Mfo mm`).
+    All three are real titles from this corpus, and all three PDFs stated their
+    correct title in metadata that nothing looked at.
+
+    So metadata first when it is usable, the first line when it is not, and the
+    filename when there is no text at all. The first line stays in the chain
+    because a PDF assembled from scans often has no metadata whatsoever.
+    """
+    if declared := _pdf_metadata_title(source_path):
+        return declared
     for line in full_text.splitlines():
         stripped = line.strip()
         # Skip image placeholders and blank lines
