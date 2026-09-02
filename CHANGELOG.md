@@ -1,5 +1,31 @@
 # Changelog
 
+### A document demoted out of structural chunking says so
+
+Three built-in modules shipped for months returning `"structural"` from
+`default_chunker()` and handing the pipeline no section table. `run_chunking`
+falls back to prose windows, which produce perfectly good passages — so nothing
+looked wrong, and the structure was simply gone until someone went looking. The
+fix for each parser is merged; this makes the next one announce itself.
+
+The hard part is not logging it, it is not crying wolf. A markdown file with no
+`#`, or an HTML page with no `<h1>`, genuinely has no structure and prose
+windows are the right answer. What separates that from a defect is that a parser
+which *counted* headings and then supplied none has dropped them:
+
+- **`structural_sections_missing`** at `warning` — `heading_count`,
+  `section_count`, `chapter_count` or `div_count` is non-zero while the section
+  table is empty. The structure was found and lost.
+- **`structural_sections_absent`** at `info` — nothing was counted either, so
+  the document really is flat.
+
+Both name the parser, which `run_chunking` now takes as `parser_id` from the
+orchestrator; without it the log could say a document was demoted but not what
+demoted it.
+
+`reindex chunks` needed no change: it already refuses structural documents
+outright rather than re-chunking them without their table.
+
 ### HTML and TEI get the section table their chunker always needed
 
 Both modules returned `"structural"` from `default_chunker()` and then handed

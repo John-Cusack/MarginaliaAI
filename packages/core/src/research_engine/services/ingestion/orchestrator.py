@@ -305,7 +305,9 @@ class IngestionOrchestrator:
 
             # Chunk
             chunker_id = module.default_chunker()
-            passage_drafts = await run_chunking(full_text, chunker_id, metadata)
+            passage_drafts = await run_chunking(
+                full_text, chunker_id, metadata, parser_id=module.id
+            )
 
             # Transaction: insert doc + passages + embeddings + FTS
             async with transaction(self._engine) as tx:
