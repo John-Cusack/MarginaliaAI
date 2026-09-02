@@ -1,5 +1,41 @@
 # Changelog
 
+### HTML and TEI get the section table their chunker always needed
+
+Both modules returned `"structural"` from `default_chunker()` and then handed
+the pipeline no `metadata["sections"]`. `run_chunking` reads a missing table as
+"this format has no structure" rather than "this parser forgot to say", so both
+silently fell back to prose windows — right for plain text, wrong for two
+formats built out of headings. Nothing about the resulting passages looked
+wrong, which is why it survived: this is the same defect fixed in `markdown.py`,
+found by looking for it rather than by anything failing.
+
+**HTML.** Headings become sections with their tag number as the level, and
+markup inside a heading is flattened for the label (`First <em>Nested</em>
+Section` reads as one line). The canonical text is *unchanged* — the walk
+reproduces `get_text(separator="\n", strip=True)` exactly, asserted directly,
+so no offset moves and nothing needs re-ingesting. Only exact `NavigableString`
+counts: `Comment` and `Doctype` subclass it, and an `isinstance` check would
+have pulled comments into the document as prose.
+
+**TEI**, where reading the output closely turned up two further defects:
+
+- **Nested divs stored their prose twice.** `.//div` matches at every depth and
+  `itertext()` already descends, so a two-chapter part held each chapter once
+  under itself and once under the part.
+- **Adjacent blocks were welded together.** `"".join(el.itertext())` turned
+  `<head>Chapter A</head><p>Alpha body.</p>` into `Chapter AAlpha body.` — a
+  word on neither side of the seam, embedded and searched as one.
+
+Divs are now walked in document order, each section holding its div's own prose
+and stopping at its first nested div, with nesting depth as the level. Sections
+are disjoint and `build_node_tree` widens parents over their children, the same
+contract `sections_from_markdown` keeps.
+
+`TEIXMLModule.version` goes to `2.0` because its canonical text moves. No
+document in the corpus uses either parser, so there is nothing to re-ingest —
+this was a trap set for the first HTML or TEI document, not a live fault.
+
 ### The author a PDF names is kept, when it names one
 
 Three of the four Docling documents in the corpus carry an author in their

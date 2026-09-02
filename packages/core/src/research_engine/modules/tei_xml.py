@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine.services.ingestion.chunking.fixed_window import trim_span
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -16,9 +18,91 @@ _TEI_NAMESPACE = "http://www.tei-c.org/ns/1.0"
 _NS = {"tei": _TEI_NAMESPACE}
 
 
+def _local(tag: object) -> str:
+    """An element's name without its namespace."""
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _inline_text(element) -> str:
+    """One block's text, with inline markup joined by spaces rather than welded.
+
+    `"".join(el.itertext())` ran `<head>Chapter A</head><p>Alpha body.</p>`
+    together as `Chapter AAlpha body.`, which is not a word either side of the
+    seam and would be embedded and searched as one.
+    """
+    return " ".join(fragment.strip() for fragment in element.itertext() if fragment.strip())
+
+
+def _own_text(div) -> str:
+    """A div's own prose, excluding nested divs.
+
+    Nested divs get sections of their own, so including their text here
+    duplicated it: a two-chapter part stored each chapter twice, once under the
+    part and once under itself, because `.//div` matches at every depth while
+    `itertext()` already descends.
+    """
+    pieces: list[str] = []
+    if div.text and div.text.strip():
+        pieces.append(div.text.strip())
+    for child in div:
+        if _local(child.tag) != "div" and (fragment := _inline_text(child)):
+            pieces.append(fragment)
+        if child.tail and child.tail.strip():
+            pieces.append(child.tail.strip())
+    return "\n".join(pieces)
+
+
+def _body_sections(body) -> tuple[str, list[dict]]:
+    """Canonical text and a section table, walking divs in document order.
+
+    A section holds its div's own prose and stops at its first nested div, so
+    sections are disjoint and `build_node_tree` widens parents over their
+    children from `level` — the same contract `sections_from_markdown` keeps.
+    """
+    parts: list[str] = []
+    marks: list[dict] = []
+    length = 0
+
+    def walk(parent, depth: int) -> None:
+        nonlocal length
+        for child in parent:
+            if _local(child.tag) != "div":
+                continue
+            own = _own_text(child)
+            head = next((el for el in child if _local(el.tag) == "head"), None)
+            marks.append(
+                {
+                    "char_start": length + (2 if parts else 0),
+                    "heading": _inline_text(head) if head is not None else None,
+                    "level": depth,
+                }
+            )
+            if own:
+                if parts:
+                    length += 2  # the blank line that will join this section on
+                parts.append(own)
+                length += len(own)
+            walk(child, depth + 1)
+
+    walk(body, 1)
+    full_text = "\n\n".join(parts)
+
+    sections: list[dict] = []
+    for index, mark in enumerate(marks):
+        end = marks[index + 1]["char_start"] if index + 1 < len(marks) else len(full_text)
+        start, end = trim_span(full_text, mark["char_start"], end)
+        if start >= end:
+            continue
+        sections.append({k: v for k, v in {**mark, "char_start": start, "char_end": end}.items() if v is not None})
+    return full_text, sections
+
+
 class TEIXMLModule:
     id = "tei_xml"
-    version = "1.0"
+    # 2.0: nested divs no longer have their text stored twice, and blocks are
+    # separated rather than welded together. Canonical text moves, so 1.0
+    # documents are stale — there are none.
+    version = "2.0"
     supported_extensions = {".xml", ".tei"}
     supported_mime_types = {"application/xml", "text/xml", "application/tei+xml"}
 
@@ -114,22 +198,14 @@ class TEIXMLModule:
             # Try text element
             body = _find(root, f".//{prefix}text")
 
-        sections: list[str] = []
+        sections: list[dict] = []
+        full_text = ""
         if body is not None:
-            # Walk div elements for structured extraction
-            divs = _findall(body, f".//{prefix}div")
-            if divs:
-                for div in divs:
-                    section_text = _text_content(div)
-                    if section_text:
-                        sections.append(section_text)
-            else:
-                # Fall back to full body text
-                body_text = _text_content(body)
-                if body_text:
-                    sections.append(body_text)
-
-        full_text = "\n\n".join(sections)
+            full_text, sections = _body_sections(body)
+            if not full_text:
+                # No divs at all. One section is still better than none: it is
+                # what the whole document says, and the root node needs a span.
+                full_text = _inline_text(body)
 
         # Count structural elements
         div_count = len(_findall(root, f".//{prefix}div"))
@@ -139,6 +215,10 @@ class TEIXMLModule:
         metadata: dict = {
             "char_count": len(full_text),
             "section_count": len(sections),
+            # Boundaries only, addressed into the canonical text. This module
+            # has always declared `structural` as its chunker and handed it
+            # nothing, so it silently got prose windows instead.
+            "sections": sections,
             "div_count": div_count,
             "file_name": source_path.name,
             "format": "tei_xml",
