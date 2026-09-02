@@ -1,5 +1,43 @@
 # Changelog
 
+### A PDF's title comes from the PDF, not from its first line of OCR
+
+`_extract_title` took the first non-blank line of converted text. On a scanned
+book that is whatever the layout model read first, which produced these four
+titles in the corpus:
+
+| stored | actually |
+|---|---|
+| `fies` | The campaigns of napoleon |
+| `Mfo mm` | McClellan's own story |
+| `CENTRAL` | The Civil War papers of George B. McClellan |
+| `Graduate Theses, Dissertations, and Problem Reports` | Metaphors of Reading |
+
+A library stamp, a torn word, an OCR fragment, and a repository's boilerplate
+header. All four PDFs stated their correct title in metadata that nothing read.
+
+Metadata cannot simply be trusted either: of 88 PDFs here, 54 declare a title
+and 19 of those are junk. So `_usable_title` gates it, and every rule rejects
+something real from that sample — an authoring default (`Document1`,
+`(anonymous)`), an account or part number (`1099`, `749537 NCM9JP01`), a
+filename the tool copied into the field (`Microsoft Word - PFS Editable.doc`,
+`B87023352[1].pdf`), or an export identifier
+(`output_CSantiago_fmlrKYMGCeW3Nj3`, recognised by an underscore that is not
+followed by a space, which real titles do not have).
+
+A trailing extension is stripped rather than rejected. `Rape Gang Inquiry
+Report.docx` is a real title wearing one, while `B87023352[1].pdf` still fails
+the letter rules once it is off — rejecting on the extension alone lost the
+first to save nothing.
+
+The first-line heuristic stays as the second step, because a PDF assembled from
+scans often declares nothing at all.
+
+No re-ingest and no version bump: canonical text, offsets, passages and
+embeddings are all untouched by this, and the title is one column. The four
+stored titles were re-derived by the new function and written directly, along
+with the root `document_nodes` title that breadcrumbs actually display.
+
 ### Markdown headings survive ingestion
 
 `MarkdownModule` treated `#` as formatting and stripped it alongside the
