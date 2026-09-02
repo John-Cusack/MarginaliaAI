@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+import structlog
+
 from research_engine.domain.documents import DocumentDraft
 from research_engine.services.ingestion.chunking.fixed_window import FixedWindowChunker
 from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
@@ -15,6 +17,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from research_engine.domain.passages import PassageDraft
+
+logger = structlog.get_logger()
+
+#: Counts a parser reports about its own structure. Non-zero here with an
+#: empty section table means the structure was found and then dropped.
+_STRUCTURE_COUNTS = ("heading_count", "section_count", "chapter_count", "div_count")
 
 
 CORE_CHUNKERS: dict[str, type] = {
@@ -62,8 +70,21 @@ def get_chunker(chunker_id: str) -> object:
     return cls() if isinstance(cls, type) else cls
 
 
+def _reported_structure(metadata: dict) -> dict[str, int]:
+    """Structure the parser says it found, whether or not it handed any over."""
+    return {
+        key: value
+        for key in _STRUCTURE_COUNTS
+        if isinstance(value := metadata.get(key), int) and value > 0
+    }
+
+
 async def run_chunking(
-    text: str, chunker_id: str, metadata: dict | None = None
+    text: str,
+    chunker_id: str,
+    metadata: dict | None = None,
+    *,
+    parser_id: str | None = None,
 ) -> list[PassageDraft]:
     """Run a chunker on text and return passage drafts.
 
@@ -71,12 +92,19 @@ async def run_chunking(
     arrives in ``metadata["sections"]`` as offset ranges into *text*. When a
     parser supplies none — plain text, or a format with no structure to
     recover — prose windows are the honest fallback rather than a failure.
+
+    That fallback is also how three built-in modules shipped for months
+    declaring ``structural`` and handing over nothing: the demotion is invisible
+    in the result, because prose windows are perfectly good passages. So it is
+    announced. A document that genuinely has no headings is reported at info; a
+    parser that counted structure and then dropped it is a defect, and says so.
     """
     chunker = get_chunker(chunker_id)
 
     if chunker_id == "structural":
         sections = (metadata or {}).get("sections")
         if not sections:
+            _report_demotion(metadata or {}, parser_id)
             return await ProseWindowChunker().chunk(text, metadata)
         # The section table addresses this document as a whole; repeating it in
         # every passage's metadata would store it once per passage.
@@ -86,6 +114,37 @@ async def run_chunking(
         return await chunker.chunk(sections, passage_metadata, full_text=text)
 
     return await chunker.chunk(text, metadata)
+
+
+def _report_demotion(metadata: dict, parser_id: str | None) -> None:
+    """Say that a document asked for structural chunking and did not get it."""
+    common = {
+        "parser": parser_id,
+        "file": metadata.get("file_name"),
+        "chunker": "prose_window",
+    }
+    if found := _reported_structure(metadata):
+        logger.warning(
+            "structural_sections_missing",
+            **common,
+            reported=found,
+            detail=(
+                "The parser counted structure and then supplied no "
+                "metadata['sections'], so it was chunked into prose windows. "
+                "Its headings are not addressable and its node tree will be a "
+                "bare root. The parser needs to emit a section table."
+            ),
+        )
+        return
+    logger.info(
+        "structural_sections_absent",
+        **common,
+        detail=(
+            "No sections to chunk on, so prose windows were used. Expected for "
+            "a document with no headings; if this format always has them, the "
+            "parser is not reporting them."
+        ),
+    )
 
 
 def build_document_draft(
