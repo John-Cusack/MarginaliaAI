@@ -182,8 +182,8 @@ async def _render(path: str, out: str | None) -> None:
         await container.close()
 
 
-@work_app.command("cite")
-def cite_command(
+@work_app.command("cite-entry")
+def cite_entry_command(
     document: str = typer.Option(..., "--document", help="Cited document UUID."),
     quote: str = typer.Option(..., "--quote", help="The wording as typed."),
     intent: str = typer.Option(..., "--intent", help="Citation intent."),

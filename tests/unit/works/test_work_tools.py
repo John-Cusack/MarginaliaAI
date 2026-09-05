@@ -9,7 +9,7 @@ import pytest
 from research_engine.mcp.tools import (
     verify_quote,
     work_citations,
-    work_cite,
+    work_cite_entry,
     work_render,
     work_verify,
 )
@@ -138,7 +138,7 @@ class FakeCiter:
         return self.result
 
 
-class TestWorkCiteTool:
+class TestWorkCiteEntryTool:
     def _result(self):
         return CitationResult(
             entry={"document_id": "d", "char_start": 1, "char_end": 2,
@@ -153,7 +153,7 @@ class TestWorkCiteTool:
     async def test_bad_uuid(self):
         container = SimpleNamespace(work_citer=FakeCiter(result=self._result()))
 
-        result = await work_cite.handler(
+        result = await work_cite_entry.handler(
             container, document_id="nope", quoted_text="q", intent="quotation"
         )
 
@@ -163,7 +163,7 @@ class TestWorkCiteTool:
     async def test_bad_window(self):
         container = SimpleNamespace(work_citer=FakeCiter(result=self._result()))
 
-        result = await work_cite.handler(
+        result = await work_cite_entry.handler(
             container,
             document_id="11111111-1111-1111-1111-111111111111",
             quoted_text="q",
@@ -177,7 +177,7 @@ class TestWorkCiteTool:
     async def test_service_value_error_is_invalid_input(self):
         container = SimpleNamespace(work_citer=FakeCiter(error=ValueError("bad intent")))
 
-        result = await work_cite.handler(
+        result = await work_cite_entry.handler(
             container,
             document_id="11111111-1111-1111-1111-111111111111",
             quoted_text="q",
@@ -193,7 +193,7 @@ class TestWorkCiteTool:
         )
         container = SimpleNamespace(work_citer=FakeCiter(error=error))
 
-        result = await work_cite.handler(
+        result = await work_cite_entry.handler(
             container,
             document_id="11111111-1111-1111-1111-111111111111",
             quoted_text="changed",
@@ -208,7 +208,7 @@ class TestWorkCiteTool:
         citer = FakeCiter(result=self._result())
         container = SimpleNamespace(work_citer=citer)
 
-        result = await work_cite.handler(
+        result = await work_cite_entry.handler(
             container,
             document_id="11111111-1111-1111-1111-111111111111",
             quoted_text="q",

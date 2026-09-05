@@ -169,7 +169,7 @@ async def test_cli_cite_prints_a_paste_ready_entry(
     result = await asyncio.to_thread(
         runner.invoke,
         work_app,
-        ["cite", "--document", str(doc_id), "--quote", PROBES["exact"],
+        ["cite-entry", "--document", str(doc_id), "--quote", PROBES["exact"],
          "--intent", "quotation", "--id", "c1"],
     )
 

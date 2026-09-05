@@ -1,4 +1,9 @@
-"""work_cite tool -- make a citation entry from a verified quote."""
+"""work_cite_entry tool -- make a front-matter citation entry from a quote.
+
+The file-phase companion to the Phase-1 `work_cite` (which writes
+occurrence/item rows and owns that name per Appendix B): this one verifies,
+resolves, and emits YAML to paste under a work file's `citations:`.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ from research_engine.services.works.cite import QuoteUnverifiedError
 
 logger = structlog.get_logger()
 
-TOOL_NAME = "work_cite"
+TOOL_NAME = "work_cite_entry"
 TOOL_DESCRIPTION = (
     "Make a citation entry for a work file. Give a document and the wording "
     "as typed: the quote is verified (exact or normalized to pass), its span "

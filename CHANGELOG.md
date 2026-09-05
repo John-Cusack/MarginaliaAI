@@ -1,9 +1,9 @@
 # Changelog
 
-### Making citations: `work cite` verifies a quote and resolves its span
+### Making citations: `work cite-entry` verifies a quote and resolves its span
 
-`research-engine work cite --document <uuid> --quote "<text>" --intent <intent>`
-(tool `work_cite`) is the write boundary for new citations: it verifies the
+`research-engine work cite-entry --document <uuid> --quote "<text>" --intent <intent>`
+(tool `work_cite_entry`) is the file-phase write boundary for new citations: it verifies the
 quote (exact or normalized to pass), resolves the span — creating the
 `evidence.source_spans` row on a miss — and prints a paste-ready front-matter
 entry carrying the *verified* offsets plus its YAML. Anything below
