@@ -94,6 +94,14 @@ class PGWorkRepo:
             ).first()
             return self._to_domain(row) if row else None
 
+    async def list(self) -> list[Work]:
+        """Every work, oldest first — for trace-by-key fan-out."""
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(works.select().order_by(works.c.created_at))
+            ).all()
+            return [self._to_domain(row) for row in rows]
+
     async def set_current_revision(
         self, tx: Transaction, work_id: UUID, revision_id: UUID
     ) -> None:
@@ -246,14 +254,18 @@ class PGWorkRevisionRepo:
             )
         )
         # Blocks in two passes: ids first (parents may come later in any
-        # order), then the parent remap. Keys stay, ids turn over.
+        # order), then the parent remap. Keys stay, ids turn over. The first
+        # pass parks every block at a transient negative position, because
+        # siblings under different parents routinely share a position and
+        # the (revision, parent, position) uniqueness is checked per row,
+        # not deferred — copying them parentless at real positions collides.
         old_blocks = (
             await tx.conn.execute(
                 work_blocks.select().where(work_blocks.c.revision_id == source.id)
             )
         ).all()
         id_map: dict[Any, Any] = {}
-        for block in old_blocks:
+        for index, block in enumerate(old_blocks):
             new_block_id = uuid7()
             id_map[block.id] = new_block_id
             await tx.conn.execute(
@@ -262,7 +274,7 @@ class PGWorkRevisionRepo:
                     revision_id=new_id,
                     block_key=block.block_key,
                     parent_id=None,
-                    position=block.position,
+                    position=-(index + 1),
                     block_type=block.block_type,
                     title=block.title,
                     body_markdown=block.body_markdown,
@@ -270,15 +282,19 @@ class PGWorkRevisionRepo:
                 )
             )
         for block in old_blocks:
-            if block.parent_id is not None:
-                await tx.conn.execute(
-                    work_blocks.update()
-                    .where(work_blocks.c.id == id_map[block.id])
-                    .values(parent_id=id_map[block.parent_id])
+            await tx.conn.execute(
+                work_blocks.update()
+                .where(work_blocks.c.id == id_map[block.id])
+                .values(
+                    parent_id=id_map[block.parent_id]
+                    if block.parent_id is not None
+                    else None,
+                    position=block.position,
                 )
+            )
         # Occurrences, items, and links follow their blocks.
         occurrence_map: dict[Any, Any] = {}
-        for (block_id,) in [(b.id) for b in old_blocks]:
+        for block_id in [b.id for b in old_blocks]:
             for occurrence in (
                 await tx.conn.execute(
                     sa.select(citation_occurrences).where(
@@ -356,6 +372,22 @@ class PGWorkRevisionRepo:
         created = await self._get_in_tx(tx, new_id)
         assert created is not None
         return created
+
+    async def set_message(
+        self, tx: Transaction, revision_id: UUID, message: str
+    ) -> WorkRevision:
+        """Record why a revision was sealed, without touching its state."""
+        row = (
+            await tx.conn.execute(
+                work_revisions.update()
+                .where(work_revisions.c.id == revision_id)
+                .values(message=message)
+                .returning(work_revisions)
+            )
+        ).first()
+        if row is None:
+            raise NotFoundError("work_revision", revision_id)
+        return self._to_domain(row)
 
     async def freeze(
         self, tx: Transaction, revision_id: UUID, content_hash: bytes
