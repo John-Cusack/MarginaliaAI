@@ -200,6 +200,15 @@ async def test_migrations_revert_cleanly(
         ("argument", "claims"),
         ("argument", "claim_edges"),
         ("argument", "anchors"),
+        ("authored", "works"),
+        ("authored", "work_revisions"),
+        ("authored", "work_blocks"),
+        ("authored", "citation_occurrences"),
+        ("authored", "citation_items"),
+        ("authored", "block_source_links"),
+        ("authored", "block_entity_links"),
+        ("authored", "waivers"),
+        ("bibliography", "editions"),
     ):
         async with engine.connect() as conn:
             count = (
@@ -228,7 +237,8 @@ async def test_migrations_revert_cleanly(
                 await conn.execute(
                     sa.text(
                         "SELECT schema_name FROM information_schema.schemata "
-                        "WHERE schema_name IN ('evidence', 'argument')"
+                        "WHERE schema_name IN ('evidence', 'argument', 'authored', "
+                        "'bibliography')"
                     )
                 )
             ).all()
@@ -245,7 +255,8 @@ async def test_migrations_revert_cleanly(
                 sa.text(
                     "SELECT table_schema, table_name "
                     "FROM information_schema.tables "
-                    "WHERE table_schema IN ('evidence', 'argument') "
+                    "WHERE table_schema IN ('evidence', 'argument', 'authored', "
+                    "'bibliography') "
                     "ORDER BY table_schema, table_name"
                 )
             )
@@ -254,5 +265,14 @@ async def test_migrations_revert_cleanly(
         ("argument", "anchors"),
         ("argument", "claim_edges"),
         ("argument", "claims"),
+        ("authored", "block_entity_links"),
+        ("authored", "block_source_links"),
+        ("authored", "citation_items"),
+        ("authored", "citation_occurrences"),
+        ("authored", "waivers"),
+        ("authored", "work_blocks"),
+        ("authored", "work_revisions"),
+        ("authored", "works"),
+        ("bibliography", "editions"),
         ("evidence", "source_spans"),
     ]
