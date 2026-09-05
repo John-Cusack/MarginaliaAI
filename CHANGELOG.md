@@ -1,5 +1,34 @@
 # Changelog
 
+### Works as rows: the Phase-1 spine (create, cite, validate, trace, freeze, draft loop)
+
+Eight MCP tools and five `research-engine work` commands draft a work as
+database rows: `work_create` starts the work and its revision 1;
+`work_block_upsert` writes blocks under optimistic locking (`conflict` on a
+stale `expected_updated_at`); `work_cite` verifies a quote, resolves its
+span, applies the narrowing rule for the intent, and writes the occurrence
+plus item atomically — any refusal names its rule id and stores nothing;
+`work_link` types one edge to a span or an entity; `work_validate` judges a
+revision at gate `none`, `freeze`, or `publish` with Appendix A rule ids
+keyed by block and citation; `work_trace` walks grounding down to document
+offsets or up to every citing block; `work_freeze` validates, records waiver
+rows, hashes the authored content, and seals the draft. `work export
+--draft` renders the §6.4 markdown and `work import` reads an edited file
+back into a new current draft revision (copy-forward; dangling markers
+refuse the whole import). Ingest keeps `bibliography.editions` behind
+`documents.insert`, so row citations join Zotero keys. Per-work-type policy
+lives under `RE_WORKS_POLICY` (error, warn, allow over the core floor).
+
+### `copy_forward` repaired for multi-block revisions
+
+The revision copy never ran before the Phase-1 tests and was broken twice:
+it unpacked a list of block ids as a list of rows (`TypeError` on any copy
+with citations), and parked every copied block parentless at its real
+position, colliding on `(revision_id, parent_id, position)` whenever two
+blocks shared a position under different parents. The first pass now parks
+blocks at transient negative positions; the second pass restores parents
+and positions together. Fixed in place, no migration.
+
 ### Making citations: `work cite-entry` verifies a quote and resolves its span
 
 `research-engine work cite-entry --document <uuid> --quote "<text>" --intent <intent>`

@@ -1456,6 +1456,58 @@ Record every deviation from this guide, every contract gap found by the real
 work, and every rehearsal defect here, newest first, with the date and the
 step.
 
+- 2026-09-05 — Step 6 P1 spine built on `John-Cusack/works-phase0` with the
+  researcher's sign-off (Step 5 rehearsal and the real-work port wait on the
+  researcher; the Step 6 gate is waived in the same item as Step 3's). Six
+  services, eight tools, five CLI commands, the ingest hook, and the §6.8
+  table (20 integration tests, all passing). Choices where the guide is
+  silent, and defects the tests caught in committed code:
+  - `copy_forward` never ran before this step and was broken twice: the
+    occurrence loop unpacked a list of ids as a list of rows (`TypeError`
+    on any copy with citations), and multi-block revisions collided on
+    `(revision, parent, position)` because the first pass parked every block
+    parentless at its real position. The first pass now parks blocks at
+    transient negative positions; the second pass restores parents and
+    positions together. Fixed in place, no migration.
+  - `import_draft` sets the new revision current in the same transaction;
+    otherwise the imported draft is unreachable (get, validate, and freeze
+    all default to current).
+  - `freeze` validates with its inline waivers as *prospective*: `validate`
+    takes an optional prospective set, cleared like stored rows. Validating
+    before inserting made inline waivers unable to ever clear a blocker.
+  - `AUTH_CLAIM_UNRESOLVED` is not emitted: rows hold no claim refs and the
+    ledger has no `claim_upsert`, so there is nothing to resolve refs
+    against. It goes live with Phase B claim links.
+  - `AUTH_UNUSED_CITATION` fires when an occurrence's marker sits in another
+    block — the occurrence is not visible in the rendered form of its own
+    block. The per-block bijection stays missing/dangling only.
+  - `AUTH_CITATION_EDITION_MISSING` is defensive in P1: the check constraint
+    guarantees an identity on every stored item, so it fires only on rows
+    written around the service.
+  - Export appends a missing marker only for `block_end` occurrences (that
+    placement renders at the end by definition); a missing inline marker
+    stays a `MARKER_MISSING` error, not silently repaired.
+  - Non-heading titles ride in a `<!-- title: … -->` comment: rows have
+    titles, §5.2 markdown has nowhere to put them, and dropping them would
+    lose data.
+  - A heading without stored `attributes.level` renders as `##` and
+    reimports without a change: the import comparison defaults a missing
+    level to 2.
+  - A `near` quote whose prefix will not locate is refused with
+    `AUTH_QUOTE_UNVERIFIED` (no address to store), not asserted on.
+  - `uuid_utils` ids never cross into pydantic: services convert to stdlib
+    UUIDs at draft boundaries (`WorkBlockDraft`, occurrence/item drafts,
+    import keys). Repos keep uuid7 for row ids, which the driver accepts.
+  - Trace by block or citation key fans out over `PGWorkRepo.list` (new
+    read); the edition-mismatch check reads through `PGEditionRepo.get`
+    (new read); the freeze message writes through
+    `PGWorkRevisionRepo.set_message` (new write). Protocols and the surface
+    guard cover all three.
+  - `Corpus.cleanup` deletes works before spans: items RESTRICT spans, so
+    the old spans-first order fails teardown on any cited span.
+  - The Step 5 port mapping (§5.3, uuid5 keys, `metadata.port`) is not
+    implemented: with no real work to port, the rehearsal procedure waits
+    on the researcher and only the draft loop it exercises is built.
 - 2026-09-05 — `work_cite` built at the researcher's direction: the MCP can
   now make citations (verify, resolve, emit a paste-ready entry). Choices:
   - The tool name comes from the master's Resolver protocol, which governs
