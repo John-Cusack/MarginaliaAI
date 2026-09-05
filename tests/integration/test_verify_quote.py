@@ -11,7 +11,6 @@ pass the fakes and fail here.
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,14 +18,16 @@ import pytest
 
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.adapters.storage.postgres.repositories import (
-    PGDocumentTextRepo,
     PGDocumentRepo,
+    PGDocumentTextRepo,
     PGPassageRepo,
 )
 from research_engine.domain.passages import PassageDraft
 from research_engine.services.verification import QuoteVerifier, Tier
 
 if TYPE_CHECKING:
+    import uuid
+
     from sqlalchemy.ext.asyncio import AsyncEngine
 
     from research_engine.testing import Corpus

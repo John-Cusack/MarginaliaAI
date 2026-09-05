@@ -33,7 +33,12 @@ _NON_WORK_NAMES = frozenset({"README.md", "_TEMPLATE.md"})
 
 #: A footnote definition line: `[^c1]: ...` at line start. Definitions are the
 #: renderer's output, not markers, so they are excluded before markers are read.
-_DEFINITION_RE = re.compile(r"^\[\^c\d+\]:", re.MULTILINE)
+_DEFINITION_RE = re.compile(r"^\[\^c\d+\]:[^\n]*\n?", re.MULTILINE)
+
+
+def strip_definition_lines(body: str) -> str:
+    """Remove rendered footnote definitions, leaving prose and markers."""
+    return _DEFINITION_RE.sub("", body)
 
 #: Every `[^cN]` marker left in the body once definitions are removed.
 _MARKER_RE = re.compile(r"\[\^(c\d+)\]")
@@ -88,7 +93,7 @@ def parse_work_file(path: Path, works_dir: Path) -> WorkFile:
 
     front_matter, entry_errors = _validate_header(work_path, raw)
     sha = hashlib.sha256(yaml_block.encode("utf-8")).hexdigest()
-    markers = _MARKER_RE.findall(_DEFINITION_RE.sub("", body))
+    markers = _MARKER_RE.findall(strip_definition_lines(body))
     return WorkFile(
         work_path=work_path,
         front_matter=front_matter,
