@@ -137,6 +137,17 @@ class TestTiers:
 
         assert result.tier is Tier.NORMALIZED
 
+    @pytest.mark.asyncio
+    async def test_em_dash_reports_normalized_never_exact(self):
+        """A hyphen typed for the source's em dash is typography, not wording."""
+        raw = {DOC: "He paused \u2014 and then continued."}
+        result = await _verifier(raw).verify("He paused - and then continued.")
+
+        assert result.tier is Tier.NORMALIZED
+        assert result.tier is not Tier.EXACT
+        assert result.verified
+        assert result.location.source_text == "He paused \u2014 and then continued."
+
 
 class TestChunkStraddling:
     @pytest.mark.asyncio
@@ -165,6 +176,7 @@ class TestHonestAbsence:
 
         assert result.tier is Tier.NO_CANONICAL_TEXT
         assert not result.verified
+        assert result.documents_checked == 0
         assert "not the same as" in result.detail
 
     @pytest.mark.asyncio
@@ -195,6 +207,8 @@ class TestNearMiss:
         assert 0.5 <= result.matched_fraction < 1.0
         assert "moon" in result.divergence.quote_continues
         assert result.divergence.matched_characters > 0
+        # The source's continuation at the divergence, not the quote's own tail.
+        assert result.divergence.source_continues == "Amos 5:24 makes it a flood."
 
     @pytest.mark.asyncio
     async def test_a_trivial_overlap_is_not_dressed_up_as_a_near_miss(self):
