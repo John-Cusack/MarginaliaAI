@@ -6,8 +6,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from research_engine.mcp.tools import verify_quote, work_citations, work_render, work_verify
+from research_engine.mcp.tools import (
+    verify_quote,
+    work_citations,
+    work_cite,
+    work_render,
+    work_verify,
+)
 from research_engine.services.verification.quote import Tier
+from research_engine.services.works.cite import CitationResult, QuoteUnverifiedError
 from research_engine.services.works.files import WorkFileReader
 
 pytestmark = pytest.mark.unit
@@ -116,6 +123,102 @@ class FakeVerification:
             matched_fraction=None,
             divergence=None,
         )
+
+
+class FakeCiter:
+    def __init__(self, result=None, error=None) -> None:
+        self.result = result
+        self.error = error
+        self.calls: list = []
+
+    async def cite(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+class TestWorkCiteTool:
+    def _result(self):
+        return CitationResult(
+            entry={"document_id": "d", "char_start": 1, "char_end": 2,
+                   "quoted_text": "q", "intent": "quotation"},
+            entry_yaml="char_start: 1\n",
+            tier="exact",
+            verified_span=[1, 2],
+            span_id="s",
+        )
+
+    @pytest.mark.asyncio
+    async def test_bad_uuid(self):
+        container = SimpleNamespace(work_citer=FakeCiter(result=self._result()))
+
+        result = await work_cite.handler(
+            container, document_id="nope", quoted_text="q", intent="quotation"
+        )
+
+        assert result["error"]["code"] == "invalid_input"
+
+    @pytest.mark.asyncio
+    async def test_bad_window(self):
+        container = SimpleNamespace(work_citer=FakeCiter(result=self._result()))
+
+        result = await work_cite.handler(
+            container,
+            document_id="11111111-1111-1111-1111-111111111111",
+            quoted_text="q",
+            intent="quotation",
+            window={"char_start": 9, "char_end": 9},
+        )
+
+        assert result["error"]["code"] == "invalid_input"
+
+    @pytest.mark.asyncio
+    async def test_service_value_error_is_invalid_input(self):
+        container = SimpleNamespace(work_citer=FakeCiter(error=ValueError("bad intent")))
+
+        result = await work_cite.handler(
+            container,
+            document_id="11111111-1111-1111-1111-111111111111",
+            quoted_text="q",
+            intent="frobnicate",
+        )
+
+        assert result["error"]["code"] == "invalid_input"
+
+    @pytest.mark.asyncio
+    async def test_unverified_quote_refuses_with_its_tier(self):
+        error = QuoteUnverifiedError(
+            tier=Tier.NEAR, detail="Quote verifies near", divergence=None
+        )
+        container = SimpleNamespace(work_citer=FakeCiter(error=error))
+
+        result = await work_cite.handler(
+            container,
+            document_id="11111111-1111-1111-1111-111111111111",
+            quoted_text="changed",
+            intent="quotation",
+        )
+
+        assert result["error"]["code"] == "quote_unverified"
+        assert result["error"]["details"]["tier"] == "near"
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_the_entry(self):
+        citer = FakeCiter(result=self._result())
+        container = SimpleNamespace(work_citer=citer)
+
+        result = await work_cite.handler(
+            container,
+            document_id="11111111-1111-1111-1111-111111111111",
+            quoted_text="q",
+            intent="quotation",
+            window={"char_start": 0, "char_end": 5},
+        )
+
+        assert result["tier"] == "exact"
+        assert result["entry"]["char_start"] == 1
+        assert citer.calls[0]["window"] == (0, 5)
 
 
 class TestVerifyQuoteWindow:

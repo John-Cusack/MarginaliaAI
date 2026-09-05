@@ -1456,6 +1456,18 @@ Record every deviation from this guide, every contract gap found by the real
 work, and every rehearsal defect here, newest first, with the date and the
 step.
 
+- 2026-09-05 — `work_cite` built at the researcher's direction: the MCP can
+  now make citations (verify, resolve, emit a paste-ready entry). Choices:
+  - The tool name comes from the master's Resolver protocol, which governs
+    `work_cite` — but Appendix E.2's CLI list does not include `cite`; the
+    `work cite` command extends that list, flagged here for sign-off.
+  - Refusals (`near` and below) store nothing and report code
+    `quote_unverified` with the tier: no mirror (Step 4 skipped) and no
+    `verify_attempts` (Appendix E.9) exist to record them in.
+  - The window validator is duplicated between `verify_quote` and `work_cite`;
+    a third consumer should hoist one shared helper.
+  - `Corpus.adopt_span` mirrors `adopt` for spans a citer resolves outside
+    the helper; untracked spans fail teardown loudly rather than leaking.
 - 2026-09-05 — Step 3 gate waived in one item by the researcher: no real
   work verifies by hand yet (`RE_WORKS_DIR` still holds only the contract),
   so Step 3 proceeds against the fixture. Schema defects the real work would

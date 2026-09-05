@@ -37,6 +37,7 @@ from research_engine.mcp.tools import (
     upsert_event,
     verify_quote,
     work_citations,
+    work_cite,
     work_render,
     work_verify,
 )
@@ -99,6 +100,7 @@ CORE_TOOL_MODULES = [
     ingest_execute,
     work_verify,
     work_citations,
+    work_cite,
     work_render,
 ]
 

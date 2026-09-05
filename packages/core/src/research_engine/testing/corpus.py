@@ -135,6 +135,15 @@ class Corpus:
         self._span_ids.append(span.id)
         return span
 
+    def adopt_span(self, span_id: UUID) -> UUID:
+        """Track a span resolved by something else — a citer under test.
+
+        A span RESTRICT-guards its document, so an untracked span fails
+        document cleanup with a foreign key violation rather than a leak.
+        """
+        self._span_ids.append(span_id)
+        return span_id
+
     async def cleanup(self) -> None:
         # Spans first: they RESTRICT their document, so documents cannot go
         # before them. Documents next: their cascades clear the rows

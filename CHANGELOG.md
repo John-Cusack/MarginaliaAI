@@ -1,5 +1,17 @@
 # Changelog
 
+### Making citations: `work cite` verifies a quote and resolves its span
+
+`research-engine work cite --document <uuid> --quote "<text>" --intent <intent>`
+(tool `work_cite`) is the write boundary for new citations: it verifies the
+quote (exact or normalized to pass), resolves the span — creating the
+`evidence.source_spans` row on a miss — and prints a paste-ready front-matter
+entry carrying the *verified* offsets plus its YAML. Anything below
+exact/normalized is refused with nothing stored. A `--window` pins a repeated
+quote to a search hit's span; without one the first occurrence wins. The entry
+id is echoed, never collision-checked — `work verify` judges narrowing and
+markers afterwards.
+
 ### The span table and the claim ledger (migrations 009 and 010)
 
 Two additive migrations, no tools yet. `evidence.source_spans` owns one row

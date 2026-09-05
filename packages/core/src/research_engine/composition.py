@@ -29,6 +29,7 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGLLMCallLogRepo,
     PGMentionRepo,
     PGPassageRepo,
+    PGSourceSpanRepo,
 )
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
@@ -42,6 +43,7 @@ from research_engine.services.search.hit_source import HitSourceReader
 from research_engine.services.search.hybrid import HybridSearchService
 from research_engine.services.search.windows import PassageWindowReader
 from research_engine.services.verification import QuoteVerifier
+from research_engine.services.works.cite import WorkCiter
 from research_engine.services.works.files import WorkFileReader
 from research_engine.services.works.render import WorkRenderer
 from research_engine.services.works.verify import WorkVerifier
@@ -89,6 +91,9 @@ class Container:
     work_files: WorkFileReader | None = None
     work_verifier: WorkVerifier | None = None
     work_renderer: WorkRenderer | None = None
+    #: Citation making. Built always: citing needs the corpus, not the works
+    #: directory — the entry is pasted by hand, not written to any file.
+    work_citer: WorkCiter | None = None
     #: True once the Step 4 mirror (`core.works_index`) exists and
     #: `work_citations` should query it instead of scanning files.
     works_mirror_available: bool = False
@@ -257,6 +262,11 @@ async def build_container(settings: Settings) -> Container:
         passages=passages_repo,
         documents=docs,
     )
+    work_citer = WorkCiter(
+        verification=quote_verifier,
+        spans=PGSourceSpanRepo(sql_engine),
+        engine=sql_engine,
+    )
 
     # Created works live as files until their first freeze. Without a works
     # directory there is nothing to verify, cite, or render, and the tools
@@ -371,6 +381,7 @@ async def build_container(settings: Settings) -> Container:
         work_files=work_files,
         work_verifier=work_verifier,
         work_renderer=work_renderer,
+        work_citer=work_citer,
         # The Step 4 mirror does not exist in Phase 0: no migration in this
         # change, so there is no table to detect. `work_citations` scans files.
         works_mirror_available=False,

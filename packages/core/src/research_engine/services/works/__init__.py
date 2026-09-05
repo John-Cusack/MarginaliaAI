@@ -1,6 +1,11 @@
 """Created works — file tools in Phase 0, rows from the first freeze on."""
 
 from research_engine.services.works.citations import WorkCitationFinder
+from research_engine.services.works.cite import (
+    CitationResult,
+    QuoteUnverifiedError,
+    WorkCiter,
+)
 from research_engine.services.works.files import (
     WorkFileError,
     WorkFileReader,
@@ -15,7 +20,10 @@ from research_engine.services.works.verify import (
 
 __all__ = [
     "MAX_QUOTE_CHARS",
+    "CitationResult",
+    "QuoteUnverifiedError",
     "WorkCitationFinder",
+    "WorkCiter",
     "WorkFileError",
     "WorkFileReader",
     "WorkRenderer",
