@@ -1456,4 +1456,44 @@ Record every deviation from this guide, every contract gap found by the real
 work, and every rehearsal defect here, newest first, with the date and the
 step.
 
+- 2026-09-05 — Phase 0 built on branch `John-Cusack/works-phase0` at
+  `80f5909` (Step 1.3 doc commit on top of `3b5251d`). Part 0 code map
+  re-checked against live code; no discrepancies. No Appendix E item
+  objected to — all implemented as written. Choices where the guide is
+  silent, Step 2:
+  - §2.4 check 8 (`AUTH_ZOTERO_KEY_UNKNOWN`) fires only when the entry
+    carries a `zotero_key` the document lacks. An entry with neither key
+    nor edition is covered by `AUTH_CITATION_EDITION_MISSING` alone.
+  - §2.4 dangling markers ignore markers matching an *invalid* entry id;
+    `AUTH_ENTRY_INVALID` already reports those.
+  - §2.4 tool and CLI default gate is `none`: findings are reported, nothing
+    is judged, until a gate is requested.
+  - §2.4 `verify_all` collects unparseable files under `unreadable` instead
+    of failing the whole run; one bad file hides no work.
+  - §2.5 claim-selector matches are work-level (citation fields null plus
+    `claim_ref`), since `claims:` refs attach to the work, not an entry.
+  - §2.5 `works_mirror_available` is a constant false in Phase 0 — no
+    migration means no table to detect. Table-existence detection lands
+    with Step 4.
+  - §2.5 `work_citations` skips unparseable files with a warning, for the
+    same reason `verify_all` does.
+  - §2.6 render strips pre-existing footnote definitions before appending,
+    so re-rendering never doubles them. The tier tag comes from a
+    windowless verify; a metadata `date` renders as its first four digits.
+  - §2.7b a `window` without `document_id` passes through to the service,
+    which defines it as a whole-document search; no extra error invented.
+  - Header and entry validation forbid unknown keys (`extra="forbid"`), so
+    a typo'd field refuses rather than parses.
+  - `front_matter_sha` is sha256 over the YAML block substring as read,
+    UTF-8 encoded, fences excluded.
+  - Ports gained `get_many` / `parser_versions`; pre-existing protocol gaps
+    (`update_metadata` etc.) left alone.
+  - The §2.2 ingest convention is documented in the in-repo
+    `packages/plugins/README.md`; the out-of-tree packs (logos,
+    academic-journal, kindle, yourcloudlibrary) carry their own READMEs
+    outside this repo.
+  - Step 1.2 real work absent: `RE_WORKS_DIR` holds only `README.md` and
+    `_TEMPLATE.md`, so the Step 2 done-when is demonstrated against the
+    fixture work (`tests/integration/fixtures/works/fixture_work.md`);
+    the real-work `review`-gate check waits on the researcher.
 - 2026-09-04 — guide written against engine `3b5251d`; no deviations yet.
