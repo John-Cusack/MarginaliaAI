@@ -206,6 +206,26 @@ class PGDocumentTextRepo:
             ).first()
         return (row[0] or 0, row[1] or 0) if row else None
 
+    async def parser_versions(self, document_ids: list[UUID]) -> dict[UUID, str]:
+        """Parser version per document, for the hits of one result page.
+
+        One query for the whole page, never one per hit. Documents with no
+        stored text are absent from the answer rather than yielding None, so
+        absence itself says `has_canonical_text` is false.
+        """
+        if not document_ids:
+            return {}
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    sa.select(
+                        document_texts.c.document_id,
+                        document_texts.c.parser_version,
+                    ).where(document_texts.c.document_id.in_(document_ids))
+                )
+            ).all()
+        return {row[0]: row[1] for row in rows}
+
     async def find_raw(self, document_id: UUID, needle: str) -> int | None:
         """Offset of *needle* in the raw canonical text, or None."""
         return await self._strpos(document_texts.c.text, document_id, needle)

@@ -28,13 +28,13 @@ EXPECTED = {
     PGDocumentTextRepo: [
         "put", "get", "get_text", "get_span", "count", "missing_document_ids",
         "find_documents_containing", "lengths", "find_raw", "find_normalized",
-        "get_spans",
+        "get_spans", "parser_versions",
     ],
     PGPassageRepo: [
         "get", "get_many", "get_by_document", "covering_span", "set_locators",
         "vector_search", "keyword_search", "insert_many",
     ],
-    PGDocumentRepo: ["get", "insert", "find_by_hash", "find_by_metadata"],
+    PGDocumentRepo: ["get", "get_many", "insert", "find_by_hash", "find_by_metadata"],
     PGDocumentNodeRepo: [
         "get", "get_tree", "get_outline", "get_subtree",
         "get_ancestors", "get_ancestors_many", "find_by_span", "insert_many",

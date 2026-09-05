@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from research_engine.ports.embedding import EmbeddingPort
     from research_engine.ports.repositories import PassageRepo
     from research_engine.ports.reranker import RerankerPort
+    from research_engine.services.search.hit_source import HitSourceReader
     from research_engine.services.search.windows import PassageWindowReader
 
 logger = structlog.get_logger()
@@ -40,6 +41,7 @@ class HybridSearchService:
         reranker: RerankerPort,
         get_filter_extensions: Callable[[], dict[str, FilterExtension]] | None = None,
         windows: PassageWindowReader | None = None,
+        hit_sources: HitSourceReader | None = None,
     ) -> None:
         self._passages = passages
         self._embedding = embedding
@@ -50,6 +52,9 @@ class HybridSearchService:
         # nothing to widen into. The composition root always supplies one, so
         # expansion is on in practice rather than opt-in.
         self._windows = windows
+        # Same story: the citation draft needs the document and text tables,
+        # which unit fakes do not have. Always set in practice.
+        self._hit_sources = hit_sources
 
     async def find_passages(self, query: SearchQuery) -> SearchResult:
         # Stage 1: Build candidate set from filters
@@ -211,6 +216,12 @@ class HybridSearchService:
         windows = (
             await self._windows.read([p for _, p in found]) if self._windows else {}
         )
+        # The citation draft, batched across the page the same way.
+        sources = (
+            await self._hit_sources.read([p for _, p in found])
+            if self._hit_sources
+            else {}
+        )
 
         hits = []
         for (pid, score, breakdown), passage in found:
@@ -232,6 +243,7 @@ class HybridSearchService:
                     char_end=passage.char_end,
                     node_id=passage.node_id,
                     window=windows.get(pid),
+                    source=sources.get(pid),
                 )
             )
         return hits

@@ -57,6 +57,13 @@ MAX_CANDIDATES = 10
 #: Characters of context shown either side of where a near miss diverges.
 DIVERGENCE_CONTEXT = 80
 
+_EXACT_DETAIL = "The source contains this quotation character for character."
+_NORMALIZED_DETAIL = (
+    "The source contains this quotation apart from typography "
+    "— whitespace, quote marks, dashes or hyphenation. Compare "
+    "`source_text` before quoting it verbatim."
+)
+
 
 class Tier(StrEnum):
     """How closely the source matched, from the caller's point of view."""
@@ -134,7 +141,11 @@ class QuoteVerifier:
         self._max_candidates = max_candidates
 
     async def verify(
-        self, quote: str, document_id: UUID | None = None
+        self,
+        quote: str,
+        document_id: UUID | None = None,
+        *,
+        window: tuple[int, int] | None = None,
     ) -> QuoteVerification:
         quote = quote.strip()
         if not quote:
@@ -150,7 +161,8 @@ class QuoteVerifier:
         match_form = normalize_for_matching(quote)
 
         if document_id is not None:
-            if await self._texts.lengths(document_id) is None:
+            sizes = await self._texts.lengths(document_id)
+            if sizes is None:
                 return QuoteVerification(
                     tier=Tier.NO_CANONICAL_TEXT,
                     quote=quote,
@@ -162,6 +174,19 @@ class QuoteVerifier:
                         f"the document to make it verifiable."
                     ),
                 )
+            if window is not None:
+                # A caller quoting a hit already knows roughly where it sits.
+                # Check that neighbourhood first; on a miss fall through to the
+                # whole-document path unchanged.
+                located = await self._locate_in_window(
+                    document_id, quote, match_form, window, sizes[0]
+                )
+                if located is not None:
+                    tier, span = located
+                    return await self._resolve(
+                        tier, quote, document_id, span, 1,
+                        detail=_EXACT_DETAIL if tier is Tier.EXACT else _NORMALIZED_DETAIL,
+                    )
             candidates: Sequence[UUID] = [document_id]
         else:
             candidates = await self._texts.find_documents_containing(
@@ -174,17 +199,13 @@ class QuoteVerifier:
             if found is not None:
                 return await self._resolve(
                     Tier.EXACT, quote, candidate, found, len(candidates),
-                    detail="The source contains this quotation character for character.",
+                    detail=_EXACT_DETAIL,
                 )
             found = await self._locate_normalized(candidate, stored_form, match_form)
             if found is not None and normalized_hit is None:
                 normalized_hit = await self._resolve(
                     Tier.NORMALIZED, quote, candidate, found, len(candidates),
-                    detail=(
-                        "The source contains this quotation apart from typography "
-                        "— whitespace, quote marks, dashes or hyphenation. Compare "
-                        "`source_text` before quoting it verbatim."
-                    ),
+                    detail=_NORMALIZED_DETAIL,
                 )
         if normalized_hit is not None:
             return normalized_hit
@@ -192,6 +213,36 @@ class QuoteVerifier:
         return await self._near_miss(quote, stored_form, match_form, document_id)
 
     # --- locating -----------------------------------------------------------
+
+    async def _locate_in_window(
+        self,
+        document_id: UUID,
+        quote: str,
+        match_form: str,
+        window: tuple[int, int],
+        raw_len: int,
+    ) -> tuple[Tier, Span] | None:
+        """Try the caller's neighbourhood before the whole document.
+
+        `window` is where the caller believes the quote sits — the span from
+        a search hit. `slack` covers a quote longer than its span plus room
+        for the estimate to be off. Offsets are rebased by `lo` before
+        returning, so the span addresses the document, not the window.
+        """
+        start, end = window
+        slack = len(quote) + 256
+        lo = max(0, start - slack)
+        hi = min(raw_len, end + slack)
+        window_text = await self._texts.get_span(document_id, lo, hi)
+        if not window_text:
+            return None
+        at = window_text.find(quote)
+        if at >= 0:
+            return Tier.EXACT, Span(lo + at, lo + at + len(quote))
+        found = _find_folded(window_text, match_form)
+        if found is not None:
+            return Tier.NORMALIZED, Span(lo + found.start, lo + found.end)
+        return None
 
     async def _locate_exact(self, document_id: UUID, quote: str) -> Span | None:
         at = await self._texts.find_raw(document_id, quote)

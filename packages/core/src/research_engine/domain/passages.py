@@ -104,6 +104,26 @@ class PassageWindow(BaseModel):
     approx_tokens: int
 
 
+class HitSource(BaseModel):
+    """What a hit is cited from — the citation draft for a search result.
+
+    A hit without offsets (`has_offsets` false) or without canonical text is
+    not a citation draft: there is nothing to verify a quotation against.
+    """
+
+    document_title: str | None = None
+    #: The bibliographic join, once a pack writes it at ingest. None until then.
+    zotero_key: str | None = None
+    #: `documents.metadata.edition`, when a pack wrote one.
+    edition: str | None = None
+    #: `document_texts.parser_version`. None when there is no canonical text.
+    parser_version: str | None = None
+    has_canonical_text: bool = False
+    #: The passage row carries `char_start`/`char_end`. Rows from older
+    #: chunkers can lack them, and a hit without offsets cannot be cited.
+    has_offsets: bool = False
+
+
 class PassageHit(BaseModel):
     """A passage returned by search with scores."""
 
@@ -111,6 +131,7 @@ class PassageHit(BaseModel):
     document_id: UUID
     score: float
     score_breakdown: ScoreBreakdown | None = None
+    source: HitSource | None = None
     #: The chunk that actually matched — what was embedded, ranked and reranked.
     #: Quote this. Read ``window``.
     text: str

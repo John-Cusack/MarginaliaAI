@@ -33,6 +33,7 @@ class FakeTexts:
     def __init__(self, raw: dict) -> None:
         self.raw = raw
         self.norm = {k: normalize(v) for k, v in raw.items()}
+        self.find_raw_calls: list = []
 
     async def lengths(self, document_id):
         if document_id not in self.raw:
@@ -40,6 +41,7 @@ class FakeTexts:
         return len(self.raw[document_id]), len(self.norm[document_id])
 
     async def find_raw(self, document_id, needle):
+        self.find_raw_calls.append((document_id, needle))
         at = self.raw.get(document_id, "").find(needle)
         return at if at >= 0 and needle else None
 
@@ -219,6 +221,49 @@ class TestNearMiss:
         )
 
         assert result.tier is Tier.NOT_FOUND
+
+
+class TestWindow:
+    """The window hint: a caller quoting a hit already knows where it sits."""
+
+    @pytest.mark.asyncio
+    async def test_a_quote_from_a_hit_resolves_inside_its_window(self):
+        texts = FakeTexts({DOC: SOURCE})
+        verifier = QuoteVerifier(texts, FakePassages({DOC: SOURCE}), FakeDocuments())
+        quote = SOURCE[20:100]
+
+        result = await verifier.verify(quote, DOC, window=(20, 100))
+
+        assert result.tier is Tier.EXACT
+        assert (result.location.char_start, result.location.char_end) == (20, 100)
+        # The whole-document search never ran.
+        assert texts.find_raw_calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_whitespace_differing_copy_returns_normalized(self):
+        texts = FakeTexts({DOC: SOURCE})
+        verifier = QuoteVerifier(texts, FakePassages({DOC: SOURCE}), FakeDocuments())
+        quote = SOURCE[0:40].replace(" ", "  ")
+
+        result = await verifier.verify(quote, DOC, window=(0, 80))
+
+        assert result.tier is Tier.NORMALIZED
+        assert result.verified
+
+    @pytest.mark.asyncio
+    async def test_a_quote_absent_from_the_window_falls_through(self):
+        # Long tail so the slack around the window cannot reach the quote.
+        raw = SOURCE + " Padding." * 500
+        texts = FakeTexts({DOC: raw})
+        verifier = QuoteVerifier(texts, FakePassages({DOC: raw}), FakeDocuments())
+        quote = SOURCE[100:140]
+
+        result = await verifier.verify(quote, DOC, window=(3000, 3100))
+
+        assert result.tier is Tier.EXACT
+        assert raw[result.location.char_start : result.location.char_end] == quote
+        # The window missed, so the whole-document path ran after all.
+        assert texts.find_raw_calls != []
 
 
 class TestWindowing:
