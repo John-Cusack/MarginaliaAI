@@ -230,6 +230,15 @@ class RerankUnavailable(ResearchEngineError):
 # --- Storage ---
 
 
+class WorksNotConfigured(ConfigurationError):
+    """No works directory is configured.
+
+    Every work tool reads files relative to `RE_WORKS_DIR`. Without it there
+    is nothing to verify, cite, or render — which is a configuration answer,
+    not an empty result.
+    """
+
+
 class StorageError(ResearchEngineError):
     """Database or storage error."""
 
