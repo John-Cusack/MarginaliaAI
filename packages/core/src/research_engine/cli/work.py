@@ -277,6 +277,240 @@ async def _cite(
         await container.close()
 
 
+@work_app.command("show")
+def show_command(
+    slug: str = typer.Argument(..., help="Work slug."),
+    revision: int | None = typer.Option(None, "--revision", help="Revision number."),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
+    """Print a work's block tree with citations inlined."""
+    asyncio.run(_show(slug, revision, json_output))
+
+
+async def _show(slug: str, revision: int | None, json_output: bool) -> None:
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.domain.errors import NotFoundError
+
+    container = await build_container(load_settings())
+    try:
+        assert container.work_service is not None  # always built
+        try:
+            result = await container.work_service.get(slug=slug, revision=revision)
+        except NotFoundError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        if json_output:
+            print(json.dumps(result, indent=2))
+        else:
+            console.print(f"[bold]{result['work']['slug']}[/bold] rev "
+                          f"{result['revision']['revision_number']} "
+                          f"({result['revision']['state']})")
+            for block in result["blocks"]:
+                title = f" {block['title']}" if block["title"] else ""
+                console.print(f"  [{block['block_type']}]{title} "
+                              f"{block['block_key']} pos {block['position']}")
+                for citation in block["citations"]:
+                    console.print(f"    {{{{cite:{citation['citation_key']}}}}} "
+                                  f"{citation['intent']}")
+    finally:
+        await container.close()
+
+
+@work_app.command("validate")
+def validate_command(
+    slug: str = typer.Argument(..., help="Work slug."),
+    revision: int | None = typer.Option(None, "--revision", help="Revision number."),
+    gate: str = typer.Option("none", "--gate", help="Judge against a gate: none, freeze, publish."),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
+    """Check a revision's rows and judge them against a gate."""
+    asyncio.run(_validate(slug, revision, gate, json_output))
+
+
+async def _validate(
+    slug: str, revision: int | None, gate: str, json_output: bool
+) -> None:
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.domain.errors import NotFoundError
+
+    if gate not in ("none", "freeze", "publish"):
+        console.print(f"[red]gate must be none, freeze, or publish, got {gate!r}[/red]")
+        raise typer.Exit(code=2)
+    container = await build_container(load_settings())
+    try:
+        assert container.work_validation is not None  # always built
+        try:
+            report = await container.work_validation.validate(
+                slug=slug, revision=revision, gate=gate  # type: ignore[arg-type]
+            )
+        except NotFoundError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=2) from exc
+        if json_output:
+            print(report.model_dump_json(indent=2))
+        else:
+            for finding in report.findings:
+                colour = {"error": "red", "warning": "yellow"}.get(
+                    finding.severity, "dim"
+                )
+                scope = finding.citation_key or finding.block_key or ""
+                console.print(f"[{colour}]{finding.severity} [{scope}]: "
+                              f"{finding.rule_id}[/{colour}]")
+                console.print(f"  {finding.message}")
+            console.print(
+                f"gate {report.gate.name}: "
+                f"[{'green' if report.gate.passed else 'red'}]"
+                f"{'passed' if report.gate.passed else 'FAILED'}[/]"
+            )
+        if gate != "none" and not report.gate.passed:
+            raise typer.Exit(code=1)
+    finally:
+        await container.close()
+
+
+@work_app.command("freeze")
+def freeze_command(
+    slug: str = typer.Argument(..., help="Work slug."),
+    message: str | None = typer.Option(None, "--message", help="Why this revision is sealed."),
+    waiver: list[str] | None = typer.Option(
+        None, "--waiver",
+        help="Repeatable 'RULE_ID:subject:reason'. Subject may be empty.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
+    """Gate, waive, hash, and seal the current draft revision."""
+    asyncio.run(_freeze(slug, message, waiver or [], json_output))
+
+
+async def _freeze(
+    slug: str, message: str | None, waivers: list[str], json_output: bool
+) -> None:
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.domain.errors import NotFoundError
+    from research_engine.services.works.publication import FreezeBlocked, WaiverGiven
+
+    given: list[WaiverGiven] = []
+    for text in waivers:
+        rule_id, _, rest = text.partition(":")
+        subject, _, reason = rest.partition(":")
+        if not rule_id or not reason:
+            console.print(f"[red]--waiver must be 'RULE_ID:subject:reason', got {text!r}[/red]")
+            raise typer.Exit(code=2)
+        given.append(
+            WaiverGiven(rule_id=rule_id, subject=subject or None, reason=reason)
+        )
+    container = await build_container(load_settings())
+    try:
+        assert container.work_publication is not None  # always built
+        try:
+            sealed = await container.work_publication.freeze(
+                slug=slug, message=message, waivers=given
+            )
+        except FreezeBlocked as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        except NotFoundError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        if json_output:
+            print(sealed.model_dump_json(indent=2))
+        else:
+            console.print(f"[green]frozen rev {sealed.revision_number}[/green] "
+                          f"{sealed.content_hash}")
+    finally:
+        await container.close()
+
+
+@work_app.command("export")
+def export_command(
+    slug: str = typer.Argument(..., help="Work slug."),
+    draft: bool = typer.Option(False, "--draft", help="Render the current draft revision."),
+    out: str | None = typer.Option(None, "--out", help="Write to this file."),
+) -> None:
+    """Render the current draft revision to markdown (no manifest yet)."""
+    asyncio.run(_export(slug, draft, out))
+
+
+async def _export(slug: str, draft: bool, out: str | None) -> None:
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.domain.errors import NotFoundError
+
+    if not draft:
+        console.print("[red]Only --draft export exists until first publication.[/red]")
+        raise typer.Exit(code=2)
+    container = await build_container(load_settings())
+    try:
+        assert container.work_export is not None  # always built
+        try:
+            rendered = await container.work_export.export_draft(slug=slug)
+        except NotFoundError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        if out:
+            with open(out, "w", encoding="utf-8") as handle:
+                handle.write(rendered)
+            console.print(f"Wrote {out}")
+        else:
+            print(rendered, end="")
+    finally:
+        await container.close()
+
+
+@work_app.command("import")
+def import_command(
+    path: str = typer.Argument(..., help="Edited markdown file."),
+    slug: str = typer.Option(..., "--slug", help="Work slug."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Compute the diff, write nothing."),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
+    """Apply edited markdown as a new draft revision (copy-forward)."""
+    asyncio.run(_import(path, slug, dry_run, json_output))
+
+
+async def _import(path: str, slug: str, dry_run: bool, json_output: bool) -> None:
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.domain.errors import NotFoundError
+    from research_engine.services.works.drafting import ImportRefused
+
+    try:
+        with open(path, encoding="utf-8") as handle:
+            markdown = handle.read()
+    except OSError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    container = await build_container(load_settings())
+    try:
+        assert container.work_export is not None  # always built
+        try:
+            diff = await container.work_export.import_draft(
+                slug=slug, markdown=markdown, dry_run=dry_run
+            )
+        except (NotFoundError, ImportRefused) as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=2) from exc
+        if json_output:
+            print(diff.model_dump_json(indent=2))
+        else:
+            console.print(f"rev {diff.revision_number}"
+                          f"{' (dry run)' if diff.dry_run else ''}: "
+                          f"{len(diff.changes)} change(s)")
+            for change in diff.changes:
+                console.print(f"  {change.change} {change.block_key}")
+    finally:
+        await container.close()
+
+
 @work_app.command("set-key")
 def set_key_command(
     document_id: str = typer.Argument(..., help="Document UUID."),

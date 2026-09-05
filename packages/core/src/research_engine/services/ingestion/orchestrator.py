@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from research_engine.ports.repositories import (
         DocumentRepo,
         DocumentTextRepo,
+        EditionRepo,
         IngestionRunRepo,
         PassageRepo,
     )
@@ -50,8 +51,13 @@ class IngestionOrchestrator:
         default_language: str | None = None,
         document_texts: DocumentTextRepo | None = None,
         document_nodes: object | None = None,
+        editions: EditionRepo | None = None,
     ) -> None:
         self._document_texts = document_texts
+        #: Optional like ``document_texts``: without it ingested Zotero keys
+        #: never reach `bibliography.editions` and row citations cannot join
+        #: them. The migration backfill covered the keys already stored.
+        self._editions = editions
         #: Optional like ``document_texts``: a corpus ingested before the node
         #: table existed is still a valid corpus, and structure is an addition
         #: to retrieval rather than a precondition for it.
@@ -72,6 +78,14 @@ class IngestionOrchestrator:
     def _resolve_language(self, supplied: str | None) -> str | None:
         """Prefer what the caller or parser knows; otherwise the configured default."""
         return supplied or self._default_language
+
+    async def _record_edition(self, tx: Any, metadata: dict[str, Any] | None) -> None:
+        """Keep `bibliography.editions` behind document ingest, in the same transaction."""
+        if self._editions is None:
+            return
+        key = (metadata or {}).get("zotero_key")
+        if isinstance(key, str) and key:
+            await self._editions.upsert_key(tx, key)
 
     async def ingest_paths(
         self, paths: list[Path], plugin_hint: str | None = None
@@ -204,6 +218,7 @@ class IngestionOrchestrator:
 
         async with transaction(self._engine) as tx:
             doc = await self._docs.insert(tx, doc_draft)
+            await self._record_edition(tx, metadata)
             if full_text is not None and self._document_texts is not None:
                 await self._document_texts.put(
                     tx, doc.id, full_text, "plugin_direct", "1.0"
@@ -312,6 +327,7 @@ class IngestionOrchestrator:
             # Transaction: insert doc + passages + embeddings + FTS
             async with transaction(self._engine) as tx:
                 doc = await self._docs.insert(tx, draft)
+                await self._record_edition(tx, metadata)
                 # Canonical text first: the passages inserted next carry offsets
                 # into it, and both must land in the same transaction or the
                 # offsets address text that is not there.

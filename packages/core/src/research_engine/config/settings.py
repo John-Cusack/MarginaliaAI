@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     #: The folder holding works/*.md, outside this repo. Unset means the work
     #: tools answer `works_not_configured` rather than an empty result.
     works_dir: Path | None = None
+    #: Per-work-type validation policy: work type to rule id to severity.
+    #: Values are `error`, `warn`, or `allow`; anything else falls back to
+    #: the core floor. Unset means the core floor holds for every work type.
+    works_policy: dict[str, dict[str, str]] | None = None
 
     # Ingestion
     ingest_concurrency: int = 4

@@ -12,6 +12,7 @@ from research_engine.adapters.storage.postgres.schema import editions
 from research_engine.domain.works import Edition
 
 if TYPE_CHECKING:
+    from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -21,6 +22,16 @@ if TYPE_CHECKING:
 class PGEditionRepo:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
+
+    async def get(self, edition_id: UUID) -> Edition | None:
+        """The edition row, for comparing an item's identity to its span's."""
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    editions.select().where(editions.c.id == edition_id)
+                )
+            ).first()
+            return self._to_domain(row) if row else None
 
     async def get_by_key(self, zotero_key: str) -> Edition | None:
         async with self._engine.connect() as conn:

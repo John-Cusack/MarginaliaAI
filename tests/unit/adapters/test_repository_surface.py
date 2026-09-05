@@ -48,12 +48,14 @@ EXPECTED = {
         "get_ancestors", "get_ancestors_many", "find_by_span", "insert_many",
     ],
     PGSourceSpanRepo: ["resolve", "get", "for_document", "stale"],
-    PGEditionRepo: ["get_by_key", "upsert_key", "list_keys"],
+    PGEditionRepo: ["get", "get_by_key", "upsert_key", "list_keys"],
     PGWorkRepo: [
-        "insert", "get", "get_by_slug", "set_current_revision", "update", "archive",
+        "insert", "get", "get_by_slug", "list", "set_current_revision",
+        "update", "archive",
     ],
     PGWorkRevisionRepo: [
-        "insert", "get", "latest", "copy_forward", "freeze", "publish", "supersede",
+        "insert", "get", "latest", "copy_forward", "set_message", "freeze",
+        "publish", "supersede",
     ],
     PGWorkBlockRepo: ["upsert", "tree", "by_key", "delete"],
     PGCitationRepo: [

@@ -16,10 +16,12 @@ from research_engine.adapters.llm.budget_guard import BudgetGuard
 from research_engine.adapters.llm.openai_compatible import OpenAICompatibleLLMAdapter
 from research_engine.adapters.storage.postgres.engine import build_engine, transaction
 from research_engine.adapters.storage.postgres.repositories import (
+    PGCitationRepo,
     PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
     PGEdgeRepo,
+    PGEditionRepo,
     PGEntityRepo,
     PGEventRepo,
     PGExtractionRepo,
@@ -30,6 +32,11 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGMentionRepo,
     PGPassageRepo,
     PGSourceSpanRepo,
+    PGWaiverRepo,
+    PGWorkBlockRepo,
+    PGWorkLinkRepo,
+    PGWorkRepo,
+    PGWorkRevisionRepo,
 )
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
@@ -43,10 +50,16 @@ from research_engine.services.search.hit_source import HitSourceReader
 from research_engine.services.search.hybrid import HybridSearchService
 from research_engine.services.search.windows import PassageWindowReader
 from research_engine.services.verification import QuoteVerifier
+from research_engine.services.works.attach import CitationService
 from research_engine.services.works.cite import WorkCiter
+from research_engine.services.works.drafting import WorkExportService
 from research_engine.services.works.files import WorkFileReader
+from research_engine.services.works.publication import WorkPublicationService
 from research_engine.services.works.render import WorkRenderer
+from research_engine.services.works.trace import WorkTraceService
+from research_engine.services.works.validate import WorkValidationService
 from research_engine.services.works.verify import WorkVerifier
+from research_engine.services.works.work_service import WorkService
 
 if TYPE_CHECKING:
     from research_engine.config.settings import Settings
@@ -94,6 +107,14 @@ class Container:
     #: Citation making. Built always: citing needs the corpus, not the works
     #: directory — the entry is pasted by hand, not written to any file.
     work_citer: WorkCiter | None = None
+    #: The Phase-1 spine: works as rows. Built always — rows live in the
+    #: database, so no works directory is needed to draft, cite, or freeze.
+    work_service: WorkService | None = None
+    citation_service: CitationService | None = None
+    work_validation: WorkValidationService | None = None
+    work_publication: WorkPublicationService | None = None
+    work_trace: WorkTraceService | None = None
+    work_export: WorkExportService | None = None
     #: True once the Step 4 mirror (`core.works_index`) exists and
     #: `work_citations` should query it instead of scanning files.
     works_mirror_available: bool = False
@@ -262,10 +283,86 @@ async def build_container(settings: Settings) -> Container:
         passages=passages_repo,
         documents=docs,
     )
+    spans_repo = PGSourceSpanRepo(sql_engine)
     work_citer = WorkCiter(
         verification=quote_verifier,
-        spans=PGSourceSpanRepo(sql_engine),
+        spans=spans_repo,
         engine=sql_engine,
+    )
+
+    # The Phase-1 spine: one repo per table group, services over them.
+    tx_factory = partial(transaction, sql_engine)
+    works_repo = PGWorkRepo(sql_engine)
+    revisions_repo = PGWorkRevisionRepo(sql_engine)
+    blocks_repo = PGWorkBlockRepo(sql_engine)
+    citations_repo = PGCitationRepo(sql_engine)
+    links_repo = PGWorkLinkRepo(sql_engine)
+    editions_repo = PGEditionRepo(sql_engine)
+    waivers_repo = PGWaiverRepo(sql_engine)
+    work_service = WorkService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        transaction_factory=tx_factory,
+    )
+    citation_service = CitationService(
+        verification=quote_verifier,
+        spans=spans_repo,
+        editions=editions_repo,
+        citations=citations_repo,
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        passages=passages_repo,
+        transaction_factory=tx_factory,
+    )
+    work_export = WorkExportService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        transaction_factory=tx_factory,
+    )
+    work_validation = WorkValidationService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        editions=editions_repo,
+        waivers=waivers_repo,
+        spans=spans_repo,
+        documents=docs,
+        document_texts=document_texts_repo,
+        passages=passages_repo,
+        policy=settings.works_policy,
+        works_dir=settings.works_dir,
+        export_markdown=work_export.export_draft_text,
+    )
+    work_publication = WorkPublicationService(
+        validation=work_validation,
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        waivers=waivers_repo,
+        transaction_factory=tx_factory,
+    )
+    work_trace = WorkTraceService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        documents=docs,
     )
 
     # Created works live as files until their first freeze. Without a works
@@ -318,6 +415,7 @@ async def build_container(settings: Settings) -> Container:
         default_language=settings.default_language,
         document_texts=document_texts_repo,
         document_nodes=document_nodes_repo,
+        editions=editions_repo,
     )
 
     # Plugin-facing client adapters. Built here (not in the Container) because
@@ -382,6 +480,12 @@ async def build_container(settings: Settings) -> Container:
         work_verifier=work_verifier,
         work_renderer=work_renderer,
         work_citer=work_citer,
+        work_service=work_service,
+        citation_service=citation_service,
+        work_validation=work_validation,
+        work_publication=work_publication,
+        work_trace=work_trace,
+        work_export=work_export,
         # The Step 4 mirror does not exist in Phase 0: no migration in this
         # change, so there is no table to detect. `work_citations` scans files.
         works_mirror_available=False,

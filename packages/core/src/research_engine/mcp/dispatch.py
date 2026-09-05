@@ -36,9 +36,17 @@ from research_engine.mcp.tools import (
     upsert_entity,
     upsert_event,
     verify_quote,
+    work_block_upsert,
     work_citations,
+    work_cite,
     work_cite_entry,
+    work_create,
+    work_freeze,
+    work_get,
+    work_link,
     work_render,
+    work_trace,
+    work_validate,
     work_verify,
 )
 
@@ -102,6 +110,14 @@ CORE_TOOL_MODULES = [
     work_citations,
     work_cite_entry,
     work_render,
+    work_create,
+    work_get,
+    work_block_upsert,
+    work_cite,
+    work_link,
+    work_validate,
+    work_trace,
+    work_freeze,
 ]
 
 
