@@ -23,25 +23,35 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.integration]
 
 
-def declared_index_names() -> set[str]:
+def declared_schemas() -> set[str]:
+    """Every schema `schema.py` declares a table in (`core` by default)."""
+    return {table.schema or "core" for table in metadata.tables.values()}
+
+
+def declared_indexes() -> set[tuple[str, str]]:
     return {
-        index.name
+        (table.schema or "core", index.name)
         for table in metadata.tables.values()
         for index in table.indexes
         if index.name
     }
 
 
-async def actual_index_names(engine: AsyncEngine) -> set[str]:
+async def actual_indexes(engine: AsyncEngine) -> set[tuple[str, str]]:
+    schemas = sorted(declared_schemas())
     async with engine.connect() as conn:
         rows = await conn.execute(
-            sa.text("SELECT indexname FROM pg_indexes WHERE schemaname = 'core'")
+            sa.text(
+                "SELECT schemaname, indexname FROM pg_indexes "
+                "WHERE schemaname = ANY(:schemas)"
+            ),
+            {"schemas": schemas},
         )
-    return {row[0] for row in rows}
+    return {(row[0], row[1]) for row in rows}
 
 
 async def test_every_declared_index_exists(engine: AsyncEngine) -> None:
-    missing = declared_index_names() - await actual_index_names(engine)
+    missing = declared_indexes() - await actual_indexes(engine)
     assert not missing, (
         f"schema.py declares indexes the database does not have: {sorted(missing)}. "
         f"Either add a migration that creates them, or remove the declaration — "

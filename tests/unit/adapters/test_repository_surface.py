@@ -22,6 +22,7 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGDocumentRepo,
     PGDocumentTextRepo,
     PGPassageRepo,
+    PGSourceSpanRepo,
 )
 
 EXPECTED = {
@@ -39,6 +40,7 @@ EXPECTED = {
         "get", "get_tree", "get_outline", "get_subtree",
         "get_ancestors", "get_ancestors_many", "find_by_span", "insert_many",
     ],
+    PGSourceSpanRepo: ["resolve", "get", "for_document", "stale"],
 }
 
 

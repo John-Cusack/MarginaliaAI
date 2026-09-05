@@ -39,6 +39,7 @@ if TYPE_CHECKING:
         LLMCall,
         LLMCallDraft,
     )
+    from research_engine.domain.spans import SourceSpan
 
 
 class Transaction:
@@ -124,6 +125,23 @@ class PassageRepo(Protocol):
         filter_extensions: dict[str, FilterExtension] | None = None,
     ) -> list[UUID]: ...
     async def count(self) -> int: ...
+
+
+@runtime_checkable
+class SourceSpanRepo(Protocol):
+    """One row per cited address; every span writer goes through `resolve`."""
+
+    async def resolve(
+        self,
+        tx: Transaction,
+        *,
+        document_id: UUID,
+        char_start: int,
+        char_end: int,
+    ) -> SourceSpan: ...
+    async def get(self, span_id: UUID) -> SourceSpan | None: ...
+    async def for_document(self, document_id: UUID) -> list[SourceSpan]: ...
+    async def stale(self, limit: int = 100) -> list[SourceSpan]: ...
 
 
 @runtime_checkable

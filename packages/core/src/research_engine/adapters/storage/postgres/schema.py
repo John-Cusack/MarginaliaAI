@@ -429,3 +429,132 @@ installed_packs = sa.Table(
     sa.Column("manifest", sa.JSON, nullable=False),
     sa.Column("permissions_granted", sa.JSON, nullable=False, server_default="{}"),
 )
+
+# --- Evidence: cited addresses ---
+
+# One row per (document, coordinates). Declared with an explicit schema because
+# the shared MetaData defaults to core. Mirrors 009_source_spans.
+source_spans = sa.Table(
+    "source_spans",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "document_id", sa.Uuid, sa.ForeignKey("core.documents.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("char_start", sa.Integer, nullable=False),
+    sa.Column("char_end", sa.Integer, nullable=False),
+    sa.Column("quoted_text", sa.Text, nullable=False),
+    sa.Column("parser", sa.Text),
+    sa.Column("parser_version", sa.Text),
+    sa.Column(
+        "passage_id", sa.Uuid, sa.ForeignKey("core.passages.id", ondelete="SET NULL")
+    ),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "char_start >= 0 AND char_end > char_start", name="source_spans_range_ck"
+    ),
+    sa.UniqueConstraint(
+        "document_id", "char_start", "char_end",
+        name="source_spans_coordinates_uk",
+    ),
+    schema="evidence",
+)
+
+# --- Argument: the claim ledger ---
+
+# Mirrors 010_argument. Anchors reference spans, never coordinates.
+claims = sa.Table(
+    "claims",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("ref", sa.Text, nullable=False, unique=True),
+    sa.Column("statement", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False, server_default="open"),
+    sa.Column("confidence", sa.Float),
+    sa.Column("steelman", sa.Text),
+    sa.Column("public_ready", sa.Boolean, nullable=False, server_default="false"),
+    sa.Column(
+        "academic_candidate", sa.Boolean, nullable=False, server_default="false"
+    ),
+    sa.Column("attributes", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "status IN "
+        "('open','researching','rebutted','weakened','unresolved','conceded')",
+        name="claims_status_ck",
+    ),
+    sa.CheckConstraint(
+        "confidence IS NULL OR confidence BETWEEN 0 AND 1",
+        name="claims_conf_ck",
+    ),
+    schema="argument",
+)
+
+claim_edges = sa.Table(
+    "claim_edges",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "source_id", sa.Uuid, sa.ForeignKey("argument.claims.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "target_id", sa.Uuid, sa.ForeignKey("argument.claims.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("relation", sa.Text, nullable=False),
+    sa.Column("confidence", sa.Float),
+    sa.Column("note", sa.Text),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.UniqueConstraint("source_id", "target_id", "relation"),
+    sa.CheckConstraint("source_id <> target_id", name="claim_edges_no_self"),
+    schema="argument",
+)
+
+sa.Index("claim_edges_target_idx", claim_edges.c.target_id, claim_edges.c.relation)
+sa.Index("claim_edges_source_idx", claim_edges.c.source_id, claim_edges.c.relation)
+
+anchors = sa.Table(
+    "anchors",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "claim_id", sa.Uuid, sa.ForeignKey("argument.claims.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("role", sa.Text, nullable=False),
+    sa.Column(
+        "person_entity_id",
+        sa.Uuid,
+        sa.ForeignKey("core.entities.id", ondelete="SET NULL"),
+    ),
+    sa.Column(
+        "source_span_id",
+        sa.Uuid,
+        sa.ForeignKey("evidence.source_spans.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("quoted_text", sa.Text, nullable=False),
+    sa.Column("verify_status", sa.Text),
+    sa.Column("verified_at", sa.DateTime(timezone=True)),
+    sa.Column("parser_version", sa.Text),
+    sa.Column("edition", sa.Text),
+    sa.Column("zotero_key", sa.Text),
+    sa.Column("locator", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "role IN ('asserts','supports','rebuts','context')",
+        name="anchors_role_ck",
+    ),
+    sa.CheckConstraint(
+        "verify_status IS NULL OR verify_status IN ('exact','normalized','near')",
+        name="anchors_verify_ck",
+    ),
+    schema="argument",
+)
+
+sa.Index("anchors_claim_idx", anchors.c.claim_id)
+sa.Index("anchors_span_idx", anchors.c.source_span_id)

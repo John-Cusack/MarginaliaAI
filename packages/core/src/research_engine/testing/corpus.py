@@ -8,10 +8,14 @@ from uuid import UUID
 import sqlalchemy as sa
 from uuid_utils import uuid7
 
-from research_engine.adapters.storage.postgres.schema import documents, passages
+from research_engine.adapters.storage.postgres.engine import transaction
+from research_engine.adapters.storage.postgres.repositories.spans import PGSourceSpanRepo
+from research_engine.adapters.storage.postgres.schema import documents, passages, source_spans
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from research_engine.domain.spans import SourceSpan
 
 
 def new_id() -> UUID:
@@ -36,6 +40,7 @@ class Corpus:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._document_ids: list[UUID] = []
+        self._span_ids: list[UUID] = []
         self._extra: list[tuple[Any, UUID]] = []
 
     def track(self, table: Any, row_id: UUID) -> UUID:
@@ -116,16 +121,37 @@ class Corpus:
         self._document_ids.append(document_id)
         return document_id
 
+    async def add_span(
+        self, document_id: UUID, char_start: int, char_end: int
+    ) -> SourceSpan:
+        """Resolve a span through the real resolver and track it for cleanup."""
+        async with transaction(self._engine) as tx:
+            span = await PGSourceSpanRepo(self._engine).resolve(
+                tx,
+                document_id=document_id,
+                char_start=char_start,
+                char_end=char_end,
+            )
+        self._span_ids.append(span.id)
+        return span
+
     async def cleanup(self) -> None:
-        # Documents first: their cascades clear the rows referencing the tracked
-        # entities and schemas, which would otherwise block deletion.
+        # Spans first: they RESTRICT their document, so documents cannot go
+        # before them. Documents next: their cascades clear the rows
+        # referencing the tracked entities and schemas, which would otherwise
+        # block deletion.
         async with self._engine.begin() as conn:
+            if self._span_ids:
+                await conn.execute(
+                    source_spans.delete().where(source_spans.c.id.in_(self._span_ids))
+                )
             if self._document_ids:
                 await conn.execute(
                     documents.delete().where(documents.c.id.in_(self._document_ids))
                 )
             for table, row_id in reversed(self._extra):
                 await conn.execute(table.delete().where(table.c.id == row_id))
+        self._span_ids.clear()
         self._document_ids.clear()
         self._extra.clear()
 

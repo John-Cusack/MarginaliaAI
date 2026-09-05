@@ -21,6 +21,7 @@ from research_engine.adapters.storage.postgres.repositories.provenance import (
     PGIngestionRunRepo,
     PGLLMCallLogRepo,
 )
+from research_engine.adapters.storage.postgres.repositories.spans import PGSourceSpanRepo
 
 __all__ = [
     "PGDocumentRepo",
@@ -36,4 +37,5 @@ __all__ = [
     "PGLLMCallLogRepo",
     "PGMentionRepo",
     "PGPassageRepo",
+    "PGSourceSpanRepo",
 ]

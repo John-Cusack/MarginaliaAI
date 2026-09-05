@@ -1,5 +1,22 @@
 # Changelog
 
+### The span table and the claim ledger (migrations 009 and 010)
+
+Two additive migrations, no tools yet. `evidence.source_spans` owns one row
+per cited address — `(document_id, char_start, char_end)` plus the canonical
+slice at it — and every span writer goes through `PGSourceSpanRepo.resolve`,
+which reads the slice itself (callers pass no text) and converges concurrent
+writers on one row through `ON CONFLICT DO NOTHING` plus a re-select. The
+passage cache on the row is best-overlap and `SET NULL`: re-chunking may drop
+it, and the overlap query rebuilds it. `argument` holds `claims` (with its
+`ref` unique and its edges RESTRICT-guarded), `claim_edges`, and `anchors`,
+whose address is the shared span while the typed quote and tier stay the
+row's own. `verify_status` keeps only `exact | normalized | near` — enforced
+by a check constraint, so `not_found` can never be stored. Staleness is a
+query (`stale()`), not a column: a span is stale when its parser version
+differs from its document's. Downgrading past either migration drops its
+tables and schema cleanly.
+
 ### Works Phase 0: verify, cite, and render created works from files
 
 Works live as markdown files under `RE_WORKS_DIR` until their first freeze.

@@ -1456,6 +1456,22 @@ Record every deviation from this guide, every contract gap found by the real
 work, and every rehearsal defect here, newest first, with the date and the
 step.
 
+- 2026-09-05 — Step 3 gate waived in one item by the researcher: no real
+  work verifies by hand yet (`RE_WORKS_DIR` still holds only the contract),
+  so Step 3 proceeds against the fixture. Schema defects the real work would
+  have caught may surface as later migrations rather than doc edits.
+  Step 3 choices where the guide is silent:
+  - The `passage_id` cache resolves best-overlap first, newest chunker
+    (`created_at`) breaking ties; rows without offsets never match.
+  - A span past the stored text's end is a `ValueError`, not a short row;
+    a span on a textless document is `NotFoundError`.
+  - `test_schema_truthfulness` now compares (schema, index) pairs over every
+    schema `schema.py` knows, since evidence/argument indexes are not in core.
+  - The migration round-trip test refuses to downgrade over data instead of
+    destroying it.
+  - `claim_upsert` not built: the guide specifies the ledger tools through
+    the program doc, whose week has not come; Step 3 stays two migrations,
+    one repository, and their tests.
 - 2026-09-05 — Phase 0 built on branch `John-Cusack/works-phase0` at
   `80f5909` (Step 1.3 doc commit on top of `3b5251d`). Part 0 code map
   re-checked against live code; no discrepancies. No Appendix E item

@@ -146,28 +146,37 @@ class CorpusFootprint:
     def embeddings(self) -> int:
         return self.counts.get("passage_embeddings", 0)
 
+    #: Schemas the guard covers. `core` from the start; each migration that
+    #: adds a schema extends this list, so the guard keeps its meaning.
+    SCHEMAS = ("core", "evidence", "argument")
+
     @classmethod
     async def measure(cls, engine: AsyncEngine) -> CorpusFootprint:
         async with engine.connect() as conn:
-            names = [
-                row[0]
-                for row in (
-                    await conn.execute(
-                        sa.text(
-                            "SELECT table_name FROM information_schema.tables "
-                            "WHERE table_schema = 'core' AND table_type = 'BASE TABLE' "
-                            "AND table_name <> 'alembic_version' ORDER BY table_name"
-                        )
-                    )
-                ).all()
-            ]
+            tables = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT table_schema, table_name FROM information_schema.tables "
+                        "WHERE table_schema = ANY(:schemas) "
+                        "AND table_type = 'BASE TABLE' "
+                        "AND table_name <> 'alembic_version' "
+                        "ORDER BY table_schema, table_name"
+                    ),
+                    {"schemas": list(cls.SCHEMAS)},
+                )
+            ).all()
             counts = {}
-            for name in names:
-                counts[name] = (
+            for schema, name in tables:
+                counts[f"{schema}.{name}"] = (
                     await conn.execute(
-                        sa.text(f'SELECT count(*) FROM core."{name}"')  # noqa: S608
+                        sa.text(f'SELECT count(*) FROM "{schema}"."{name}"')  # noqa: S608
                     )
                 ).scalar_one()
+        # Bare names stay readable for the core tables every caller asks about;
+        # names collide across schemas for nothing here.
+        for key in list(counts):
+            if key.startswith("core."):
+                counts.setdefault(key.removeprefix("core."), counts[key])
         return cls(counts)
 
     def assert_unchanged(self, other: CorpusFootprint) -> None:
