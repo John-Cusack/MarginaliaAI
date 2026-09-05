@@ -35,6 +35,7 @@ COMMAND_GROUPS = [
     "reindex",
     "search",
     "status",
+    "work",
 ]
 
 

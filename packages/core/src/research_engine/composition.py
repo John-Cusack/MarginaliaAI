@@ -38,9 +38,13 @@ from research_engine.services.extraction.executor import ExtractionExecutor
 from research_engine.services.extraction.postprocess import RecordEnricher
 from research_engine.services.ingestion.dispatch import ModuleDispatcher
 from research_engine.services.ingestion.orchestrator import IngestionOrchestrator
+from research_engine.services.search.hit_source import HitSourceReader
 from research_engine.services.search.hybrid import HybridSearchService
 from research_engine.services.search.windows import PassageWindowReader
 from research_engine.services.verification import QuoteVerifier
+from research_engine.services.works.files import WorkFileReader
+from research_engine.services.works.render import WorkRenderer
+from research_engine.services.works.verify import WorkVerifier
 
 if TYPE_CHECKING:
     from research_engine.config.settings import Settings
@@ -80,6 +84,14 @@ class Container:
     plugin_loader: PluginLoader
     plugin_registry: PluginRegistry
     engine: Any  # AsyncEngine
+    #: Work-file services. None when `RE_WORKS_DIR` is unset — tools finding
+    #: them None answer `works_not_configured` rather than an empty result.
+    work_files: WorkFileReader | None = None
+    work_verifier: WorkVerifier | None = None
+    work_renderer: WorkRenderer | None = None
+    #: True once the Step 4 mirror (`core.works_index`) exists and
+    #: `work_citations` should query it instead of scanning files.
+    works_mirror_available: bool = False
 
     # Aliases used by MCP tool handlers in research_engine.mcp.tools.*
     @property
@@ -246,6 +258,19 @@ async def build_container(settings: Settings) -> Container:
         documents=docs,
     )
 
+    # Created works live as files until their first freeze. Without a works
+    # directory there is nothing to verify, cite, or render, and the tools
+    # say so instead of answering empty.
+    if settings.works_dir is not None:
+        work_files = WorkFileReader(settings.works_dir)
+        work_verifier = WorkVerifier(
+            document_texts_repo, docs, passages_repo, quote_verifier,
+            settings.works_dir,
+        )
+        work_renderer = WorkRenderer(docs, quote_verifier, settings.works_dir)
+    else:
+        work_files = work_verifier = work_renderer = None
+
     # What a hit is *read* as, rather than what it was ranked as. Always on:
     # a chunk boundary is where the ingester happened to cut, and there is no
     # query for which that is the right thing to hand a reader.
@@ -262,6 +287,9 @@ async def build_container(settings: Settings) -> Container:
         reranker=reranker,
         get_filter_extensions=registry.get_filter_extensions,
         windows=window_reader,
+        hit_sources=HitSourceReader(
+            documents=docs, document_texts=document_texts_repo
+        ),
     )
 
     # Dispatcher with built-in modules
@@ -340,6 +368,12 @@ async def build_container(settings: Settings) -> Container:
         plugin_loader=plugin_loader,
         plugin_registry=registry,
         engine=sql_engine,
+        work_files=work_files,
+        work_verifier=work_verifier,
+        work_renderer=work_renderer,
+        # The Step 4 mirror does not exist in Phase 0: no migration in this
+        # change, so there is no table to detect. `work_citations` scans files.
+        works_mirror_available=False,
     )
 
 

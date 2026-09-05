@@ -1,5 +1,51 @@
 # Changelog
 
+### Works Phase 0: verify, cite, and render created works from files
+
+Works live as markdown files under `RE_WORKS_DIR` until their first freeze.
+Every citation is a front-matter entry naming a document and exact character
+offsets, and three tools plus their CLI commands check them against the
+corpus — no database migration, no new tables.
+
+- **`research-engine work verify [path] [--gate review|publish]`** (tool
+  `work_verify`) parses the file and checks each entry in a fixed order:
+  entry validity, document existence, canonical text, quote tier (exact or
+  normalized to pass, with the entry span passed as the verify window),
+  span staleness, the region rule (a quotation or translation citing a whole
+  passage, or more than 1000 characters, is `AUTH_SPAN_NOT_NARROWED`; support,
+  source and definition citing one warn `AUTH_SPAN_REGION`), edition identity,
+  Zotero key agreement, and body markers. Dangling markers are errors, claim
+  refs report `AUTH_CLAIM_UNRESOLVED` as info until the ledger exists, and a
+  file saying `published` that fails the publish gate earns
+  `AUTH_STATUS_UNEARNED`. Review fails on any error; publish additionally
+  fails on a missing edition.
+- **`research-engine work citations (--document | --zotero | --claim)`**
+  (tool `work_citations`) lists the works citing a source by scanning the
+  files. Exactly one selector.
+- **`research-engine work render <path> [--out <file>]`** (tool
+  `work_render`) appends one footnote definition per entry, in id order, with
+  author, title and year from document metadata and the verified tier. Any
+  missing part renders as `document <id>` and tags the note `[provisional]`.
+- **`research-engine work set-key <document_id> <ZOTERO_KEY>`** stores a
+  Zotero key in a document's metadata for the later join. Packs that know
+  their material's key should write `metadata["zotero_key"]` at ingest;
+  nothing enforces it, and its absence is a `work_verify` finding.
+
+### Search hits carry their citation draft, and verify takes a window
+
+Both change an existing tool's response.
+
+- **`find_passages` hits gain a `source` block**: the document title, the
+  Zotero key and edition when a pack wrote them, the parser version, and
+  whether the hit has canonical text and offsets at all. A hit without
+  offsets or text is not a citation draft. Read batched — one document query
+  and one text query per result page, never one per hit.
+- **`verify_quote` gains an optional `window`**: `{char_start, char_end}`
+  where the quotation is believed to sit, e.g. the span from a search hit.
+  The window is checked first (exact, then folded); on a miss the
+  whole-document search runs unchanged. `QuoteVerifier.verify` takes the same
+  `window` keyword.
+
 ### A document demoted out of structural chunking says so
 
 Three built-in modules shipped for months returning `"structural"` from

@@ -161,6 +161,22 @@ async def test_absent_quote_is_not_found(
 
 
 @pytest.mark.asyncio
+async def test_window_hint_resolves_before_the_whole_document(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    doc_id = await _ingest(engine, corpus)
+
+    exact = await _verifier(engine).verify(PROBES["exact"], doc_id, window=(30, 70))
+    assert exact.tier is Tier.EXACT
+    assert TEXT[exact.location.char_start : exact.location.char_end] == PROBES["exact"]
+
+    folded = await _verifier(engine).verify(
+        PROBES["normalized_typed"], doc_id, window=(60, 170)
+    )
+    assert folded.tier is Tier.NORMALIZED
+
+
+@pytest.mark.asyncio
 async def test_fixture_sidecar_spans_slice_the_fixture_text() -> None:
     for name, span in SIDECAR["spans"].items():
         assert TEXT[span["char_start"] : span["char_end"]] == span["text"], name

@@ -32,3 +32,12 @@ directory is a git checkout, which commit it was at.
 
 For a linked pack this removes the link only. The working tree is left
 alone.
+
+## Zotero keys on ingested documents
+
+A pack that knows its material's Zotero key writes it into the document
+draft's `metadata["zotero_key"]` at ingest. Nothing in core enforces this;
+`work_verify` reports a citation's key against the cited document's, so a
+pack that skips it makes every citation of its documents warn
+`AUTH_ZOTERO_KEY_UNKNOWN`. The column is `json`, so the key reads back with
+`metadata->>'zotero_key`.
