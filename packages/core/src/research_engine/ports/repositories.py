@@ -8,6 +8,13 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from uuid import UUID
 
+    from research_engine.domain.citations import (
+        BlockCitations,
+        CitationItem,
+        CitationItemDraft,
+        CitationOccurrence,
+        OccurrenceDraft,
+    )
     from research_engine.domain.documents import (
         Document,
         DocumentDraft,
@@ -40,6 +47,22 @@ if TYPE_CHECKING:
         LLMCallDraft,
     )
     from research_engine.domain.spans import SourceSpan
+    from research_engine.domain.works import (
+        BlockEntityLink,
+        BlockEntityLinkDraft,
+        BlockLinks,
+        BlockSourceLink,
+        BlockSourceLinkDraft,
+        Edition,
+        Waiver,
+        WaiverDraft,
+        Work,
+        WorkBlock,
+        WorkBlockDraft,
+        WorkDraft,
+        WorkRevision,
+        WorkRevisionDraft,
+    )
 
 
 class Transaction:
@@ -142,6 +165,93 @@ class SourceSpanRepo(Protocol):
     async def get(self, span_id: UUID) -> SourceSpan | None: ...
     async def for_document(self, document_id: UUID) -> list[SourceSpan]: ...
     async def stale(self, limit: int = 100) -> list[SourceSpan]: ...
+
+
+@runtime_checkable
+class EditionRepo(Protocol):
+    async def get_by_key(self, zotero_key: str) -> Edition | None: ...
+    async def upsert_key(
+        self, tx: Transaction, zotero_key: str, csl: dict | None = None
+    ) -> Edition: ...
+    async def list_keys(self) -> list[str]: ...
+
+
+@runtime_checkable
+class WorkRepo(Protocol):
+    async def insert(self, tx: Transaction, draft: WorkDraft) -> Work: ...
+    async def get(self, work_id: UUID) -> Work | None: ...
+    async def get_by_slug(self, slug: str) -> Work | None: ...
+    async def set_current_revision(
+        self, tx: Transaction, work_id: UUID, revision_id: UUID
+    ) -> None: ...
+    async def update(
+        self, tx: Transaction, work_id: UUID, *, expected_updated_at: Any, **fields: Any
+    ) -> Work: ...
+    async def archive(self, tx: Transaction, work_id: UUID) -> Work: ...
+
+
+@runtime_checkable
+class WorkRevisionRepo(Protocol):
+    async def insert(self, tx: Transaction, draft: WorkRevisionDraft) -> WorkRevision: ...
+    async def get(self, revision_id: UUID) -> WorkRevision | None: ...
+    async def latest(self, work_id: UUID) -> WorkRevision | None: ...
+    async def copy_forward(self, tx: Transaction, revision_id: UUID) -> WorkRevision: ...
+    async def freeze(
+        self, tx: Transaction, revision_id: UUID, content_hash: bytes
+    ) -> WorkRevision: ...
+    async def publish(self, tx: Transaction, revision_id: UUID) -> WorkRevision: ...
+    async def supersede(self, tx: Transaction, revision_id: UUID) -> WorkRevision: ...
+
+
+@runtime_checkable
+class WorkBlockRepo(Protocol):
+    async def upsert(
+        self,
+        tx: Transaction,
+        revision_id: UUID,
+        draft: WorkBlockDraft,
+        *,
+        expected_updated_at: Any,
+    ) -> WorkBlock: ...
+    async def tree(self, revision_id: UUID) -> list[WorkBlock]: ...
+    async def by_key(self, revision_id: UUID, block_key: UUID) -> WorkBlock | None: ...
+    async def delete(self, tx: Transaction, block_id: UUID) -> None: ...
+
+
+@runtime_checkable
+class CitationRepo(Protocol):
+    async def insert_occurrence(
+        self, tx: Transaction, draft: OccurrenceDraft
+    ) -> CitationOccurrence: ...
+    async def insert_item(self, tx: Transaction, draft: CitationItemDraft) -> CitationItem: ...
+    async def for_block(self, block_id: UUID) -> list[BlockCitations]: ...
+    async def for_revision(self, revision_id: UUID) -> list[BlockCitations]: ...
+    async def by_key(
+        self, revision_id: UUID, citation_key: UUID
+    ) -> BlockCitations | None: ...
+    async def citing_span(self, span_id: UUID) -> list[BlockCitations]: ...
+    async def citing_key(self, zotero_key: str) -> list[BlockCitations]: ...
+
+
+@runtime_checkable
+class WorkLinkRepo(Protocol):
+    async def add_source_link(
+        self, tx: Transaction, draft: BlockSourceLinkDraft
+    ) -> BlockSourceLink: ...
+    async def add_entity_link(
+        self, tx: Transaction, draft: BlockEntityLinkDraft
+    ) -> BlockEntityLink: ...
+    async def for_block(self, block_id: UUID) -> BlockLinks: ...
+    async def for_span(self, span_id: UUID) -> list[BlockSourceLink]: ...
+    async def for_entity(
+        self, entity_id: UUID, relation: str
+    ) -> list[BlockEntityLink]: ...
+
+
+@runtime_checkable
+class WaiverRepo(Protocol):
+    async def insert(self, tx: Transaction, draft: WaiverDraft) -> Waiver: ...
+    async def for_revision(self, revision_id: UUID) -> list[Waiver]: ...
 
 
 @runtime_checkable

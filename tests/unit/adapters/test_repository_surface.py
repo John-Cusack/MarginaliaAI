@@ -18,11 +18,18 @@ import inspect
 import pytest
 
 from research_engine.adapters.storage.postgres.repositories import (
+    PGCitationRepo,
     PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
+    PGEditionRepo,
     PGPassageRepo,
     PGSourceSpanRepo,
+    PGWaiverRepo,
+    PGWorkBlockRepo,
+    PGWorkLinkRepo,
+    PGWorkRepo,
+    PGWorkRevisionRepo,
 )
 
 EXPECTED = {
@@ -41,6 +48,22 @@ EXPECTED = {
         "get_ancestors", "get_ancestors_many", "find_by_span", "insert_many",
     ],
     PGSourceSpanRepo: ["resolve", "get", "for_document", "stale"],
+    PGEditionRepo: ["get_by_key", "upsert_key", "list_keys"],
+    PGWorkRepo: [
+        "insert", "get", "get_by_slug", "set_current_revision", "update", "archive",
+    ],
+    PGWorkRevisionRepo: [
+        "insert", "get", "latest", "copy_forward", "freeze", "publish", "supersede",
+    ],
+    PGWorkBlockRepo: ["upsert", "tree", "by_key", "delete"],
+    PGCitationRepo: [
+        "insert_occurrence", "insert_item", "for_block", "for_revision",
+        "by_key", "citing_span", "citing_key",
+    ],
+    PGWorkLinkRepo: [
+        "add_source_link", "add_entity_link", "for_block", "for_span", "for_entity",
+    ],
+    PGWaiverRepo: ["insert", "for_revision"],
 }
 
 

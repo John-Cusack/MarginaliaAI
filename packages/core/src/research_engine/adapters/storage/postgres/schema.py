@@ -558,3 +558,271 @@ anchors = sa.Table(
 
 sa.Index("anchors_claim_idx", anchors.c.claim_id)
 sa.Index("anchors_span_idx", anchors.c.source_span_id)
+
+# --- Bibliography: the editions stub ---
+
+# Decision 12: one row per Zotero key, backfilled in 012, maintained at
+# ingest. P3-1 extends it. Mirrors 012_authored_and_bibliography.
+editions = sa.Table(
+    "editions",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("zotero_key", sa.Text, nullable=False, unique=True),
+    sa.Column("csl", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    schema="bibliography",
+)
+
+# --- Authored: works from their first freeze ---
+
+works = sa.Table(
+    "works",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("slug", sa.Text, nullable=False, unique=True),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("work_type", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False, server_default="draft"),
+    sa.Column("language", sa.Text),
+    sa.Column("abstract", sa.Text),
+    sa.Column("current_revision_id", sa.Uuid),
+    sa.Column("metadata", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("archived_at", sa.DateTime(timezone=True)),
+    sa.CheckConstraint(
+        "status IN ('draft','review','published','archived')",
+        name="works_status_ck",
+    ),
+    sa.ForeignKeyConstraint(
+        ["current_revision_id", "id"],
+        ["authored.work_revisions.id", "authored.work_revisions.work_id"],
+        name="works_current_revision_fk",
+        deferrable=True,
+        initially="DEFERRED",
+    ),
+    schema="authored",
+)
+
+work_revisions = sa.Table(
+    "work_revisions",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "work_id", sa.Uuid, sa.ForeignKey("authored.works.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("revision_number", sa.Integer, nullable=False),
+    sa.Column(
+        "parent_revision_id",
+        sa.Uuid,
+        sa.ForeignKey("authored.work_revisions.id", ondelete="RESTRICT"),
+    ),
+    sa.Column("state", sa.Text, nullable=False, server_default="draft"),
+    sa.Column("message", sa.Text),
+    sa.Column("content_hash", sa.LargeBinary),
+    sa.Column("created_by", sa.Text, nullable=False, server_default="user"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("frozen_at", sa.DateTime(timezone=True)),
+    sa.Column("published_at", sa.DateTime(timezone=True)),
+    sa.Column("metadata", sa.JSON, nullable=False, server_default="{}"),
+    sa.UniqueConstraint("id", "work_id"),
+    sa.UniqueConstraint("work_id", "revision_number"),
+    sa.CheckConstraint(
+        "state IN ('draft','frozen','published','superseded')",
+        name="work_revision_state_ck",
+    ),
+    schema="authored",
+)
+
+work_blocks = sa.Table(
+    "work_blocks",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "revision_id",
+        sa.Uuid,
+        sa.ForeignKey("authored.work_revisions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("block_key", sa.Uuid, nullable=False),
+    sa.Column("parent_id", sa.Uuid),
+    sa.Column("position", sa.Integer, nullable=False),
+    sa.Column("block_type", sa.Text, nullable=False),
+    sa.Column("title", sa.Text),
+    sa.Column("body_markdown", sa.Text, nullable=False, server_default=""),
+    sa.Column("attributes", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.UniqueConstraint("id", "revision_id"),
+    sa.UniqueConstraint("revision_id", "block_key"),
+    sa.UniqueConstraint(
+        "revision_id", "parent_id", "position",
+        postgresql_nulls_not_distinct=True,
+    ),
+    sa.ForeignKeyConstraint(
+        ["parent_id", "revision_id"],
+        ["authored.work_blocks.id", "authored.work_blocks.revision_id"],
+        ondelete="RESTRICT",
+    ),
+    schema="authored",
+)
+
+sa.Index(
+    "work_blocks_revision_idx",
+    work_blocks.c.revision_id,
+    work_blocks.c.parent_id,
+    work_blocks.c.position,
+)
+
+citation_occurrences = sa.Table(
+    "citation_occurrences",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("citation_key", sa.Uuid, nullable=False),
+    sa.Column(
+        "block_id",
+        sa.Uuid,
+        sa.ForeignKey("authored.work_blocks.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("placement", sa.Text, nullable=False, server_default="inline"),
+    sa.Column("intent", sa.Text, nullable=False, server_default="source"),
+    sa.Column("note", sa.Text),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.UniqueConstraint("block_id", "citation_key"),
+    sa.CheckConstraint(
+        "placement IN ('inline','block_end')", name="citation_placement_ck"
+    ),
+    sa.CheckConstraint(
+        "intent IN ('source','support','contrast','background','definition',"
+        "'translation','quotation','see_also')",
+        name="citation_intent_ck",
+    ),
+    schema="authored",
+)
+
+citation_items = sa.Table(
+    "citation_items",
+    metadata,
+    sa.Column(
+        "occurrence_id",
+        sa.Uuid,
+        sa.ForeignKey("authored.citation_occurrences.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("position", sa.Integer, nullable=False),
+    sa.Column(
+        "edition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
+    ),
+    sa.Column("zotero_key", sa.Text),
+    sa.Column(
+        "source_span_id",
+        sa.Uuid,
+        sa.ForeignKey("evidence.source_spans.id", ondelete="RESTRICT"),
+    ),
+    sa.Column("quoted_text", sa.Text),
+    sa.Column("verify_status", sa.Text),
+    sa.Column("verified_at", sa.DateTime(timezone=True)),
+    sa.Column("locator", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("prefix", sa.Text),
+    sa.Column("suffix", sa.Text),
+    sa.Column("suppress_author", sa.Boolean, nullable=False, server_default="false"),
+    sa.PrimaryKeyConstraint("occurrence_id", "position"),
+    sa.CheckConstraint(
+        "edition_id IS NOT NULL OR zotero_key IS NOT NULL",
+        name="citation_identity_ck",
+    ),
+    sa.CheckConstraint(
+        "verify_status IS NULL OR verify_status IN ('exact','normalized','near')",
+        name="citation_verify_ck",
+    ),
+    sa.CheckConstraint(
+        "quoted_text IS NULL OR source_span_id IS NOT NULL",
+        name="citation_quote_needs_span_ck",
+    ),
+    schema="authored",
+)
+
+sa.Index("citation_items_span_idx", citation_items.c.source_span_id)
+sa.Index("citation_items_edition_idx", citation_items.c.edition_id)
+sa.Index("citation_items_zotero_idx", citation_items.c.zotero_key)
+
+block_source_links = sa.Table(
+    "block_source_links",
+    metadata,
+    sa.Column(
+        "block_id",
+        sa.Uuid,
+        sa.ForeignKey("authored.work_blocks.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "source_span_id",
+        sa.Uuid,
+        sa.ForeignKey("evidence.source_spans.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("relation", sa.Text, nullable=False),
+    sa.Column("confidence", sa.Float),
+    sa.Column("note", sa.Text),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.PrimaryKeyConstraint("block_id", "source_span_id", "relation"),
+    sa.CheckConstraint(
+        "confidence IS NULL OR confidence BETWEEN 0 AND 1",
+        name="block_source_conf_ck",
+    ),
+    schema="authored",
+)
+
+sa.Index("block_source_links_span_idx", block_source_links.c.source_span_id)
+
+block_entity_links = sa.Table(
+    "block_entity_links",
+    metadata,
+    sa.Column(
+        "block_id",
+        sa.Uuid,
+        sa.ForeignKey("authored.work_blocks.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "entity_id",
+        sa.Uuid,
+        sa.ForeignKey("core.entities.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("relation", sa.Text, nullable=False),
+    sa.Column("surface_form", sa.Text),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.PrimaryKeyConstraint("block_id", "entity_id", "relation"),
+    schema="authored",
+)
+
+sa.Index(
+    "block_entity_links_entity_idx",
+    block_entity_links.c.entity_id,
+    block_entity_links.c.relation,
+)
+
+waivers = sa.Table(
+    "waivers",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "revision_id",
+        sa.Uuid,
+        sa.ForeignKey("authored.work_revisions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("rule_id", sa.Text, nullable=False),
+    sa.Column("subject", sa.Text),
+    sa.Column("actor", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    schema="authored",
+)
+
+sa.Index("waivers_revision_idx", waivers.c.revision_id, waivers.c.rule_id)
