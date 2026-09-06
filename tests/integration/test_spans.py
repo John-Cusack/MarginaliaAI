@@ -186,93 +186,120 @@ async def test_an_anchor_cannot_store_not_found(
 
 
 @pytest.mark.asyncio
-async def test_migrations_revert_cleanly(
-    engine: AsyncEngine, db_url: str
-) -> None:
-    """009 and 010 downgrade away entirely, then come back.
+async def test_migrations_revert_cleanly(db_url: str) -> None:
+    """Every migration downgrades away entirely, then comes back.
 
-    The downgrade drops tables, so it refuses to run over data: a leaked span
-    row would be destroyed rather than reported, and destroying evidence to
-    test a migration is backwards.
+    Against an isolated scratch database, never the dev corpus: the
+    downgrade drops tables, and the corpus holds real rows (ingested
+    editions) that must not be destroyed to test a migration. The scratch
+    database is dropped afterwards, so no state leaks between runs.
     """
-    for schema, table in (
-        ("evidence", "source_spans"),
-        ("argument", "claims"),
-        ("argument", "claim_edges"),
-        ("argument", "anchors"),
-        ("authored", "works"),
-        ("authored", "work_revisions"),
-        ("authored", "work_blocks"),
-        ("authored", "citation_occurrences"),
-        ("authored", "citation_items"),
-        ("authored", "block_source_links"),
-        ("authored", "block_entity_links"),
-        ("authored", "waivers"),
-        ("bibliography", "editions"),
-    ):
-        async with engine.connect() as conn:
-            count = (
-                await conn.execute(sa.text(f'SELECT count(*) FROM "{schema}"."{table}"'))
-            ).scalar_one()
-        assert count == 0, f"{schema}.{table} holds {count} rows; not downgrading over data"
-
     from alembic import command
     from alembic.config import Config
+    from sqlalchemy.ext.asyncio import create_async_engine
 
     import research_engine
 
-    ini = (
-        Path(research_engine.__file__).parent
-        / "adapters/storage/postgres/migrations/alembic.ini"
+    scratch = (
+        sa.engine.make_url(db_url)
+        .set(database="research_engine_migrations")
+        .render_as_string(hide_password=False)
     )
-    config = Config(str(ini))
-    config.set_main_option("script_location", str(ini.parent))
-    previous = os.environ.get("RE_DB_URL")
-    os.environ["RE_DB_URL"] = db_url
+    admin_url = (
+        sa.engine.make_url(db_url)
+        .set(database="postgres")
+        .render_as_string(hide_password=False)
+    )
+    admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:
-
-        await asyncio.to_thread(command.downgrade, config, "008_passage_node")
-        async with engine.connect() as conn:
-            schemas = (
+        try:
+            async with admin.connect() as conn:
                 await conn.execute(
-                    sa.text(
-                        "SELECT schema_name FROM information_schema.schemata "
-                        "WHERE schema_name IN ('evidence', 'argument', 'authored', "
-                        "'bibliography')"
-                    )
+                    sa.text('DROP DATABASE IF EXISTS "research_engine_migrations"')
                 )
-            ).all()
-        assert schemas == []
-        await asyncio.to_thread(command.upgrade, config, "head")
-    finally:
-        if previous is None:
-            os.environ.pop("RE_DB_URL", None)
-        else:
-            os.environ["RE_DB_URL"] = previous
-    async with engine.connect() as conn:
-        tables = (
-            await conn.execute(
-                sa.text(
-                    "SELECT table_schema, table_name "
-                    "FROM information_schema.tables "
-                    "WHERE table_schema IN ('evidence', 'argument', 'authored', "
-                    "'bibliography') "
-                    "ORDER BY table_schema, table_name"
+                await conn.execute(
+                    sa.text('CREATE DATABASE "research_engine_migrations"')
                 )
+        except Exception as exc:
+            pytest.skip(f"Cannot provision a scratch database: {exc}")
+        engine = create_async_engine(scratch)
+        try:
+            ini = (
+                Path(research_engine.__file__).parent
+                / "adapters/storage/postgres/migrations/alembic.ini"
             )
-        ).all()
-    assert tables == [
-        ("argument", "anchors"),
-        ("argument", "claim_edges"),
-        ("argument", "claims"),
-        ("authored", "block_entity_links"),
-        ("authored", "block_source_links"),
-        ("authored", "citation_items"),
-        ("authored", "citation_occurrences"),
-        ("authored", "waivers"),
-        ("authored", "work_blocks"),
-        ("authored", "work_revisions"),
-        ("authored", "works"),
-        ("bibliography", "editions"),
-        ("evidence", "source_spans"),
-    ]
+            config = Config(str(ini))
+            config.set_main_option("script_location", str(ini.parent))
+            previous = os.environ.get("RE_DB_URL")
+            os.environ["RE_DB_URL"] = scratch
+            try:
+                await asyncio.to_thread(command.upgrade, config, "head")
+                async with engine.connect() as conn:
+                    edition_columns = {
+                        row[0]
+                        for row in (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT column_name "
+                                    "FROM information_schema.columns "
+                                    "WHERE table_schema = 'bibliography' "
+                                    "AND table_name = 'editions'"
+                                )
+                            )
+                        ).all()
+                    }
+                assert "edition_key" in edition_columns
+                assert "zotero_key" not in edition_columns
+                await asyncio.to_thread(command.downgrade, config, "008_passage_node")
+                async with engine.connect() as conn:
+                    schemas = (
+                        await conn.execute(
+                            sa.text(
+                                "SELECT schema_name FROM information_schema.schemata "
+                                "WHERE schema_name IN ('evidence', 'argument', "
+                                "'authored', 'bibliography')"
+                            )
+                        )
+                    ).all()
+                assert schemas == []
+                await asyncio.to_thread(command.upgrade, config, "head")
+            finally:
+                if previous is None:
+                    os.environ.pop("RE_DB_URL", None)
+                else:
+                    os.environ["RE_DB_URL"] = previous
+            async with engine.connect() as conn:
+                tables = (
+                    await conn.execute(
+                        sa.text(
+                            "SELECT table_schema, table_name "
+                            "FROM information_schema.tables "
+                            "WHERE table_schema IN ('evidence', 'argument', "
+                            "'authored', 'bibliography') "
+                            "ORDER BY table_schema, table_name"
+                        )
+                    )
+                ).all()
+            assert tables == [
+                ("argument", "anchors"),
+                ("argument", "claim_edges"),
+                ("argument", "claims"),
+                ("authored", "block_entity_links"),
+                ("authored", "block_source_links"),
+                ("authored", "citation_items"),
+                ("authored", "citation_occurrences"),
+                ("authored", "waivers"),
+                ("authored", "work_blocks"),
+                ("authored", "work_revisions"),
+                ("authored", "works"),
+                ("bibliography", "editions"),
+                ("evidence", "source_spans"),
+            ]
+        finally:
+            await engine.dispose()
+            async with admin.connect() as conn:
+                await conn.execute(
+                    sa.text('DROP DATABASE IF EXISTS "research_engine_migrations"')
+                )
+    finally:
+        await admin.dispose()
