@@ -317,6 +317,7 @@ async def build_container(settings: Settings) -> Container:
         revisions=revisions_repo,
         blocks=blocks_repo,
         passages=passages_repo,
+        documents=docs,
         transaction_factory=tx_factory,
     )
     work_export = WorkExportService(

@@ -83,6 +83,7 @@ class CitationService:
         revisions: Any,
         blocks: Any,
         passages: Any,
+        documents: Any,
         transaction_factory: Callable[[], Any],
     ) -> None:
         self._verification = verification
@@ -93,6 +94,7 @@ class CitationService:
         self._revisions = revisions
         self._blocks = blocks
         self._passages = passages
+        self._documents = documents
         self._transaction = transaction_factory
 
     async def attach(
@@ -139,17 +141,17 @@ class CitationService:
         if block is None:
             raise NotFoundError("work_block", block_key)
 
+        # Explicit identity wins and is never second-guessed: it is what the
+        # mismatch check tests the resolved span against. When neither is
+        # given, the edition is inherited from the span's document below —
+        # the document already names it, so demanding it twice was friction
+        # without function. Only a spanless cite with no identity is still
+        # refused: a bibliography entry with no source is not a citation.
         resolved_edition_id = edition_id
         if resolved_edition_id is None and zotero_key is not None:
             edition = await self._editions.get_by_key(zotero_key)
             if edition is not None:
                 resolved_edition_id = edition.id
-        if resolved_edition_id is None and zotero_key is None:
-            raise AttachRefused(
-                "AUTH_CITATION_EDITION_MISSING",
-                "A citation names its edition: pass zotero_key or edition_id. "
-                "Nothing was written.",
-            )
 
         tier: str | None = None
         span_document_id: UUID | None = None
@@ -209,6 +211,17 @@ class CitationService:
             ):
                 warnings.append("AUTH_SPAN_REGION")
 
+        if resolved_edition_id is None and zotero_key is None:
+            inherited = await self._inherit_edition(span_document_id)
+            if inherited is None:
+                raise AttachRefused(
+                    "AUTH_CITATION_EDITION_MISSING",
+                    "No edition was given and the cited document names none: "
+                    "pass zotero_key or edition_id, or key the document "
+                    "first. Nothing was written.",
+                )
+            zotero_key, resolved_edition_id = inherited
+
         # uuid_utils ids never cross into pydantic (see WorkService.upsert_block).
         key = citation_key or UUID(str(uuid7()))
         span_id: UUID | None = None
@@ -264,6 +277,27 @@ class CitationService:
             ),
             warnings=warnings,
         )
+
+    async def _inherit_edition(
+        self, span_document_id: UUID | None
+    ) -> tuple[str, UUID | None] | None:
+        """The span's document key, when the caller named no edition.
+
+        Returns the document's key with its edition id when one exists, so a
+        quote against a keyed document cites without repeating the obvious.
+        `None` means there is nothing to inherit — a spanless cite, or a
+        document nobody keyed — and the caller must name the edition.
+        """
+        if span_document_id is None:
+            return None
+        document = await self._documents.get(span_document_id)
+        if document is None:  # pragma: no cover - spans RESTRICT documents
+            return None
+        key = (document.metadata or {}).get("zotero_key")
+        if not isinstance(key, str) or not key:
+            return None
+        edition = await self._editions.get_by_key(key)
+        return key, edition.id if edition is not None else None
 
     async def _is_region(
         self, document_id: UUID, char_start: int, char_end: int

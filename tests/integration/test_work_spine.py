@@ -103,6 +103,7 @@ class _Spine:
             revisions=PGWorkRevisionRepo(engine),
             blocks=PGWorkBlockRepo(engine),
             passages=PGPassageRepo(engine),
+            documents=PGDocumentRepo(engine),
             transaction_factory=tx_factory,
         )
         self.export = WorkExportService(
@@ -428,6 +429,7 @@ async def test_work_cite_atomicity(engine: AsyncEngine, corpus: Corpus) -> None:
         revisions=spine.repos.revisions,
         blocks=spine.repos.blocks,
         passages=PGPassageRepo(engine),
+        documents=PGDocumentRepo(engine),
         transaction_factory=partial(transaction, engine),
     )
     try:
@@ -503,6 +505,102 @@ async def test_tier_per_row(engine: AsyncEngine, corpus: Corpus) -> None:
 
     assert clean.item.verify_status == "exact"
     assert noisy.item.verify_status == "normalized"
+
+
+@pytest.mark.asyncio
+async def test_edition_inherited_from_document(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    doc_id = await _ingest(engine, corpus, zotero_key="DABAR_2026")
+    async with transaction(engine) as tx:
+        edition = await PGEditionRepo(engine).upsert_key(tx, "DABAR_2026")
+    corpus.track(editions, edition.id)
+    spine = _Spine(engine)
+    created = await spine.works.create(
+        slug="spine-inherit", title="Inherit", work_type="essay"
+    )
+    corpus.track(works, created.work_id)
+    block = await spine.works.upsert_block(
+        slug="spine-inherit", position=0, block_type="paragraph", body_markdown="Held."
+    )
+
+    attached = await spine.cite.attach(
+        slug="spine-inherit", block_key=block.block_key, intent="quotation",
+        quote=PROBES["exact"], document_id=doc_id,
+    )
+    corpus.adopt_span(attached.item.source_span_id)
+
+    assert attached.item.zotero_key == "DABAR_2026"
+    assert attached.item.edition_id == edition.id
+
+
+@pytest.mark.asyncio
+async def test_edition_refused_without_any_source(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    keyless = await _ingest(engine, corpus)
+    keyed = await _ingest(engine, corpus, zotero_key="DABAR_2026")
+    spine = _Spine(engine)
+    created = await spine.works.create(
+        slug="spine-noidentity", title="NoIdentity", work_type="essay"
+    )
+    corpus.track(works, created.work_id)
+    bare = await spine.works.upsert_block(
+        slug="spine-noidentity", position=0, block_type="paragraph", body_markdown="Bare."
+    )
+    keyless_block = await spine.works.upsert_block(
+        slug="spine-noidentity", position=1, block_type="paragraph", body_markdown="Keyless."
+    )
+
+    # Spanless with no identity: a bibliography entry with no source.
+    with pytest.raises(AttachRefused) as exc_info:
+        await spine.cite.attach(
+            slug="spine-noidentity", block_key=bare.block_key, intent="support"
+        )
+    assert exc_info.value.rule_id == "AUTH_CITATION_EDITION_MISSING"
+
+    # A quote against a document nobody keyed: nothing to inherit.
+    with pytest.raises(AttachRefused) as exc_info:
+        await spine.cite.attach(
+            slug="spine-noidentity", block_key=keyless_block.block_key,
+            intent="quotation", quote=PROBES["exact"], document_id=keyless,
+        )
+    assert exc_info.value.rule_id == "AUTH_CITATION_EDITION_MISSING"
+
+    assert await spine.repos.spans.for_document(keyless) == []
+    assert await spine.repos.spans.for_document(keyed) == []
+
+
+@pytest.mark.asyncio
+async def test_explicit_identity_wins_and_mismatch_reported(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    doc_id = await _ingest(engine, corpus, zotero_key="DABAR_2026")
+    spine = _Spine(engine)
+    created = await spine.works.create(
+        slug="spine-mismatch", title="Mismatch", work_type="essay"
+    )
+    corpus.track(works, created.work_id)
+    block = await spine.works.upsert_block(
+        slug="spine-mismatch", position=0, block_type="paragraph", body_markdown="Claimed."
+    )
+    attached = await spine.cite.attach(
+        slug="spine-mismatch", block_key=block.block_key, intent="quotation",
+        quote=PROBES["exact"], document_id=doc_id, zotero_key="ESV",
+    )
+    corpus.adopt_span(attached.item.source_span_id)
+
+    assert attached.item.zotero_key == "ESV"
+    await spine.works.upsert_block(
+        slug="spine-mismatch", position=0, block_type="paragraph",
+        body_markdown=f"Claimed. {attached.marker}",
+        block_key=block.block_key, expected_updated_at=block.updated_at,
+    )
+    report = await spine.validate.validate(slug="spine-mismatch", gate="none")
+    assert "AUTH_CITATION_EDITION_MISMATCH" in {
+        finding.rule_id for finding in report.findings
+        if finding.severity == "error"
+    }
 
 
 @pytest.mark.asyncio

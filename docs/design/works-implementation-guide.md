@@ -1456,6 +1456,14 @@ Record every deviation from this guide, every contract gap found by the real
 work, and every rehearsal defect here, newest first, with the date and the
 step.
 
+- 2026-09-05 — `work_cite` inherits its edition: when the caller names no
+  edition, `attach` takes the span's document key (with its edition id when
+  one exists) instead of refusing. Explicit identity still wins untouched —
+  it is what the mismatch check tests the span against — and the refusal
+  stays for spanless cites and keyless documents, where there is nothing to
+  inherit (the check constraint requires an identity on every item row, so
+  no migration). §6.3 step 2's "neither given → refuse" now reads "neither
+  given nor inheritable → refuse".
 - 2026-09-05 — Step 6 P1 spine built on `John-Cusack/works-phase0` with the
   researcher's sign-off (Step 5 rehearsal and the real-work port wait on the
   researcher; the Step 6 gate is waived in the same item as Step 3's). Six

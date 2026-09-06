@@ -22,8 +22,10 @@ logger = structlog.get_logger()
 TOOL_NAME = "work_cite"
 TOOL_DESCRIPTION = (
     "Cite the corpus from a draft block. Give the work, the block, why the "
-    "citation is here (intent), and either a quote to verify or just an "
-    "identity (zotero_key or edition_id) for a bibliography-only citation. "
+    "citation is here (intent), and a quote to verify. The edition is "
+    "inherited from the cited document; pass zotero_key or edition_id only "
+    "to cite a different edition than the span's (the mismatch check tests "
+    "that claim), or alone for a bibliography-only citation with no quote. "
     "A verified quote resolves its span — creating the span row on a miss — "
     "and the occurrence plus item are written atomically. Returns the "
     "{{cite:<key>}} marker to place in the block text. Refusals name their "

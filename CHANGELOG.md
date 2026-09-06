@@ -1,5 +1,14 @@
 # Changelog
 
+### `work_cite` inherits its edition from the cited document
+
+Passing `zotero_key` or `edition_id` on every cite was friction without
+function: the span's document already names its edition. `attach` now
+inherits the document's key (and edition id) when the caller names neither;
+explicit identity still wins and is what the edition-mismatch check tests
+against. The `AUTH_CITATION_EDITION_MISSING` refusal stays for spanless
+cites and keyless documents, where there is nothing to inherit.
+
 ### Works as rows: the Phase-1 spine (create, cite, validate, trace, freeze, draft loop)
 
 Eight MCP tools and five `research-engine work` commands draft a work as
