@@ -54,7 +54,7 @@ class CitationReport(BaseModel):
     document_id: str
     char_start: int
     char_end: int
-    zotero_key: str | None = None
+    edition_key: str | None = None
     findings: list[str] = Field(default_factory=list)
 
 
@@ -209,7 +209,7 @@ class WorkVerifier:
             document_id=str(entry.document_id),
             char_start=entry.char_start,
             char_end=entry.char_end,
-            zotero_key=entry.zotero_key,
+            edition_key=entry.edition_key,
         )
         findings: list[Finding] = []
 
@@ -277,38 +277,38 @@ class WorkVerifier:
                 )
             )
 
-        if entry.zotero_key is None and entry.edition is None:
+        if entry.edition_key is None and entry.edition is None:
             findings.append(
                 Finding(
                     rule_id="AUTH_CITATION_EDITION_MISSING",
                     severity="error" if gate == "publish" else "warning",
                     citation_id=entry.id,
-                    message="Neither zotero_key nor edition is set; the "
+                    message="Neither edition_key nor edition is set; the "
                     "citation has no bibliographic identity",
                 )
             )
-        if entry.zotero_key is not None:
-            document_key = (document.metadata or {}).get("zotero_key")
+        if entry.edition_key is not None:
+            document_key = (document.metadata or {}).get("edition_key")
             if document_key is None:
                 findings.append(
                     Finding(
-                        rule_id="AUTH_ZOTERO_KEY_UNKNOWN",
+                        rule_id="AUTH_EDITION_KEY_UNKNOWN",
                         severity="warning",
                         citation_id=entry.id,
-                        message=f"zotero_key {entry.zotero_key} is on no "
+                        message=f"edition_key {entry.edition_key} is on no "
                         "ingested document yet",
                     )
                 )
-            elif document_key != entry.zotero_key:
+            elif document_key != entry.edition_key:
                 findings.append(
                     Finding(
-                        rule_id="AUTH_ZOTERO_KEY_MISMATCH",
+                        rule_id="AUTH_EDITION_KEY_MISMATCH",
                         severity="error",
                         citation_id=entry.id,
-                        message=f"Entry key {entry.zotero_key} differs from the "
+                        message=f"Entry key {entry.edition_key} differs from the "
                         f"document's {document_key}",
                         detail={
-                            "entry_key": entry.zotero_key,
+                            "entry_key": entry.edition_key,
                             "document_key": document_key,
                         },
                     )

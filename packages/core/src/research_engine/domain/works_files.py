@@ -73,7 +73,7 @@ class CitationEntry(BaseModel):
     char_end: int
     quoted_text: str
     edition: str | None = None
-    zotero_key: str | None = None
+    edition_key: str | None = None
     locator: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("id")

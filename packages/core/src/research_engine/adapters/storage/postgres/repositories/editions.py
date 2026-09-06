@@ -1,4 +1,4 @@
-"""Bibliographic identities — one row per Zotero key seen at ingest."""
+"""Bibliographic identities — one row per edition key seen at ingest."""
 
 from __future__ import annotations
 
@@ -33,33 +33,33 @@ class PGEditionRepo:
             ).first()
             return self._to_domain(row) if row else None
 
-    async def get_by_key(self, zotero_key: str) -> Edition | None:
+    async def get_by_key(self, edition_key: str) -> Edition | None:
         async with self._engine.connect() as conn:
             row = (
                 await conn.execute(
-                    editions.select().where(editions.c.zotero_key == zotero_key)
+                    editions.select().where(editions.c.edition_key == edition_key)
                 )
             ).first()
             return self._to_domain(row) if row else None
 
     async def upsert_key(
-        self, tx: Transaction, zotero_key: str, csl: dict[str, Any] | None = None
+        self, tx: Transaction, edition_key: str, csl: dict[str, Any] | None = None
     ) -> Edition:
         """The row for this key, creating it and refreshing its CSL when given."""
-        stmt = pg_insert(editions).values(id=uuid7(), zotero_key=zotero_key)
+        stmt = pg_insert(editions).values(id=uuid7(), edition_key=edition_key)
         if csl is not None:
             stmt = stmt.on_conflict_do_update(
-                index_elements=[editions.c.zotero_key],
+                index_elements=[editions.c.edition_key],
                 set_={"csl": csl},
             )
         else:
             stmt = stmt.on_conflict_do_nothing(
-                index_elements=[editions.c.zotero_key]
+                index_elements=[editions.c.edition_key]
             )
         await tx.conn.execute(stmt)
         row = (
             await tx.conn.execute(
-                editions.select().where(editions.c.zotero_key == zotero_key)
+                editions.select().where(editions.c.edition_key == edition_key)
             )
         ).first()
         assert row is not None  # just inserted, or it was already there
@@ -69,7 +69,7 @@ class PGEditionRepo:
         async with self._engine.connect() as conn:
             rows = (
                 await conn.execute(
-                    sa.select(editions.c.zotero_key).order_by(editions.c.zotero_key)
+                    sa.select(editions.c.edition_key).order_by(editions.c.edition_key)
                 )
             ).all()
         return [row[0] for row in rows]
@@ -78,7 +78,7 @@ class PGEditionRepo:
     def _to_domain(row: Any) -> Edition:
         return Edition(
             id=row.id,
-            zotero_key=row.zotero_key,
+            edition_key=row.edition_key,
             csl=dict(row.csl or {}),
             created_at=row.created_at,
         )

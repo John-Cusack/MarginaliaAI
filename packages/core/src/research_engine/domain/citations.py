@@ -42,7 +42,7 @@ class CitationItem(BaseModel):
     occurrence_id: UUID
     position: int
     edition_id: UUID | None = None
-    zotero_key: str | None = None
+    edition_key: str | None = None
     source_span_id: UUID | None = None
     quoted_text: str | None = None
     verify_status: str | None = None
@@ -56,7 +56,7 @@ class CitationItem(BaseModel):
 class CitationItemDraft(BaseModel):
     """An item validates before the database does.
 
-    Identity first: an item with neither `edition_id` nor `zotero_key` names
+    Identity first: an item with neither `edition_id` nor `edition_key` names
     no edition and is refused here, not by the check constraint. Then the
     quote: typed wording without a span is a claim without an address.
     """
@@ -66,7 +66,7 @@ class CitationItemDraft(BaseModel):
     occurrence_id: UUID
     position: int = 0
     edition_id: UUID | None = None
-    zotero_key: str | None = None
+    edition_key: str | None = None
     source_span_id: UUID | None = None
     quoted_text: str | None = None
     verify_status: str | None = None
@@ -77,8 +77,8 @@ class CitationItemDraft(BaseModel):
 
     @model_validator(mode="after")
     def _names_an_edition(self) -> CitationItemDraft:
-        if self.edition_id is None and self.zotero_key is None:
-            raise ValueError("an item names its edition: edition_id or zotero_key")
+        if self.edition_id is None and self.edition_key is None:
+            raise ValueError("an item names its edition: edition_id or edition_key")
         return self
 
     @model_validator(mode="after")

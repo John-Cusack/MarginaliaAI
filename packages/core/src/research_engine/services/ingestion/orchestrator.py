@@ -54,7 +54,7 @@ class IngestionOrchestrator:
         editions: EditionRepo | None = None,
     ) -> None:
         self._document_texts = document_texts
-        #: Optional like ``document_texts``: without it ingested Zotero keys
+        #: Optional like ``document_texts``: without it ingested edition keys
         #: never reach `bibliography.editions` and row citations cannot join
         #: them. The migration backfill covered the keys already stored.
         self._editions = editions
@@ -83,7 +83,7 @@ class IngestionOrchestrator:
         """Keep `bibliography.editions` behind document ingest, in the same transaction."""
         if self._editions is None:
             return
-        key = (metadata or {}).get("zotero_key")
+        key = (metadata or {}).get("edition_key")
         if isinstance(key, str) and key:
             await self._editions.upsert_key(tx, key)
 

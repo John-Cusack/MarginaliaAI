@@ -35,10 +35,10 @@ class Placement(StrEnum):
 
 
 class Edition(BaseModel):
-    """One row of `bibliography.editions`: a Zotero key seen at ingest."""
+    """One row of `bibliography.editions`: an edition key seen at ingest."""
 
     id: UUID
-    zotero_key: str
+    edition_key: str
     csl: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 

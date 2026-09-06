@@ -32,7 +32,7 @@ class WorkCitationFinder:
         self,
         *,
         document_id: UUID | None = None,
-        zotero_key: str | None = None,
+        edition_key: str | None = None,
         claim_ref: str | None = None,
     ) -> dict[str, Any]:
         matches: list[dict[str, Any]] = []
@@ -62,7 +62,7 @@ class WorkCitationFinder:
             for entry in front.citations:
                 if document_id is not None and entry.document_id != document_id:
                     continue
-                if zotero_key is not None and entry.zotero_key != zotero_key:
+                if edition_key is not None and entry.edition_key != edition_key:
                     continue
                 matches.append({
                     "work_path": work.work_path,

@@ -65,7 +65,7 @@ class WorkCiter:
         citation_id: str | None = None,
         role: str | None = None,
         edition: str | None = None,
-        zotero_key: str | None = None,
+        edition_key: str | None = None,
         locator: dict[str, Any] | None = None,
         window: tuple[int, int] | None = None,
     ) -> CitationResult:
@@ -121,7 +121,7 @@ class WorkCiter:
             char_end=end,
             quoted_text=quoted_text,
             edition=edition,
-            zotero_key=zotero_key,
+            edition_key=edition_key,
             locator=locator or {},
         )
         dumped = entry.model_dump(mode="json", exclude_none=True)

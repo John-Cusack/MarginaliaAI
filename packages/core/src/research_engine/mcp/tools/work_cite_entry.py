@@ -55,7 +55,7 @@ TOOL_SCHEMA: dict[str, Any] = {
             "description": "Claim role, when this also backs a claim: asserts, supports, rebuts, context.",
         },
         "edition": {"type": "string"},
-        "zotero_key": {"type": "string"},
+        "edition_key": {"type": "string"},
         "locator": {
             "type": "object",
             "description": "E.g. {page: 214} or {volume: 'II', page: 64}.",
@@ -83,7 +83,7 @@ async def handler(
     id: str | None = None,
     role: str | None = None,
     edition: str | None = None,
-    zotero_key: str | None = None,
+    edition_key: str | None = None,
     locator: dict[str, Any] | None = None,
     window: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -126,7 +126,7 @@ async def handler(
             citation_id=id,
             role=role,
             edition=edition,
-            zotero_key=zotero_key,
+            edition_key=edition_key,
             locator=locator,
             window=window_tuple,
         )

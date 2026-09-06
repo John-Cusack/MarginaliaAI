@@ -228,11 +228,11 @@ class WorkTraceService:
                             f"{row.verify_status or 'unverified'}",
                         )
                     )
-            elif row.zotero_key is not None:
+            elif row.edition_key is not None:
                 children.append(
                     TraceNode(
                         kind="bibliography",
-                        label=f"{row.zotero_key} (no span)",
+                        label=f"{row.edition_key} (no span)",
                     )
                 )
         return TraceNode(

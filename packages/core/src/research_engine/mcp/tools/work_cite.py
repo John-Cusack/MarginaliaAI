@@ -23,7 +23,7 @@ TOOL_NAME = "work_cite"
 TOOL_DESCRIPTION = (
     "Cite the corpus from a draft block. Give the work, the block, why the "
     "citation is here (intent), and a quote to verify. The edition is "
-    "inherited from the cited document; pass zotero_key or edition_id only "
+    "inherited from the cited document; pass edition_key or edition_id only "
     "to cite a different edition than the span's (the mismatch check tests "
     "that claim), or alone for a bibliography-only citation with no quote. "
     "A verified quote resolves its span — creating the span row on a miss — "
@@ -58,7 +58,7 @@ TOOL_SCHEMA: dict[str, Any] = {
             "required": ["char_start", "char_end"],
             "description": "Where the quote is believed to sit, e.g. a search hit's span.",
         },
-        "zotero_key": {"type": "string"},
+        "edition_key": {"type": "string"},
         "edition_id": {"type": "string", "format": "uuid"},
         "locator": {"type": "object", "description": "E.g. {page: 214}."},
         "prefix": {"type": "string"},
@@ -79,7 +79,7 @@ async def handler(
     quote: str | None = None,
     document_id: str | None = None,
     window: dict[str, Any] | None = None,
-    zotero_key: str | None = None,
+    edition_key: str | None = None,
     edition_id: str | None = None,
     locator: dict[str, Any] | None = None,
     prefix: str | None = None,
@@ -129,7 +129,7 @@ async def handler(
             quote=quote,
             document_id=doc_uuid,
             window=window_tuple,
-            zotero_key=zotero_key,
+            edition_key=edition_key,
             edition_id=edition_uuid,
             locator=locator,
             prefix=prefix,

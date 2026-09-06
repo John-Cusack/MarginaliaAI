@@ -57,7 +57,7 @@ _DEFAULT_SEVERITY: dict[str, str] = {
     "AUTH_SPAN_REGION": "warning",
     "AUTH_CITATION_EDITION_MISSING": "warning",
     "AUTH_CITATION_EDITION_MISMATCH": "error",
-    "AUTH_ZOTERO_KEY_UNKNOWN": "warning",
+    "AUTH_EDITION_KEY_UNKNOWN": "warning",
     "AUTH_CITATION_MARKER_MISSING": "error",
     "AUTH_CITATION_MARKER_DANGLING": "error",
     "AUTH_PARENT_REVISION_MISMATCH": "error",
@@ -391,20 +391,20 @@ class _Checker:
     async def _check_item(
         self, block_key: str, citation_key: str, intent: str, row: Any
     ) -> None:
-        if row.edition_id is None and row.zotero_key is None:
+        if row.edition_id is None and row.edition_key is None:
             self._add(
                 "AUTH_CITATION_EDITION_MISSING", "warning",
                 block_key=block_key, citation_key=citation_key,
-                message="The citation names no edition: zotero_key or "
+                message="The citation names no edition: edition_key or "
                 "edition_id",
             )
-        if row.zotero_key is not None:
+        if row.edition_key is not None:
             assert self._edition_keys is not None
-            if row.zotero_key not in self._edition_keys:
+            if row.edition_key not in self._edition_keys:
                 self._add(
-                    "AUTH_ZOTERO_KEY_UNKNOWN", "warning",
+                    "AUTH_EDITION_KEY_UNKNOWN", "warning",
                     block_key=block_key, citation_key=citation_key,
-                    message=f"zotero_key {row.zotero_key} has no "
+                    message=f"edition_key {row.edition_key} has no "
                     "bibliography.editions row",
                 )
         if row.source_span_id is None:
@@ -476,18 +476,18 @@ class _Checker:
         self, block_key: str, citation_key: str, document: Any, row: Any
     ) -> None:
         """The item's key against its span's document key, until P3 joins them."""
-        item_key = row.zotero_key
+        item_key = row.edition_key
         if item_key is None and row.edition_id is not None:
             edition = await self._editions.get(row.edition_id)
-            item_key = edition.zotero_key if edition is not None else None
+            item_key = edition.edition_key if edition is not None else None
         if item_key is None:
             return
-        document_key = (document.metadata or {}).get("zotero_key")
+        document_key = (document.metadata or {}).get("edition_key")
         if document_key is None:
             self._add(
-                "AUTH_ZOTERO_KEY_UNKNOWN", "warning",
+                "AUTH_EDITION_KEY_UNKNOWN", "warning",
                 block_key=block_key, citation_key=citation_key,
-                message=f"zotero_key {item_key} is on no ingested document yet",
+                message=f"edition_key {item_key} is on no ingested document yet",
             )
         elif document_key != item_key:
             self._add(

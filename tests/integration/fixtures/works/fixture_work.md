@@ -16,7 +16,7 @@ citations:
     char_end: 62
     quoted_text: "The prophets pair two words."
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
     locator: {page: 1}
   - id: c2
     document_id: __DOCUMENT_ID__
@@ -24,7 +24,7 @@ citations:
     char_end: 163
     quoted_text: 'He requires "justice and righteousness" of every ruler - a phrase the translations render unevenly'
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
     locator: {page: 1}
   - id: c3
     document_id: __DOCUMENT_ID__
@@ -35,7 +35,7 @@ citations:
 
       The prophets pair two words. He requires “justice and righteousness” of every ruler — a phrase t
     intent: background
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
   - id: c4
     document_id: __DOCUMENT_ID__
     char_start: 0
@@ -45,28 +45,28 @@ citations:
 
       The prophets pair two words. He requires “justice and righteousness” of every ruler — a phrase t
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
   - id: c5
     document_id: __DOCUMENT_ID__
     char_start: 63
     char_end: 117
     quoted_text: 'He requires "justice and righteousness" of every king, and the moon besides'
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
   - id: c6
     document_id: __DOCUMENT_ID__
     char_start: 34
     char_end: 62
     quoted_text: "A marginal gloss on the ninth hour never entered here."
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
   - id: c7
     document_id: __DOCUMENT_ID__
     char_start: 103
     char_end: 152
     quoted_text: "of every ruler — a phrase the translations render"
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
     locator: {page: 1}
 ---
 

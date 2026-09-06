@@ -372,8 +372,8 @@ def render_markdown(view: AssembledRevision) -> str:
                     cited["quoted_text"] = row.quoted_text
                 if row.verify_status is not None:
                     cited["verify_status"] = row.verify_status
-                if row.zotero_key is not None:
-                    cited["zotero_key"] = row.zotero_key
+                if row.edition_key is not None:
+                    cited["edition_key"] = row.edition_key
                 if row.edition_id is not None:
                     cited["edition_id"] = str(row.edition_id)
                 if row.locator:

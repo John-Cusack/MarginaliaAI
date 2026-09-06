@@ -345,7 +345,7 @@ def _dump_assembled(view: AssembledRevision) -> dict[str, Any]:
                 "items": [
                     {
                         "position": row.position,
-                        "zotero_key": row.zotero_key,
+                        "edition_key": row.edition_key,
                         "edition_id": str(row.edition_id)
                         if row.edition_id is not None
                         else None,

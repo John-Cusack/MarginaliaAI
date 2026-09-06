@@ -200,7 +200,7 @@ async def _work_with_cited_paragraph(
     )
     attached = await spine.cite.attach(
         slug=slug, block_key=paragraph.block_key, intent="quotation",
-        quote=PROBES["exact"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["exact"], document_id=doc_id, edition_key="DABAR_2026",
     )
     corpus.adopt_span(attached.item.source_span_id)
     paragraph = await spine.works.upsert_block(
@@ -311,7 +311,7 @@ async def test_frozen_is_immutable(engine: AsyncEngine, corpus: Corpus) -> None:
     with pytest.raises(FrozenRevisionError):
         await cite.attach(
             slug="spine-frozen", block_key=paragraph.block_key, intent="support",
-            zotero_key="DABAR_2026",
+            edition_key="DABAR_2026",
         )
     with pytest.raises(FrozenRevisionError):
         await spine.link(
@@ -324,7 +324,7 @@ async def test_frozen_is_immutable(engine: AsyncEngine, corpus: Corpus) -> None:
                 tx,
                 CitationItemDraft(
                     occurrence_id=built["attached"].occurrence_id, position=1,
-                    zotero_key="DABAR_2026",
+                    edition_key="DABAR_2026",
                 ),
             )
 
@@ -345,7 +345,7 @@ async def test_marker_bijection(engine: AsyncEngine, corpus: Corpus) -> None:
     )
     attached = await spine.cite.attach(
         slug="spine-markers", block_key=bare.block_key, intent="support",
-        quote=PROBES["exact"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["exact"], document_id=doc_id, edition_key="DABAR_2026",
     )
     corpus.adopt_span(attached.item.source_span_id)
     dangling = await spine.works.upsert_block(
@@ -436,7 +436,7 @@ async def test_work_cite_atomicity(engine: AsyncEngine, corpus: Corpus) -> None:
         with pytest.raises(RuntimeError, match="induced failure"):
             await cite.attach(
                 slug="spine-atomic", block_key=block.block_key, intent="quotation",
-                quote=PROBES["exact"], document_id=doc_id, zotero_key="DABAR_2026",
+                quote=PROBES["exact"], document_id=doc_id, edition_key="DABAR_2026",
             )
     finally:
         spine.repos.citations.insert_occurrence = original  # type: ignore[method-assign]
@@ -464,11 +464,11 @@ async def test_identity_join(engine: AsyncEngine, corpus: Corpus) -> None:
 
     first = await spine.cite.attach(
         slug="spine-join", block_key=first_block.block_key, intent="quotation",
-        quote=PROBES["exact"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["exact"], document_id=doc_id, edition_key="DABAR_2026",
     )
     second = await spine.cite.attach(
         slug="spine-join", block_key=second_block.block_key, intent="support",
-        quote=PROBES["exact"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["exact"], document_id=doc_id, edition_key="DABAR_2026",
     )
     corpus.adopt_span(first.item.source_span_id)
 
@@ -494,11 +494,11 @@ async def test_tier_per_row(engine: AsyncEngine, corpus: Corpus) -> None:
 
     clean = await spine.cite.attach(
         slug="spine-tier", block_key=clean_block.block_key, intent="quotation",
-        quote=PROBES["exact"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["exact"], document_id=doc_id, edition_key="DABAR_2026",
     )
     noisy = await spine.cite.attach(
         slug="spine-tier", block_key=noisy_block.block_key, intent="quotation",
-        quote=PROBES["normalized_typed"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["normalized_typed"], document_id=doc_id, edition_key="DABAR_2026",
     )
     corpus.adopt_span(clean.item.source_span_id)
     corpus.adopt_span(noisy.item.source_span_id)
@@ -511,7 +511,7 @@ async def test_tier_per_row(engine: AsyncEngine, corpus: Corpus) -> None:
 async def test_edition_inherited_from_document(
     engine: AsyncEngine, corpus: Corpus
 ) -> None:
-    doc_id = await _ingest(engine, corpus, zotero_key="DABAR_2026")
+    doc_id = await _ingest(engine, corpus, edition_key="DABAR_2026")
     async with transaction(engine) as tx:
         edition = await PGEditionRepo(engine).upsert_key(tx, "DABAR_2026")
     corpus.track(editions, edition.id)
@@ -530,7 +530,7 @@ async def test_edition_inherited_from_document(
     )
     corpus.adopt_span(attached.item.source_span_id)
 
-    assert attached.item.zotero_key == "DABAR_2026"
+    assert attached.item.edition_key == "DABAR_2026"
     assert attached.item.edition_id == edition.id
 
 
@@ -539,7 +539,7 @@ async def test_edition_refused_without_any_source(
     engine: AsyncEngine, corpus: Corpus
 ) -> None:
     keyless = await _ingest(engine, corpus)
-    keyed = await _ingest(engine, corpus, zotero_key="DABAR_2026")
+    keyed = await _ingest(engine, corpus, edition_key="DABAR_2026")
     spine = _Spine(engine)
     created = await spine.works.create(
         slug="spine-noidentity", title="NoIdentity", work_type="essay"
@@ -575,7 +575,7 @@ async def test_edition_refused_without_any_source(
 async def test_explicit_identity_wins_and_mismatch_reported(
     engine: AsyncEngine, corpus: Corpus
 ) -> None:
-    doc_id = await _ingest(engine, corpus, zotero_key="DABAR_2026")
+    doc_id = await _ingest(engine, corpus, edition_key="DABAR_2026")
     spine = _Spine(engine)
     created = await spine.works.create(
         slug="spine-mismatch", title="Mismatch", work_type="essay"
@@ -586,11 +586,11 @@ async def test_explicit_identity_wins_and_mismatch_reported(
     )
     attached = await spine.cite.attach(
         slug="spine-mismatch", block_key=block.block_key, intent="quotation",
-        quote=PROBES["exact"], document_id=doc_id, zotero_key="ESV",
+        quote=PROBES["exact"], document_id=doc_id, edition_key="ESV",
     )
     corpus.adopt_span(attached.item.source_span_id)
 
-    assert attached.item.zotero_key == "ESV"
+    assert attached.item.edition_key == "ESV"
     await spine.works.upsert_block(
         slug="spine-mismatch", position=0, block_type="paragraph",
         body_markdown=f"Claimed. {attached.marker}",
@@ -624,20 +624,20 @@ async def test_narrowing(engine: AsyncEngine, corpus: Corpus) -> None:
     with pytest.raises(AttachRefused) as exc_info:
         await spine.cite.attach(
             slug="spine-narrow", block_key=strict.block_key, intent="quotation",
-            quote=REGION_TEXT, document_id=doc_id, zotero_key="DABAR_2026",
+            quote=REGION_TEXT, document_id=doc_id, edition_key="DABAR_2026",
         )
     assert exc_info.value.rule_id == "AUTH_SPAN_NOT_NARROWED"
 
     background = await spine.cite.attach(
         slug="spine-narrow", block_key=loose.block_key, intent="background",
-        quote=REGION_TEXT, document_id=doc_id, zotero_key="DABAR_2026",
+        quote=REGION_TEXT, document_id=doc_id, edition_key="DABAR_2026",
     )
     assert background.warnings == []
     corpus.adopt_span(background.item.source_span_id)
 
     support = await spine.cite.attach(
         slug="spine-narrow", block_key=warned.block_key, intent="support",
-        quote=REGION_TEXT, document_id=doc_id, zotero_key="DABAR_2026",
+        quote=REGION_TEXT, document_id=doc_id, edition_key="DABAR_2026",
     )
     assert support.warnings == ["AUTH_SPAN_REGION"]
     corpus.adopt_span(support.item.source_span_id)
@@ -669,7 +669,7 @@ async def test_window_hint_avoids_the_whole_document_search(
         attached = await spine.cite.attach(
             slug="spine-window", block_key=block.block_key, intent="quotation",
             quote=PROBES["exact"], document_id=doc_id, window=(30, 70),
-            zotero_key="DABAR_2026",
+            edition_key="DABAR_2026",
         )
     finally:
         PGDocumentTextRepo.find_raw = original  # type: ignore[method-assign]
@@ -713,7 +713,7 @@ async def test_editions(engine: AsyncEngine, corpus: Corpus) -> None:
             )
         ],
         source="test://keyed",
-        metadata={"zotero_key": "DABAR_2026"},
+        metadata={"edition_key": "DABAR_2026"},
         language="en",
         full_text=TEXT,
     )
@@ -733,7 +733,7 @@ async def test_editions(engine: AsyncEngine, corpus: Corpus) -> None:
     )
     attached = await spine.cite.attach(
         slug="spine-editions", block_key=block.block_key, intent="support",
-        quote=PROBES["exact"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["exact"], document_id=doc_id, edition_key="DABAR_2026",
     )
     corpus.adopt_span(attached.item.source_span_id)
 
@@ -756,7 +756,7 @@ async def test_freeze_waiver_and_stable_hash(
     )
     attached = await spine.cite.attach(
         slug="spine-freeze", block_key=block.block_key, intent="quotation",
-        quote=PROBES["near"], document_id=doc_id, zotero_key="DABAR_2026",
+        quote=PROBES["near"], document_id=doc_id, edition_key="DABAR_2026",
     )
     corpus.adopt_span(attached.item.source_span_id)
     assert attached.item.verify_status == "near"

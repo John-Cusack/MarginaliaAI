@@ -108,25 +108,25 @@ def _print_verify(output: VerifyOutput) -> None:
 @work_app.command("citations")
 def citations_command(
     document: str | None = typer.Option(None, "--document", help="Document UUID."),
-    zotero: str | None = typer.Option(None, "--zotero", help="Zotero key."),
+    edition_key: str | None = typer.Option(None, "--edition-key", help="Edition key."),
     claim: str | None = typer.Option(None, "--claim", help="Claim ref."),
 ) -> None:
     """List the works citing a source. Exactly one selector."""
-    asyncio.run(_citations(document, zotero, claim))
+    asyncio.run(_citations(document, edition_key, claim))
 
 
 async def _citations(
-    document: str | None, zotero: str | None, claim: str | None
+    document: str | None, edition_key: str | None, claim: str | None
 ) -> None:
     from research_engine.composition import build_container
     from research_engine.config import load_settings
     from research_engine.services.works.citations import WorkCitationFinder
 
     given = [name for name, value in
-             (("document", document), ("zotero", zotero), ("claim", claim))
+             (("document", document), ("edition-key", edition_key), ("claim", claim))
              if value is not None]
     if len(given) != 1:
-        console.print("[red]Pass exactly one of --document, --zotero, --claim.[/red]")
+        console.print("[red]Pass exactly one of --document, --edition-key, --claim.[/red]")
         raise typer.Exit(code=2)
     doc_uuid = None
     if document is not None:
@@ -141,7 +141,7 @@ async def _citations(
             console.print("[red]RE_WORKS_DIR is not set, so no work file can be read.[/red]")
             raise typer.Exit(code=1)
         result = await WorkCitationFinder(container.work_files.works_dir).find(
-            document_id=doc_uuid, zotero_key=zotero, claim_ref=claim
+            document_id=doc_uuid, edition_key=edition_key, claim_ref=claim
         )
         print(json.dumps(result, indent=2))
     finally:
@@ -190,7 +190,7 @@ def cite_entry_command(
     citation_id: str | None = typer.Option(None, "--id", help="Handle, e.g. c1."),
     role: str | None = typer.Option(None, "--role", help="Claim role."),
     edition: str | None = typer.Option(None, "--edition", help="Edition string."),
-    zotero: str | None = typer.Option(None, "--zotero", help="Zotero key."),
+    edition_key: str | None = typer.Option(None, "--edition-key", help="Edition key."),
     locator: str | None = typer.Option(
         None, "--locator", help='JSON object, e.g. \'{"page": 214}\'.'
     ),
@@ -201,7 +201,7 @@ def cite_entry_command(
 ) -> None:
     """Verify a quote, resolve its span, and print a paste-ready entry."""
     asyncio.run(
-        _cite(document, quote, intent, citation_id, role, edition, zotero,
+        _cite(document, quote, intent, citation_id, role, edition, edition_key,
               locator, window, json_output)
     )
 
@@ -213,7 +213,7 @@ async def _cite(
     citation_id: str | None,
     role: str | None,
     edition: str | None,
-    zotero: str | None,
+    edition_key: str | None,
     locator: str | None,
     window: str | None,
     json_output: bool,
@@ -257,7 +257,7 @@ async def _cite(
                 citation_id=citation_id,
                 role=role,
                 edition=edition,
-                zotero_key=zotero,
+                edition_key=edition_key,
                 locator=locator_obj,
                 window=window_tuple,
             )
@@ -514,13 +514,13 @@ async def _import(path: str, slug: str, dry_run: bool, json_output: bool) -> Non
 @work_app.command("set-key")
 def set_key_command(
     document_id: str = typer.Argument(..., help="Document UUID."),
-    zotero_key: str = typer.Argument(..., help="Zotero key to store on the document."),
+    edition_key: str = typer.Argument(..., help="Edition key to store on the document."),
 ) -> None:
-    """Store a Zotero key in a document's metadata for later joins."""
-    asyncio.run(_set_key(document_id, zotero_key))
+    """Store an edition key in a document's metadata for later joins."""
+    asyncio.run(_set_key(document_id, edition_key))
 
 
-async def _set_key(document_id: str, zotero_key: str) -> None:
+async def _set_key(document_id: str, edition_key: str) -> None:
     from research_engine.composition import build_container
     from research_engine.config import load_settings
 
@@ -535,7 +535,7 @@ async def _set_key(document_id: str, zotero_key: str) -> None:
         if document is None:
             console.print(f"[red]Document not found: {document_id}[/red]")
             raise typer.Exit(code=1)
-        updated = await container.docs.update_metadata(doc_uuid, {"zotero_key": zotero_key})
-        console.print(f"{updated.title or updated.id}: zotero_key={zotero_key}")
+        updated = await container.docs.update_metadata(doc_uuid, {"edition_key": edition_key})
+        console.print(f"{updated.title or updated.id}: edition_key={edition_key}")
     finally:
         await container.close()

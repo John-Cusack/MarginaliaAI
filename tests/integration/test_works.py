@@ -63,7 +63,7 @@ async def _ingest(
     """The lexicon document. None means the default key; pass {} for no key."""
     doc_id = await corpus.add_document(
         title="Dabaris",
-        metadata={"zotero_key": DOC_KEY} if metadata is None else metadata,
+        metadata={"edition_key": DOC_KEY} if metadata is None else metadata,
     )
     async with transaction(engine) as tx:
         await PGDocumentTextRepo(engine).put(tx, doc_id, TEXT, "test", "1.0")
@@ -155,17 +155,17 @@ async def test_tier_honesty_holds_through_work_verify(
 
 
 @pytest.mark.asyncio
-async def test_zotero_mismatch(
+async def test_edition_mismatch(
     engine: AsyncEngine, corpus: Corpus, tmp_path: Path
 ) -> None:
-    doc_id = await _ingest(engine, corpus, metadata={"zotero_key": "OTHER_2026"})
+    doc_id = await _ingest(engine, corpus, metadata={"edition_key": "OTHER_2026"})
     # Rewrite the entries' key expectation implicitly: entries carry DOC_KEY,
     # the document carries OTHER_2026.
     name = _write_work(tmp_path, doc_id)
 
     report = await _verifier(engine, tmp_path).verify_work(name)
 
-    assert _by_citation(report)["c1"] == ["AUTH_ZOTERO_KEY_MISMATCH"]
+    assert _by_citation(report)["c1"] == ["AUTH_EDITION_KEY_MISMATCH"]
 
 
 @pytest.mark.asyncio
@@ -176,7 +176,7 @@ async def test_set_key_clears_the_unknown_finding(
     name = _write_work(tmp_path, doc_id)
     verifier = _verifier(engine, tmp_path)
     before = await verifier.verify_work(name)
-    assert "AUTH_ZOTERO_KEY_UNKNOWN" in _by_citation(before)["c1"]
+    assert "AUTH_EDITION_KEY_UNKNOWN" in _by_citation(before)["c1"]
 
     runner = CliRunner()
     result = await asyncio.to_thread(
@@ -186,9 +186,9 @@ async def test_set_key_clears_the_unknown_finding(
     assert result.exit_code == 0, result.output
     assert DOC_KEY in result.output
     stored = await PGDocumentRepo(engine).get(doc_id)
-    assert stored is not None and stored.metadata.get("zotero_key") == DOC_KEY
+    assert stored is not None and stored.metadata.get("edition_key") == DOC_KEY
     after = await verifier.verify_work(name)
-    assert "AUTH_ZOTERO_KEY_UNKNOWN" not in _by_citation(after)["c1"]
+    assert "AUTH_EDITION_KEY_UNKNOWN" not in _by_citation(after)["c1"]
 
 
 @pytest.mark.asyncio
@@ -210,7 +210,7 @@ async def test_citations_find_the_fixture_work(
     finder = WorkCitationFinder(tmp_path)
 
     by_document = await finder.find(document_id=doc_id)
-    by_zotero = await finder.find(zotero_key=DOC_KEY)
+    by_edition = await finder.find(edition_key=DOC_KEY)
     by_claim = await finder.find(claim_ref="TEST-001")
 
     assert {match["citation_id"] for match in by_document["matches"]} == {
@@ -218,13 +218,13 @@ async def test_citations_find_the_fixture_work(
     }
     assert all(match["work_path"] == name for match in by_document["matches"])
     assert by_document["source"] == "files"
-    assert {match["citation_id"] for match in by_zotero["matches"]} == {
+    assert {match["citation_id"] for match in by_edition["matches"]} == {
         "c1", "c2", "c3", "c4", "c5", "c6", "c7",
     }
     assert len(by_claim["matches"]) == 1
     assert by_claim["matches"][0]["work_path"] == name
 
-    missing = await finder.find(zotero_key="NO_SUCH_KEY")
+    missing = await finder.find(edition_key="NO_SUCH_KEY")
     assert missing["matches"] == []
 
 
@@ -240,7 +240,7 @@ async def test_find_passages_hits_carry_the_source_block(
     """The citation draft rides the hit, read once per page, not per hit."""
     doc_id = await corpus.add_document(
         title="Commons",
-        metadata={"zotero_key": DOC_KEY, "author": "Kittel"},
+        metadata={"edition_key": DOC_KEY, "author": "Kittel"},
     )
     split = len(SOURCE_TEXT) // 2
     async with transaction(engine) as tx:
@@ -288,7 +288,7 @@ async def test_find_passages_hits_carry_the_source_block(
     assert len(ours) == 2
     for hit in ours:
         assert hit.source is not None
-        assert hit.source.zotero_key == DOC_KEY
+        assert hit.source.edition_key == DOC_KEY
         assert hit.source.parser_version == "9.9"
         assert hit.source.has_canonical_text is True
         assert hit.source.has_offsets is True

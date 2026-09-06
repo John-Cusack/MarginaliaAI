@@ -30,7 +30,7 @@ citations:
     char_end: 62
     quoted_text: "The prophets pair two words."
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
     locator: {page: 1}
   - id: c2
     document_id: 11111111-1111-1111-1111-111111111111

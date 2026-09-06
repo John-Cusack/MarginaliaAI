@@ -13,7 +13,7 @@ logger = structlog.get_logger()
 
 TOOL_NAME = "work_citations"
 TOOL_DESCRIPTION = (
-    "Find the works citing a source: by document id, by Zotero key, or the "
+    "Find the works citing a source: by document id, by edition key, or the "
     "works resting on a claim ref. Exactly one selector. In Phase 0 this scans "
     "the work files; once the Step 4 mirror exists the same call queries it "
     "and says so in `source`."
@@ -26,9 +26,9 @@ TOOL_SCHEMA: dict[str, Any] = {
             "format": "uuid",
             "description": "Only entries citing this document.",
         },
-        "zotero_key": {
+        "edition_key": {
             "type": "string",
-            "description": "Only entries carrying this Zotero key.",
+            "description": "Only entries carrying this edition key.",
         },
         "claim_ref": {
             "type": "string",
@@ -42,7 +42,7 @@ async def handler(
     container: Any,
     *,
     document_id: str | None = None,
-    zotero_key: str | None = None,
+    edition_key: str | None = None,
     claim_ref: str | None = None,
 ) -> dict[str, Any]:
     reader = getattr(container, "work_files", None)
@@ -55,13 +55,13 @@ async def handler(
             }
         }
     given = [name for name, value in
-             (("document_id", document_id), ("zotero_key", zotero_key), ("claim_ref", claim_ref))
+             (("document_id", document_id), ("edition_key", edition_key), ("claim_ref", claim_ref))
              if value is not None]
     if len(given) != 1:
         return {
             "error": {
                 "code": "invalid_input",
-                "message": f"Pass exactly one of document_id, zotero_key, claim_ref (got {given})",
+                "message": f"Pass exactly one of document_id, edition_key, claim_ref (got {given})",
                 "details": None,
             }
         }
@@ -80,7 +80,7 @@ async def handler(
     try:
         finder = WorkCitationFinder(reader.works_dir)
         result = await finder.find(
-            document_id=doc_uuid, zotero_key=zotero_key, claim_ref=claim_ref
+            document_id=doc_uuid, edition_key=edition_key, claim_ref=claim_ref
         )
         if getattr(container, "works_mirror_available", False):
             result["source"] = "mirror"

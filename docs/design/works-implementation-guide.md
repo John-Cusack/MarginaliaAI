@@ -117,9 +117,9 @@ then the companion docs. Nothing in a companion doc overrides the master.
 Two facts about existing code that shape this work:
 
 - `core.documents.metadata` is `json`, not `jsonb`. Read keys with
-  `metadata->>'zotero_key'` in SQL, or `sa.cast(documents.c.metadata, JSONB)`
+  `metadata->>'edition_key'` in SQL, or `sa.cast(documents.c.metadata, JSONB)`
   as `repositories/documents.py` does. **Nothing in the engine writes a
-  `zotero_key` today**; Step 2 adds the way keys get onto documents.
+  `edition_key` today**; Step 2 adds the way keys get onto documents.
 - `core.passages.char_start` and `char_end` are nullable. Rows from older
   chunkers can lack offsets. A hit without offsets is not a citation draft, and
   the `source` block says so.
@@ -199,7 +199,7 @@ Use only what exists: `find_passages`, `get_passage_context`, and the CLI
    `RE_WORKS_DIR` in Step 2.
 2. For every sentence that rests on a source: find it, read it, run the CLI
    with the document id, and copy the returned `char_start`, `char_end`, and
-   `source_text` into an entry. Set `intent`. Set `zotero_key` to the key the
+   `source_text` into an entry. Set `intent`. Set `edition_key` to the key the
    document will carry (Step 2 adds the way to store it; write it in the entry
    now). Put `[^cN]` in the prose.
 3. Aim for at least six entries across at least two documents, with at least
@@ -241,7 +241,7 @@ real Postgres, the first real work exists with verified entries, and the doc
 set is committed.
 
 **Scope.** No migration. One setting, one parser, three MCP tools plus their
-CLI commands, one CLI command for Zotero keys, and two engine changes from
+CLI commands, one CLI command for edition keys, and two engine changes from
 decision 6: the `source` block on search hits and the window hint on the verify
 service. `work_index` and the mirror are Step 4 and are built only on their
 trigger.
@@ -263,20 +263,20 @@ relative to it; `work_path` values are always relative to it and use forward
 slashes. Files named `README.md` and `_TEMPLATE.md`, and any file starting with
 `_`, are not works.
 
-### 2.2 Zotero keys on documents
+### 2.2 Edition keys on documents
 
-Nothing writes `zotero_key` today. Two additions:
+Nothing writes `edition_key` today. Two additions:
 
-- CLI `research-engine work set-key <document_id> <ZOTERO_KEY>` calling
-  `PGDocumentRepo.update_metadata(doc_id, {"zotero_key": key})`. Prints the
+- CLI `research-engine work set-key <document_id> <EDITION_KEY>` calling
+  `PGDocumentRepo.update_metadata(doc_id, {"edition_key": key})`. Prints the
   document title and the key. Refuses (non-zero exit) if the document does not
   exist.
 - The ingest convention, documented in the README of each pack and in
-  `CHANGELOG.md`: a pack that knows its material's Zotero key writes it into
-  the document draft's `metadata["zotero_key"]`. No core code enforces this;
+  `CHANGELOG.md`: a pack that knows its material's edition key writes it into
+  the document draft's `metadata["edition_key"]`. No core code enforces this;
   `work_verify` reports its absence per citation.
 
-`zotero_key` is read everywhere with `metadata->>'zotero_key'` (the column is
+`edition_key` is read everywhere with `metadata->>'edition_key'` (the column is
 `json`, not `jsonb`).
 
 ### 2.3 The file contract parser
@@ -294,7 +294,7 @@ class CitationEntry(BaseModel):
     char_end: int                # > char_start
     quoted_text: str             # non-empty
     edition: str | None = None
-    zotero_key: str | None = None
+    edition_key: str | None = None
     locator: dict[str, Any] = Field(default_factory=dict)
 
 class WorkFrontMatter(BaseModel):
@@ -340,8 +340,8 @@ checks at the first hard failure:
 | 4 | `verification.verify(quoted_text, document_id, window=(char_start, char_end))` | `near` or `not_found` → `AUTH_QUOTE_UNVERIFIED` with the tier and divergence in `detail` | error |
 | 5 | returned `char_start`/`char_end` equal the entry's | `AUTH_SOURCE_SPAN_STALE` with both spans in `detail` (the text moved under the entry: re-parse drift or a hand-typed offset) | error |
 | 6 | region rule for the intent (§2.7c) | `AUTH_SPAN_NOT_NARROWED` (quotation, translation) / `AUTH_SPAN_REGION` (support, source, definition) | error / warning |
-| 7 | `zotero_key` or `edition` present | `AUTH_CITATION_EDITION_MISSING` | warning at review, error at publish |
-| 8 | `zotero_key` equals the document's `metadata.zotero_key` | absent on the document → `AUTH_ZOTERO_KEY_UNKNOWN` (warning); present and different → `AUTH_ZOTERO_KEY_MISMATCH` (error) | as stated |
+| 7 | `edition_key` or `edition` present | `AUTH_CITATION_EDITION_MISSING` | warning at review, error at publish |
+| 8 | `edition_key` equals the document's `metadata.edition_key` | absent on the document → `AUTH_EDITION_KEY_UNKNOWN` (warning); present and different → `AUTH_EDITION_KEY_MISMATCH` (error) | as stated |
 | 9 | entry id appears as a marker in the body | `AUTH_CITATION_MARKER_MISSING` | warning |
 
 Per work, after the entries: every marker has an entry, else
@@ -365,7 +365,7 @@ Output:
     "work": "W-001", "status": "draft",
     "citations": [{"id": "c1", "intent": "quotation", "tier": "normalized",
                    "document_id": "…", "char_start": 3326, "char_end": 3546,
-                   "zotero_key": "TDNT_1964", "findings": ["AUTH_SPAN_REGION"]}],
+                   "edition_key": "TDNT_1964", "findings": ["AUTH_SPAN_REGION"]}],
     "findings": [{"rule_id": "AUTH_QUOTE_UNVERIFIED", "severity": "error",
                   "citation_id": "c3", "message": "…", "detail": {…}}],
     "gate": {"name": "review", "passed": false, "blockers": ["AUTH_QUOTE_UNVERIFIED"]}
@@ -380,7 +380,7 @@ failed. Rule ids are the contract; messages are for humans.
 ### 2.5 `work_citations`
 
 Tool `mcp/tools/work_citations.py` and CLI `research-engine work citations
-(--document <uuid> | --zotero <key> | --claim <ref>)`. Exactly one selector.
+(--document <uuid> | --edition-key <key> | --claim <ref>)`. Exactly one selector.
 Implementation in Phase 0: parse every work file under `works_dir` and filter
 entries (or `claims:` refs) by the selector. Output:
 
@@ -419,7 +419,7 @@ gains `source: HitSource | None = None` with
 ```python
 class HitSource(BaseModel):
     document_title: str | None
-    zotero_key: str | None
+    edition_key: str | None
     edition: str | None            # metadata.edition if a pack wrote it
     parser_version: str | None     # document_texts.parser_version; None when no canonical text
     has_canonical_text: bool
@@ -485,10 +485,10 @@ work-type policy overrides them in Step 6.
 | parser: bad entries | unit | one invalid entry yields one `AUTH_ENTRY_INVALID` and the other entries still parse |
 | verify: each finding | unit, fakes | one fixture entry per rule in §2.4 produces exactly that rule id |
 | verify: gates | unit | `review` and `publish` compute blockers as specified; `AUTH_STATUS_UNEARNED` fires |
-| verify: real corpus | integration | a fixture document (Step 1 sidecar) plus a temp works dir with a fixture work: `exact`, `normalized`, `near`, `not_found`, straddle, region, zotero mismatch all report as designed |
-| citations | integration | `--document`, `--zotero`, `--claim` each return the fixture entry and nothing else |
+| verify: real corpus | integration | a fixture document (Step 1 sidecar) plus a temp works dir with a fixture work: `exact`, `normalized`, `near`, `not_found`, straddle, region, edition mismatch all report as designed |
+| citations | integration | `--document`, `--edition-key`, `--claim` each return the fixture entry and nothing else |
 | render | unit | footnote text for a document with and without metadata; provisional tag present exactly when a part is missing |
-| set-key | integration | the key is on the document afterwards; `work_verify` stops reporting `AUTH_ZOTERO_KEY_UNKNOWN` |
+| set-key | integration | the key is on the document afterwards; `work_verify` stops reporting `AUTH_EDITION_KEY_UNKNOWN` |
 | source block | integration | a `find_passages` hit for the fixture carries the key, the parser version, `has_canonical_text` true, `has_offsets` true; one query per page (assert with a statement counter) |
 | window hint | unit + integration | as in §2.7b |
 | tier honesty | integration | `work_verify` reports `normalized` for the curly-quote entry, never `exact` |
@@ -619,7 +619,7 @@ CREATE TABLE argument.anchors (
     parser_version   text,            -- the parser version the tier was computed against
 
     edition          text,
-    zotero_key       text,
+    edition_key       text,
     locator          jsonb NOT NULL DEFAULT '{}',
     created_at       timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT anchors_role_ck CHECK (role IN ('asserts','supports','rebuts','context')),
@@ -750,14 +750,14 @@ CREATE TABLE core.work_citations (
   quoted_text   text NOT NULL,
   verify_status  text NOT NULL,           -- exact | normalized | near | not_found | no_canonical_text
   parser_version text,
-  zotero_key    text,
+  edition_key    text,
   edition       text,
   locator       jsonb NOT NULL DEFAULT '{}',
   PRIMARY KEY (work_path, citation_id),
   CONSTRAINT wc_span_ck CHECK (char_end > char_start)
 );
 CREATE INDEX wc_document_idx ON core.work_citations (document_id);
-CREATE INDEX wc_zotero_idx   ON core.work_citations (zotero_key);
+CREATE INDEX wc_edition_key_idx   ON core.work_citations (edition_key);
 ```
 
 Note: the mirror anchors inline by coordinates, deliberately. It does not
@@ -842,12 +842,12 @@ port unless a `<!-- block:… -->` comment precedes the block.
 | `role` | kept in `work_revisions.metadata.port.front_matter`; becomes a `block_claim_links` relation in Phase B; not written now |
 | `document_id`, `char_start`, `char_end` | resolved through `SourceSpanRepo.resolve` → `citation_items.source_span_id` |
 | `quoted_text` | `citation_items.quoted_text`, re-verified at port; the returned tier → `verify_status`, now() → `verified_at` |
-| `zotero_key` | `citation_items.zotero_key`; `edition_id` set when `bibliography.editions` has that key |
+| `edition_key` | `citation_items.edition_key`; `edition_id` set when `bibliography.editions` has that key |
 | `edition` | `citation_items.locator.edition` (a locator key, not a column) |
 | `locator` | `citation_items.locator`, merged with the above |
 | occurrence placement | `inline` if `[^cN]` appears in the body, else `block_end` on the last block, and `AUTH_CITATION_MARKER_MISSING` is reported |
 
-An entry with neither `zotero_key` nor `edition` fails the §5 CHECK. The port
+An entry with neither `edition_key` nor `edition` fails the §5 CHECK. The port
 refuses to start on such a work; `work_verify` reports them as
 `AUTH_CITATION_EDITION_MISSING` long before, which is the point.
 
@@ -902,16 +902,16 @@ CREATE SCHEMA bibliography;
 -- Decision 12: the stub. P3-1 extends it and turns the document join into a FK.
 CREATE TABLE bibliography.editions (
     id          uuid PRIMARY KEY,
-    zotero_key  text NOT NULL UNIQUE,
+    edition_key  text NOT NULL UNIQUE,
     csl         jsonb NOT NULL DEFAULT '{}',
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 -- Backfill in the same migration, then maintained at ingest (§6.6):
-INSERT INTO bibliography.editions (id, zotero_key)
+INSERT INTO bibliography.editions (id, edition_key)
 SELECT gen_random_uuid(), DISTINCT_KEYS.k
-FROM (SELECT DISTINCT metadata->>'zotero_key' AS k FROM core.documents
-      WHERE metadata->>'zotero_key' IS NOT NULL) AS DISTINCT_KEYS
-ON CONFLICT (zotero_key) DO NOTHING;
+FROM (SELECT DISTINCT metadata->>'edition_key' AS k FROM core.documents
+      WHERE metadata->>'edition_key' IS NOT NULL) AS DISTINCT_KEYS
+ON CONFLICT (edition_key) DO NOTHING;
 
 CREATE TABLE authored.works (
     id                  uuid PRIMARY KEY,
@@ -991,7 +991,7 @@ CREATE TABLE authored.citation_items (
     occurrence_id   uuid NOT NULL REFERENCES authored.citation_occurrences(id) ON DELETE CASCADE,
     position        integer NOT NULL,
     edition_id      uuid REFERENCES bibliography.editions(id) ON DELETE RESTRICT,   -- nullable until P3 backfills
-    zotero_key      text,
+    edition_key      text,
     source_span_id  uuid REFERENCES evidence.source_spans(id) ON DELETE RESTRICT,
     quoted_text     text,                       -- decision 1: the typed quote, per citer
     verify_status   text,                       -- NULL | exact | normalized | near
@@ -1001,13 +1001,13 @@ CREATE TABLE authored.citation_items (
     suffix          text,
     suppress_author boolean NOT NULL DEFAULT false,
     PRIMARY KEY (occurrence_id, position),
-    CONSTRAINT citation_identity_ck CHECK (edition_id IS NOT NULL OR zotero_key IS NOT NULL),
+    CONSTRAINT citation_identity_ck CHECK (edition_id IS NOT NULL OR edition_key IS NOT NULL),
     CONSTRAINT citation_verify_ck CHECK (verify_status IS NULL OR verify_status IN ('exact','normalized','near')),
     CONSTRAINT citation_quote_needs_span_ck CHECK (quoted_text IS NULL OR source_span_id IS NOT NULL)
 );
 CREATE INDEX citation_items_span_idx    ON authored.citation_items (source_span_id);
 CREATE INDEX citation_items_edition_idx ON authored.citation_items (edition_id);
-CREATE INDEX citation_items_zotero_idx  ON authored.citation_items (zotero_key);
+CREATE INDEX citation_items_edition_key_idx  ON authored.citation_items (edition_key);
 
 CREATE TABLE authored.block_source_links (
     block_id       uuid NOT NULL REFERENCES authored.work_blocks(id) ON DELETE CASCADE,
@@ -1061,17 +1061,17 @@ Protocol per repo in `ports/repositories.py` and re-export from
 | Repository | Methods (all async) |
 |---|---|
 | `PGSourceSpanRepo` (Step 3) | `resolve(tx, *, document_id, char_start, char_end) -> SourceSpan`; `get(span_id)`; `stale(limit) -> list[SourceSpan]`; `for_document(document_id)` |
-| `PGEditionRepo` | `get_by_key(zotero_key)`; `upsert_key(tx, zotero_key, csl=None)`; `list_keys()` |
+| `PGEditionRepo` | `get_by_key(edition_key)`; `upsert_key(tx, edition_key, csl=None)`; `list_keys()` |
 | `PGWorkRepo` | `insert(tx, draft)`; `get(work_id)`; `get_by_slug(slug)`; `set_current_revision(tx, work_id, revision_id)`; `update(tx, work_id, *, expected_updated_at, **fields)`; `archive(tx, work_id)` |
 | `PGWorkRevisionRepo` | `insert(tx, draft)`; `get(revision_id)`; `latest(work_id)`; `copy_forward(tx, revision_id) -> Revision` (copies blocks, occurrences, items, links with new ids and the same `block_key`/`citation_key`); `freeze(tx, revision_id, content_hash)`; `publish(tx, revision_id)`; `supersede(tx, revision_id)` |
 | `PGWorkBlockRepo` | `upsert(tx, revision_id, draft, *, expected_updated_at) -> Block`; `tree(revision_id) -> list[Block]` ordered depth-first; `by_key(revision_id, block_key)`; `delete(tx, block_id)` (RESTRICT on children) |
-| `PGCitationRepo` | `insert_occurrence(tx, draft)`; `insert_item(tx, draft)`; `for_block(block_id)`; `for_revision(revision_id)`; `by_key(revision_id, citation_key)`; `citing_span(span_id)`; `citing_key(zotero_key)` |
+| `PGCitationRepo` | `insert_occurrence(tx, draft)`; `insert_item(tx, draft)`; `for_block(block_id)`; `for_revision(revision_id)`; `by_key(revision_id, citation_key)`; `citing_span(span_id)`; `citing_key(edition_key)` |
 | `PGWorkLinkRepo` | `add_source_link(tx, …)`; `add_entity_link(tx, …)`; `for_block(block_id)`; `for_span(span_id)`; `for_entity(entity_id, relation)` |
 | `PGWaiverRepo` | `insert(tx, draft)`; `for_revision(revision_id) -> list[Waiver]` |
 
 Domain models in `domain/works.py`, `domain/citations.py`, `domain/spans.py`:
 pydantic v2, `X` for rows and `XDraft` for inserts, validators on drafts (for
-example `CitationItemDraft` enforces `edition_id or zotero_key` and
+example `CitationItemDraft` enforces `edition_id or edition_key` and
 `quoted_text implies source_span_id` before the database does).
 
 ### 6.3 Services
@@ -1085,8 +1085,8 @@ the whole of `work_cite`. In one transaction:
 
 1. Resolve the block by `block_key` in the work's current draft revision;
    refuse if the revision is not `draft`.
-2. Resolve identity: `zotero_key` → `PGEditionRepo.get_by_key`; set
-   `edition_id` when found, keep `zotero_key` either way. Neither given →
+2. Resolve identity: `edition_key` → `PGEditionRepo.get_by_key`; set
+   `edition_id` when found, keep `edition_key` either way. Neither given →
    `AUTH_CITATION_EDITION_MISSING`, nothing written.
 3. If a `quote` is given: verify it with the window hint when the caller passed
    one (Step 2 §2.7b), else with `document_id`, else corpus-wide. `not_found`
@@ -1107,8 +1107,8 @@ returns `{"error": {"code": "conflict", …}}`.
 
 **`WorkValidationService.validate(revision_id, gate)`** returns findings with
 rule ids (Appendix A). Structural checks: markers ↔ occurrences bijective per
-block; parents in the same revision; every item's `zotero_key` known to
-editions or `AUTH_ZOTERO_KEY_UNKNOWN`; span staleness via the Step 3 query;
+block; parents in the same revision; every item's `edition_key` known to
+editions or `AUTH_EDITION_KEY_UNKNOWN`; span staleness via the Step 3 query;
 `near` items without a matching waiver; region rule per intent; ungrounded
 blocks of type `translation_unit` or `quotation` (warning).
 
@@ -1151,7 +1151,7 @@ citations:
     char_end: 3546
     quoted_text: "…"
     verify_status: normalized
-    zotero_key: TDNT_1964
+    edition_key: TDNT_1964
     locator: {volume: II, page: 64}
 ---
 
@@ -1171,7 +1171,7 @@ Footnote definitions are not emitted; rendering to a reader's format is
 |---|---|---|
 | `AUTH_SPAN_NOT_NARROWED` | error | intent is `quotation` or `translation` and the item's span coincides with a passage row's `[char_start, char_end]` for the current chunker, or exceeds `MAX_QUOTE_CHARS` (default 1000) |
 | `AUTH_SPAN_REGION` | warning | intent is `support`, `source` or `definition` and the span coincides with a passage row |
-| `AUTH_ZOTERO_KEY_UNKNOWN` | warning | `zotero_key` has no `bibliography.editions` row |
+| `AUTH_EDITION_KEY_UNKNOWN` | warning | `edition_key` has no `bibliography.editions` row |
 | `AUTH_FILE_DRIFT` | warning | a flipped work's exported file differs from the last export (F2); reported by `work_validate` when the works directory still holds the file |
 | `AUTH_STALE_WRITE` | error (tool-level conflict) | `expected_updated_at` does not match |
 
@@ -1183,7 +1183,7 @@ way filter extensions are registered today.
 
 ### 6.6 Keeping `bibliography.editions` populated
 
-At ingest, after `documents.insert`, if `metadata.zotero_key` is present call
+At ingest, after `documents.insert`, if `metadata.edition_key` is present call
 `PGEditionRepo.upsert_key(tx, key)` in the same transaction. Add the call in
 `services/ingestion/orchestrator.py` next to the `document_texts.put` call.
 Packs keep writing the key into document metadata as they do today; nothing
@@ -1225,7 +1225,7 @@ service, `finally: await container.close()`.
 | tier per row | two citations of one span, one typed clean and one with OCR noise, keep `exact` and `normalized` respectively |
 | narrowing | a `quotation` cite whose span equals a passage's bounds is refused with `AUTH_SPAN_NOT_NARROWED`; the same span with intent `background` is accepted |
 | window hint | a quote copied from a hit resolves inside the window without a whole-document search (assert `find_raw` is not called) |
-| editions | ingest a fixture with a Zotero key; the editions row exists; `work_cite` with that key sets `edition_id` |
+| editions | ingest a fixture with an edition key; the editions row exists; `work_cite` with that key sets `edition_id` |
 | freeze | a `near` item without a waiver blocks; with a waiver row the freeze succeeds and the hash is stable across two computations |
 | drafting loop | export a draft, edit a paragraph and add one, import as a new revision; block keys of untouched blocks are unchanged, the edited block keeps its key, the new block has a new key |
 | flip drift | edit the exported file of a flipped work; `work_validate` reports `AUTH_FILE_DRIFT`; the database is unchanged |
@@ -1268,10 +1268,10 @@ files; "P1" means `work_validate` emits it over rows.
 | `AUTH_SOURCE_SPAN_STALE` | error | ✓ | ✓ | P0: verified span ≠ entry span; P1: span `parser_version` ≠ document's | target §13 |
 | `AUTH_SPAN_NOT_NARROWED` | error | ✓ | ✓ | quotation/translation cites a region or exceeds `MAX_QUOTE_CHARS` | decision 6 |
 | `AUTH_SPAN_REGION` | warning | ✓ | ✓ | support/source/definition cites a region | decision 6; id by this guide |
-| `AUTH_CITATION_EDITION_MISSING` | warning; error at publish | ✓ | ✓ | neither `zotero_key` nor `edition`/`edition_id` | target §13 |
+| `AUTH_CITATION_EDITION_MISSING` | warning; error at publish | ✓ | ✓ | neither `edition_key` nor `edition`/`edition_id` | target §13 |
 | `AUTH_CITATION_EDITION_MISMATCH` | error | — | ✓ | span's document key ≠ item's key (key comparison until P3) | target §13 |
-| `AUTH_ZOTERO_KEY_UNKNOWN` | warning | ✓ | ✓ | P0: the document carries no key; P1: no `bibliography.editions` row | decision 12; id by this guide |
-| `AUTH_ZOTERO_KEY_MISMATCH` | error | ✓ | — | entry key ≠ document key | bridge §4 |
+| `AUTH_EDITION_KEY_UNKNOWN` | warning | ✓ | ✓ | P0: the document carries no key; P1: no `bibliography.editions` row | decision 12; id by this guide |
+| `AUTH_EDITION_KEY_MISMATCH` | error | ✓ | — | entry key ≠ document key | bridge §4 |
 | `AUTH_CITATION_MARKER_MISSING` | warning | ✓ | error in P1 | entry/occurrence with no marker | target §13 |
 | `AUTH_CITATION_MARKER_DANGLING` | error | ✓ | ✓ | marker with no entry/occurrence | target §13 |
 | `AUTH_CLAIM_UNRESOLVED` | info → warning → error at publish after 010 | ✓ | ✓ | a `claims:` ref has no `argument.claims` row | bridge §6; id by this guide |
@@ -1306,7 +1306,7 @@ shapes are given; descriptions belong in `TOOL_DESCRIPTION`.
 
 // work_citations  (exactly one selector; the handler enforces it)
 { "type": "object",
-  "properties": { "document_id": {"type": "string"}, "zotero_key": {"type": "string"},
+  "properties": { "document_id": {"type": "string"}, "edition_key": {"type": "string"},
                   "claim_ref": {"type": "string"} } }
 // → {"matches": [...], "source": "files" | "mirror"}
 
@@ -1323,7 +1323,7 @@ shapes are given; descriptions belong in `TOOL_DESCRIPTION`.
   "required": ["text"] }
 
 // find_passages hit (extended): every hit gains
-// "source": {"document_title", "zotero_key", "edition", "parser_version", "has_canonical_text", "has_offsets"}
+// "source": {"document_title", "edition_key", "edition", "parser_version", "has_canonical_text", "has_offsets"}
 ```
 
 **Phase 1**
@@ -1342,7 +1342,7 @@ shapes are given; descriptions belong in `TOOL_DESCRIPTION`.
 //    "blocks": [{"block_id", "block_key", "parent_key", "position", "block_type", "title",
 //                "body_markdown", "attributes", "updated_at",
 //                "citations": [{"citation_key", "intent", "placement",
-//                               "items": [{"position", "zotero_key", "edition_id", "source_span_id",
+//                               "items": [{"position", "edition_key", "edition_id", "source_span_id",
 //                                          "quoted_text", "verify_status", "verified_at", "locator"}]}],
 //                "links": [{"kind": "source"|"entity", "target_id", "relation", "confidence"}]}]}
 
@@ -1360,13 +1360,13 @@ shapes are given; descriptions belong in `TOOL_DESCRIPTION`.
                   "intent": {"type": "string", "enum": ["source","support","contrast","background","definition","translation","quotation","see_also"]},
                   "quote": {"type": "string"}, "document_id": {"type": "string"},
                   "window": {"type": "object"},
-                  "zotero_key": {"type": "string"}, "edition_id": {"type": "string"},
+                  "edition_key": {"type": "string"}, "edition_id": {"type": "string"},
                   "locator": {"type": "object"}, "prefix": {"type": "string"}, "suffix": {"type": "string"},
                   "placement": {"type": "string", "enum": ["inline", "block_end"]},
                   "citation_key": {"type": "string"} },
   "required": ["slug", "block_key", "intent"] }
 // → {"occurrence_id", "citation_key", "marker": "{{cite:<key>}}",
-//    "item": {"source_span_id", "char_start", "char_end", "verify_status", "edition_id", "zotero_key"},
+//    "item": {"source_span_id", "char_start", "char_end", "verify_status", "edition_id", "edition_key"},
 //    "warnings": ["AUTH_SPAN_REGION"]}
 // refusal → {"error": {"code": "validation_error", "message", "details": {"rule_id": "AUTH_QUOTE_UNVERIFIED", "tier": "not_found"}}}
 
@@ -1456,6 +1456,20 @@ Record every deviation from this guide, every contract gap found by the real
 work, and every rehearsal defect here, newest first, with the date and the
 step.
 
+- 2026-09-06 — `zotero_key` renamed to `edition_key` everywhere (migration
+  013): the key never touched Zotero's servers — a plain string naming an
+  edition — and the name kept suggesting an account nobody needs. Columns
+  (`bibliography.editions`, `authored.citation_items`, `argument.anchors`),
+  the `citation_items_zotero_idx` index, the unique constraint, the
+  `core.documents.metadata` JSON key (values preserved in the migration),
+  domain fields, tool/CLI params (`--zotero` is now `--edition-key`),
+  front-matter entries, the export format, `work_get` output, and the
+  `AUTH_ZOTERO_KEY_UNKNOWN` / `AUTH_ZOTERO_KEY_MISMATCH` rule ids all move
+  together. Method names (`get_by_key`, `upsert_key`) and the free-text
+  `edition` field stay. No frozen work exists, so no stored hash or waiver
+  names the old field. The migration round-trip test now runs against an
+  isolated scratch database: the dev corpus holds real editions rows that
+  must not be dropped to test a migration.
 - 2026-09-05 — `work_cite` inherits its edition: when the caller names no
   edition, `attach` takes the span's document key (with its edition id when
   one exists) instead of refusing. Explicit identity still wins untouched —
@@ -1549,8 +1563,8 @@ step.
   re-checked against live code; no discrepancies. No Appendix E item
   objected to — all implemented as written. Choices where the guide is
   silent, Step 2:
-  - §2.4 check 8 (`AUTH_ZOTERO_KEY_UNKNOWN`) fires only when the entry
-    carries a `zotero_key` the document lacks. An entry with neither key
+  - §2.4 check 8 (`AUTH_EDITION_KEY_UNKNOWN`) fires only when the entry
+    carries a `edition_key` the document lacks. An entry with neither key
     nor edition is covered by `AUTH_CITATION_EDITION_MISSING` alone.
   - §2.4 dangling markers ignore markers matching an *invalid* entry id;
     `AUTH_ENTRY_INVALID` already reports those.

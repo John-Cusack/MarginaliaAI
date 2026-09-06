@@ -85,7 +85,7 @@ class PGCitationRepo:
                     occurrence_id=draft.occurrence_id,
                     position=draft.position,
                     edition_id=draft.edition_id,
-                    zotero_key=draft.zotero_key,
+                    edition_key=draft.edition_key,
                     source_span_id=draft.source_span_id,
                     quoted_text=draft.quoted_text,
                     verify_status=draft.verify_status,
@@ -163,8 +163,8 @@ class PGCitationRepo:
                 .where(citation_items.c.source_span_id == span_id),
             )
 
-    async def citing_key(self, zotero_key: str) -> list[BlockCitations]:
-        """Every occurrence naming this Zotero key, for trace."""
+    async def citing_key(self, edition_key: str) -> list[BlockCitations]:
+        """Every occurrence naming this edition key, for trace."""
         async with self._engine.connect() as conn:
             return await self._attached(
                 conn,
@@ -175,7 +175,7 @@ class PGCitationRepo:
                         citation_items.c.occurrence_id == citation_occurrences.c.id,
                     )
                 )
-                .where(citation_items.c.zotero_key == zotero_key),
+                .where(citation_items.c.edition_key == edition_key),
             )
 
     async def _attached(self, conn: Any, occurrences: Any) -> list[BlockCitations]:
@@ -227,7 +227,7 @@ class PGCitationRepo:
             occurrence_id=row.occurrence_id,
             position=row.position,
             edition_id=row.edition_id,
-            zotero_key=row.zotero_key,
+            edition_key=row.edition_key,
             source_span_id=row.source_span_id,
             quoted_text=row.quoted_text,
             verify_status=row.verify_status,

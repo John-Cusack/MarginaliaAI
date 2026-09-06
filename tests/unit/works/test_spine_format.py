@@ -138,7 +138,7 @@ def _view_with_citation() -> AssembledRevision:
         created_at=now,
     )
     item = CitationItem(
-        occurrence_id=occurrence.id, position=0, zotero_key="DABAR_2026"
+        occurrence_id=occurrence.id, position=0, edition_key="DABAR_2026"
     )
     paragraph = AssembledBlock(
         block=_block(KEY_B, "paragraph", None, "A background claim."),

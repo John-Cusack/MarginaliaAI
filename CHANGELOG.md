@@ -1,8 +1,17 @@
 # Changelog
 
+### `zotero_key` is now `edition_key` (migration 013)
+
+The edition identifier never touched Zotero's servers — a plain string in
+this database — and the name kept implying an account nobody needs. Every
+column, field, tool and CLI parameter, front-matter key, export field, and
+the two rule ids move together (`AUTH_EDITION_KEY_UNKNOWN`,
+`AUTH_EDITION_KEY_MISMATCH`); values are preserved, including the
+`core.documents.metadata` keys. No signup exists or ever did.
+
 ### `work_cite` inherits its edition from the cited document
 
-Passing `zotero_key` or `edition_id` on every cite was friction without
+Passing `edition_key` or `edition_id` on every cite was friction without
 function: the span's document already names its edition. `attach` now
 inherits the document's key (and edition id) when the caller names neither;
 explicit identity still wins and is what the edition-mismatch check tests
@@ -25,7 +34,7 @@ rows, hashes the authored content, and seals the draft. `work export
 --draft` renders the §6.4 markdown and `work import` reads an edited file
 back into a new current draft revision (copy-forward; dangling markers
 refuse the whole import). Ingest keeps `bibliography.editions` behind
-`documents.insert`, so row citations join Zotero keys. Per-work-type policy
+`documents.insert`, so row citations join edition keys. Per-work-type policy
 lives under `RE_WORKS_POLICY` (error, warn, allow over the core floor).
 
 ### `copy_forward` repaired for multi-block revisions

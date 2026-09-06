@@ -20,7 +20,7 @@ ENTRY = """  - id: {cid}
     char_end: 62
     quoted_text: "The prophets pair two words."
     intent: quotation
-    zotero_key: DABAR_2026
+    edition_key: DABAR_2026
     locator: {{volume: II, page: 64}}
 """
 

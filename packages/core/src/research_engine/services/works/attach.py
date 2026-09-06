@@ -58,7 +58,7 @@ class AttachedItem(BaseModel):
     char_end: int | None = None
     verify_status: str | None = None
     edition_id: UUID | None = None
-    zotero_key: str | None = None
+    edition_key: str | None = None
 
 
 class CitationAttached(BaseModel):
@@ -106,7 +106,7 @@ class CitationService:
         quote: str | None = None,
         document_id: UUID | None = None,
         window: tuple[int, int] | None = None,
-        zotero_key: str | None = None,
+        edition_key: str | None = None,
         edition_id: UUID | None = None,
         locator: dict[str, Any] | None = None,
         prefix: str | None = None,
@@ -148,8 +148,8 @@ class CitationService:
         # without function. Only a spanless cite with no identity is still
         # refused: a bibliography entry with no source is not a citation.
         resolved_edition_id = edition_id
-        if resolved_edition_id is None and zotero_key is not None:
-            edition = await self._editions.get_by_key(zotero_key)
+        if resolved_edition_id is None and edition_key is not None:
+            edition = await self._editions.get_by_key(edition_key)
             if edition is not None:
                 resolved_edition_id = edition.id
 
@@ -211,16 +211,16 @@ class CitationService:
             ):
                 warnings.append("AUTH_SPAN_REGION")
 
-        if resolved_edition_id is None and zotero_key is None:
+        if resolved_edition_id is None and edition_key is None:
             inherited = await self._inherit_edition(span_document_id)
             if inherited is None:
                 raise AttachRefused(
                     "AUTH_CITATION_EDITION_MISSING",
                     "No edition was given and the cited document names none: "
-                    "pass zotero_key or edition_id, or key the document "
+                    "pass edition_key or edition_id, or key the document "
                     "first. Nothing was written.",
                 )
-            zotero_key, resolved_edition_id = inherited
+            edition_key, resolved_edition_id = inherited
 
         # uuid_utils ids never cross into pydantic (see WorkService.upsert_block).
         key = citation_key or UUID(str(uuid7()))
@@ -250,7 +250,7 @@ class CitationService:
                     occurrence_id=occurrence.id,
                     position=0,
                     edition_id=resolved_edition_id,
-                    zotero_key=zotero_key,
+                    edition_key=edition_key,
                     source_span_id=span_id,
                     quoted_text=quote,
                     verify_status=tier,
@@ -273,7 +273,7 @@ class CitationService:
                 char_end=char_end,
                 verify_status=tier,
                 edition_id=resolved_edition_id,
-                zotero_key=zotero_key,
+                edition_key=edition_key,
             ),
             warnings=warnings,
         )
@@ -293,7 +293,7 @@ class CitationService:
         document = await self._documents.get(span_document_id)
         if document is None:  # pragma: no cover - spans RESTRICT documents
             return None
-        key = (document.metadata or {}).get("zotero_key")
+        key = (document.metadata or {}).get("edition_key")
         if not isinstance(key, str) or not key:
             return None
         edition = await self._editions.get_by_key(key)

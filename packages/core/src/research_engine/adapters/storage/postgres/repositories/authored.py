@@ -326,7 +326,7 @@ class PGWorkRevisionRepo:
                             occurrence_id=new_occurrence_id,
                             position=item.position,
                             edition_id=item.edition_id,
-                            zotero_key=item.zotero_key,
+                            edition_key=item.edition_key,
                             source_span_id=item.source_span_id,
                             quoted_text=item.quoted_text,
                             verify_status=item.verify_status,

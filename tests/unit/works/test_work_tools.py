@@ -69,9 +69,9 @@ class TestWorkCitationsTool:
         "kwargs",
         [
             {},
-            {"document_id": "d", "zotero_key": "z"},
+            {"document_id": "d", "edition_key": "z"},
             {"document_id": "d", "claim_ref": "c"},
-            {"document_id": "d", "zotero_key": "z", "claim_ref": "c"},
+            {"document_id": "d", "edition_key": "z", "claim_ref": "c"},
         ],
     )
     async def test_exactly_one_selector(self, tmp_path, kwargs):

@@ -37,7 +37,7 @@ class FakeDocuments:
     """Maps document id to its metadata dict. Absent means unknown."""
 
     def __init__(self, docs: dict | None = None) -> None:
-        self._docs = {DOC: {"zotero_key": "DABAR_2026"}} if docs is None else docs
+        self._docs = {DOC: {"edition_key": "DABAR_2026"}} if docs is None else docs
 
     async def get(self, document_id):
         if document_id not in self._docs:
@@ -87,7 +87,7 @@ def _entry(**overrides) -> CitationEntry:
         "char_start": 10,
         "char_end": 60,
         "quoted_text": "a fine sentence here",
-        "zotero_key": "DABAR_2026",
+        "edition_key": "DABAR_2026",
     }
     fields.update(overrides)
     return CitationEntry(**fields)
@@ -225,7 +225,7 @@ class TestEachFinding:
 
     @pytest.mark.asyncio
     async def test_missing_edition_is_a_review_warning(self, tmp_path):
-        entry = _entry(zotero_key=None)
+        entry = _entry(edition_key=None)
 
         report = await _verifier(tmp_path).verify_work("essay.md", _work=_work([entry]))
 
@@ -238,15 +238,15 @@ class TestEachFinding:
 
         report = await verifier.verify_work("essay.md", _work=_work())
 
-        assert _for("c1", report) == ["AUTH_ZOTERO_KEY_UNKNOWN"]
+        assert _for("c1", report) == ["AUTH_EDITION_KEY_UNKNOWN"]
 
     @pytest.mark.asyncio
     async def test_differing_key_is_a_mismatch(self, tmp_path):
-        verifier = _verifier(tmp_path, documents=FakeDocuments({DOC: {"zotero_key": "OTHER"}}))
+        verifier = _verifier(tmp_path, documents=FakeDocuments({DOC: {"edition_key": "OTHER"}}))
 
         report = await verifier.verify_work("essay.md", _work=_work())
 
-        assert _for("c1", report) == ["AUTH_ZOTERO_KEY_MISMATCH"]
+        assert _for("c1", report) == ["AUTH_EDITION_KEY_MISMATCH"]
 
     @pytest.mark.asyncio
     async def test_missing_marker(self, tmp_path):
@@ -307,7 +307,7 @@ class TestGates:
 
     @pytest.mark.asyncio
     async def test_publish_fails_on_a_missing_edition(self, tmp_path):
-        entry = _entry(zotero_key=None)
+        entry = _entry(edition_key=None)
 
         report = await _verifier(tmp_path).verify_work(
             "essay.md", "publish", _work=_work([entry])
@@ -318,7 +318,7 @@ class TestGates:
 
     @pytest.mark.asyncio
     async def test_published_status_must_earn_it(self, tmp_path):
-        entry = _entry(zotero_key=None)
+        entry = _entry(edition_key=None)
 
         report = await _verifier(tmp_path).verify_work(
             "essay.md", "review", _work=_work([entry], status="published")

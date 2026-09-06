@@ -15,7 +15,7 @@ TOOL_NAME = "work_verify"
 TOOL_DESCRIPTION = (
     "Check a work file's front-matter citations against the corpus. Each entry "
     "is verified against the span it names (exact or normalized to pass), then "
-    "checked for staleness, region narrowing, edition identity, Zotero key "
+    "checked for staleness, region narrowing, edition identity, edition key "
     "agreement, and body markers. Findings carry stable rule ids "
     "(AUTH_QUOTE_UNVERIFIED and friends); messages are for humans. "
     "Omit path to check every work. Gate review fails on any error; publish "

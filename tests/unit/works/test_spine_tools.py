@@ -182,7 +182,7 @@ class TestWorkCiteTool:
         return CitationAttached(
             occurrence_id=UUID(WORK), citation_key=UUID(KEY),
             marker="{{cite:" + KEY + "}}",
-            item=AttachedItem(verify_status="exact", zotero_key="DABAR_2026"),
+            item=AttachedItem(verify_status="exact", edition_key="DABAR_2026"),
         )
 
     @pytest.mark.asyncio
@@ -232,7 +232,7 @@ class TestWorkCiteTool:
         container = SimpleNamespace(citation_service=SimpleNamespace(attach=attach))
 
         result = await work_cite.handler(
-            container, slug="s", block_key=KEY, intent="support", zotero_key="DABAR_2026"
+            container, slug="s", block_key=KEY, intent="support", edition_key="DABAR_2026"
         )
 
         assert result["marker"] == "{{cite:" + KEY + "}}"

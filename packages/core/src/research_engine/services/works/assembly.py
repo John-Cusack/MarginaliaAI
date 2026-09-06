@@ -79,7 +79,7 @@ def hash_assembled(view: AssembledRevision) -> bytes:
             "intent": entry.occurrence.intent.value,
             "placement": entry.occurrence.placement.value,
             "edition_id": str(row.edition_id) if row.edition_id else None,
-            "zotero_key": row.zotero_key,
+            "edition_key": row.edition_key,
             "source_span_id": str(row.source_span_id)
             if row.source_span_id
             else None,

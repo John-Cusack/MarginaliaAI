@@ -71,7 +71,7 @@ class TestCite:
             quoted_text="The prophets pair two words.",
             intent="quotation",
             citation_id="c1",
-            zotero_key="DABAR_2026",
+            edition_key="DABAR_2026",
             locator={"page": 1},
         )
 
@@ -85,7 +85,7 @@ class TestCite:
             "char_start": 34,
             "char_end": 62,
             "quoted_text": "The prophets pair two words.",
-            "zotero_key": "DABAR_2026",
+            "edition_key": "DABAR_2026",
             "locator": {"page": 1},
         }
         # The entry parses back as YAML and the resolver saw verified offsets.

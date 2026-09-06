@@ -542,7 +542,7 @@ anchors = sa.Table(
     sa.Column("verified_at", sa.DateTime(timezone=True)),
     sa.Column("parser_version", sa.Text),
     sa.Column("edition", sa.Text),
-    sa.Column("zotero_key", sa.Text),
+    sa.Column("edition_key", sa.Text),
     sa.Column("locator", sa.JSON, nullable=False, server_default="{}"),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     sa.CheckConstraint(
@@ -561,13 +561,13 @@ sa.Index("anchors_span_idx", anchors.c.source_span_id)
 
 # --- Bibliography: the editions stub ---
 
-# Decision 12: one row per Zotero key, backfilled in 012, maintained at
+# Decision 12: one row per edition key, backfilled in 012, maintained at
 # ingest. P3-1 extends it. Mirrors 012_authored_and_bibliography.
 editions = sa.Table(
     "editions",
     metadata,
     sa.Column("id", sa.Uuid, primary_key=True),
-    sa.Column("zotero_key", sa.Text, nullable=False, unique=True),
+    sa.Column("edition_key", sa.Text, nullable=False, unique=True),
     sa.Column("csl", sa.JSON, nullable=False, server_default="{}"),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     schema="bibliography",
@@ -717,7 +717,7 @@ citation_items = sa.Table(
         sa.Uuid,
         sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
     ),
-    sa.Column("zotero_key", sa.Text),
+    sa.Column("edition_key", sa.Text),
     sa.Column(
         "source_span_id",
         sa.Uuid,
@@ -732,7 +732,7 @@ citation_items = sa.Table(
     sa.Column("suppress_author", sa.Boolean, nullable=False, server_default="false"),
     sa.PrimaryKeyConstraint("occurrence_id", "position"),
     sa.CheckConstraint(
-        "edition_id IS NOT NULL OR zotero_key IS NOT NULL",
+        "edition_id IS NOT NULL OR edition_key IS NOT NULL",
         name="citation_identity_ck",
     ),
     sa.CheckConstraint(
@@ -748,7 +748,7 @@ citation_items = sa.Table(
 
 sa.Index("citation_items_span_idx", citation_items.c.source_span_id)
 sa.Index("citation_items_edition_idx", citation_items.c.edition_id)
-sa.Index("citation_items_zotero_idx", citation_items.c.zotero_key)
+sa.Index("citation_items_edition_key_idx", citation_items.c.edition_key)
 
 block_source_links = sa.Table(
     "block_source_links",

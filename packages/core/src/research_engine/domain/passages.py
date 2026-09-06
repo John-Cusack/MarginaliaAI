@@ -113,7 +113,7 @@ class HitSource(BaseModel):
 
     document_title: str | None = None
     #: The bibliographic join, once a pack writes it at ingest. None until then.
-    zotero_key: str | None = None
+    edition_key: str | None = None
     #: `documents.metadata.edition`, when a pack wrote one.
     edition: str | None = None
     #: `document_texts.parser_version`. None when there is no canonical text.

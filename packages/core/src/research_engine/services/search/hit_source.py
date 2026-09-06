@@ -41,7 +41,7 @@ class HitSourceReader:
                     if passage.document_id in by_document
                     else None
                 ),
-                zotero_key=_metadata(by_document, passage, "zotero_key"),
+                edition_key=_metadata(by_document, passage, "edition_key"),
                 edition=_metadata(by_document, passage, "edition"),
                 parser_version=versions.get(passage.document_id),
                 has_canonical_text=passage.document_id in versions,

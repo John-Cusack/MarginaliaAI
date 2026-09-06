@@ -53,7 +53,7 @@ def compute_content_hash(
                     "intent": item["intent"],
                     "placement": item["placement"],
                     "edition_id": item["edition_id"],
-                    "zotero_key": item["zotero_key"],
+                    "edition_key": item["edition_key"],
                     "source_span_id": item["source_span_id"],
                     "quoted_text": item["quoted_text"],
                     "verify_status": item["verify_status"],
