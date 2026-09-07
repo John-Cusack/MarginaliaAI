@@ -282,6 +282,7 @@ async def build_container(settings: Settings) -> Container:
         document_texts=document_texts_repo,
         passages=passages_repo,
         documents=docs,
+        document_nodes=document_nodes_repo,
     )
     spans_repo = PGSourceSpanRepo(sql_engine)
     work_citer = WorkCiter(

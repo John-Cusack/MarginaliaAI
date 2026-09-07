@@ -209,6 +209,69 @@ async def test_passages_are_stamped_with_their_containing_node(
     assert reloaded.node_id == by_title["Two, Second, a"].id
 
 
+async def test_structure_learned_after_ingest_still_reaches_the_passages(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    """`attach_nodes` only helps a document whose tree existed at ingest time.
+
+    Build the tree afterwards — recovering a Bible's verses, say — and every
+    passage keeps a NULL `node_id`, which `locate_passage` reports as "this
+    document has no structure". That is a lie once the tree is there, and
+    re-ingesting to fix a foreign key would re-embed the whole book.
+    """
+    from research_engine.adapters.storage.postgres.repositories.passages import (
+        PGPassageRepo,
+    )
+    from research_engine.domain.nodes import deepest_containing
+    from research_engine.domain.passages import PassageDraft
+
+    doc_id = await corpus.add_document()
+    nodes_repo = PGDocumentNodeRepo(engine)
+    passages_repo = PGPassageRepo(engine)
+
+    # Passages first, with no tree to attach to — the order that makes NULLs.
+    drafts = [
+        PassageDraft(
+            position=0, char_start=10, char_end=30, text="x" * 20,
+            chunker="structural", chunker_version="3.0",
+        ),
+        # Straddles Chapter One and Chapter Two, so no chapter encloses it and
+        # the honest answer is their parent, the root.
+        PassageDraft(
+            position=1, char_start=90, char_end=150, text="y" * 60,
+            chunker="structural", chunker_version="3.0",
+        ),
+    ]
+    async with transaction(engine) as tx:
+        saved = await passages_repo.insert_many(tx, doc_id, drafts)
+    assert all(p.node_id is None for p in saved)
+
+    async with transaction(engine) as tx:
+        stored = await nodes_repo.insert_many(
+            tx, doc_id, build_node_tree(SECTIONS, text_length=TEXT_LENGTH)
+        )
+
+    written = await passages_repo.set_node_ids(
+        [
+            (p.id, node.id if (node := deepest_containing(
+                stored, p.char_start, p.char_end)) else None)
+            for p in saved
+        ]
+    )
+    assert written
+
+    by_title = {node.title: node for node in stored}
+    root = next(node for node in stored if node.path == ROOT_PATH)
+    first = await passages_repo.get(saved[0].id)
+    straddler = await passages_repo.get(saved[1].id)
+    assert first is not None and straddler is not None
+    assert first.node_id == by_title["Chapter One"].id
+    assert straddler.node_id == root.id
+
+    # And the text is untouched — the whole point of a targeted update.
+    assert first.text == "x" * 20
+
+
 async def test_reading_a_node_gathers_its_passages(
     engine: AsyncEngine, corpus: Corpus
 ) -> None:

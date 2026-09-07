@@ -59,12 +59,19 @@ async def _verify(text: str, document_id: str | None, json_output: bool) -> None
             loc = result.location
             console.print(f"\n  {loc.document_title or loc.document_id}")
             console.print(f"  characters {loc.char_start}–{loc.char_end}")
+            if loc.node is not None:
+                # The citable answer, when the document has structure: one
+                # verse or section, not the chunk the quote was retrieved in.
+                label = loc.node.title or loc.node.path
+                console.print(f"  in: {label} ({loc.node.node_type})")
             if loc.locators:
-                console.print(f"  locator: {json.dumps(loc.locators[0])}")
-            elif loc.passage_ids:
+                # Labelled "passage" because it is the chunk's range, which is
+                # wider than the quotation and set by the chunker's boundaries.
+                console.print(f"  passage locator: {json.dumps(loc.locators[0])}")
+            elif loc.passage_ids and loc.node is None:
                 # Silence here would read as "no page number exists", when the
                 # truth is that this document was ingested without one.
-                console.print("  locator: none recorded for this document")
+                console.print("  passage locator: none recorded for this document")
             if loc.straddles_passages:
                 console.print(
                     f"  spans {len(loc.passage_ids)} passages — searching passage "

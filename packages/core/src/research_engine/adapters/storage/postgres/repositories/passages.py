@@ -372,6 +372,27 @@ class PGPassageRepo:
             )
             return result.rowcount or len(updates)
 
+    async def set_node_ids(self, updates: list[tuple[UUID, UUID | None]]) -> int:
+        """Attach passages to their containing nodes, leaving the text alone.
+
+        The counterpart of `set_locators`, and for the same reason: structure is
+        recovered from the source, so learning it later must not cost a re-chunk
+        or a re-embed. It matters that this exists at all — nodes written after
+        ingest leave `passages.node_id` NULL, and `locate_passage` reads that
+        NULL as "this document has no structure", which is a confident lie once
+        the tree is there.
+        """
+        if not updates:
+            return 0
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                passages.update()
+                .where(passages.c.id == sa.bindparam("_pid"))
+                .values(node_id=sa.bindparam("_node_id")),
+                [{"_pid": pid, "_node_id": node_id} for pid, node_id in updates],
+            )
+            return result.rowcount or len(updates)
+
     async def get_context(
         self, passage_id: UUID, before: int = 0, after: int = 0
     ) -> tuple[list[Passage], Passage, list[Passage]]:

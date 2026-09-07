@@ -40,7 +40,7 @@ EXPECTED = {
     ],
     PGPassageRepo: [
         "get", "get_many", "get_by_document", "covering_span", "set_locators",
-        "vector_search", "keyword_search", "insert_many",
+        "set_node_ids", "vector_search", "keyword_search", "insert_many",
     ],
     PGDocumentRepo: ["get", "get_many", "insert", "find_by_hash", "find_by_metadata"],
     PGDocumentNodeRepo: [

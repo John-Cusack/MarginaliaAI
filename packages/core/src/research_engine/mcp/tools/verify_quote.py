@@ -94,6 +94,10 @@ async def handler(
             "source_text": location.source_text,
             "passage_ids": [str(p) for p in location.passage_ids],
             "locators": location.locators,
+            # The chunk's range answers "where was this retrieved"; this
+            # answers "what do I cite". Both, because a caller wanting a
+            # page number still needs the locator.
+            "node": location.node.model_dump(mode="json") if location.node else None,
             # Surfaced because it explains an otherwise puzzling result: a quote
             # spanning two chunks matches no single passage, which is why this
             # searches document text rather than passage text.
