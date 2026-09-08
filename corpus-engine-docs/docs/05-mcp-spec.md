@@ -1,5 +1,22 @@
 # 05 — MCP Tool Specification
 
+> **Status (2026-09-08): this is the original design specification, and the
+> implemented surface has outgrown it.** Measured on this date: 39 core tools
+> are registered and 19 are described here. Twenty-two implemented tools are
+> absent — `verify_quote`, `read_node`, `locate_passage`,
+> `get_document_outline`, `find_lemma`, `search_sources`, `ingest_execute`,
+> `citations`, `llm_usage`, `list_available_filters`, and the twelve `work_*`
+> tools — and two described here were never built (`annotate_document`,
+> `list_entity_types`).
+>
+> **The authority on what exists is `CORE_TOOL_MODULES` in
+> `packages/core/src/research_engine/mcp/dispatch.py`,** and each tool's own
+> `TOOL_DESCRIPTION` and `TOOL_SCHEMA` beside it. Read this document for the
+> conventions and the design intent, which still hold; do not read it as an
+> inventory. Response shapes here are also behind — `verify_quote` gained a
+> `location.node` block and an optional `window`, and `find_passages` hits
+> gained a `source` block, all of which are recorded in `CHANGELOG.md`.
+
 This document defines the MCP tool surface exposed by Corpus Engine.
 The surface is divided into:
 

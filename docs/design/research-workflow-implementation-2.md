@@ -32,20 +32,30 @@ rather than reasoning, and all of them move the plan:
 
 Measured against the live dev database, not assumed.
 
-| Fact | Value |
-|---|---|
-| Core version | `0.3.0` |
-| Migrations at head | `004_passage_offsets` — next revision is `005` |
-| Tests | 587 unit (1 skipped) + 28 integration, green |
-| Documents | 2,728 |
-| Passages | 271,172 |
-| Documents **with** canonical text | 5 (the P1 verification ingests) |
-| Documents **without** canonical text | 2,723 |
-| Chunker versions in corpus | `prose_window` 2.0, `verse_boundary` 2.0 — all current |
-| `passage_embeddings` | 1.47 GB, only a btree PK, **no vector index** |
-| Embedding models present | `BAAI/bge-m3` dim 1024 (269,077) and `fake-test-embedder` dim 8 (2,095) |
-| pgvector / pg_trgm | 0.8.2 / 1.6 |
-| Postgres | 15.17 |
+> **Re-measured 2026-09-08.** The original column is kept because the plan below
+> was written against it and several of its decisions only make sense next to
+> the numbers that prompted them. The second column is what the corpus shows
+> now. Where a row has closed, it says so.
+
+| Fact | When this guide was written | 2026-09-08 |
+|---|---|---|
+| Core version | `0.3.0` | `0.5.0` |
+| Migrations at head | `004_passage_offsets` | `017_vector_index_restore` |
+| Tests | 587 unit (1 skipped) + 28 integration | 1,474 unit (1 skipped) + 191 integration + 24 pack, green |
+| Documents | 2,728 | 3,078 |
+| Passages | 271,172 | 94,858 (re-chunked; the old count was pre-`prose_window` 2.0) |
+| Documents **with** canonical text | 5 (the P1 verification ingests) | 3,078 — **closed**, every document has text |
+| Documents **without** canonical text | 2,723 | 0 |
+| Chunker versions in corpus | `prose_window` 2.0, `verse_boundary` 2.0 | unchanged |
+| `passage_embeddings` | 1.47 GB, only a btree PK, **no vector index** | 1,246 MB with the HNSW index rebuilt — **closed** (migration 017); the 1.47 GB was mostly never-vacuumed TOAST, now 513 MB of table |
+| Embedding models present | `bge-m3` dim 1024 (269,077) and `fake-test-embedder` dim 8 (2,095) | `bge-m3` dim 1024 (94,858) only — **closed**, the test pollution is gone |
+| pgvector / pg_trgm | 0.8.2 / 1.6 | unchanged |
+| Postgres | 15.17 | unchanged |
+
+Since this guide was written the corpus also gained the biblical editions and
+the token index those rest on: LHB, ESV and WLC as 3,078 documents with verse
+nodes, `core.words` (305,517 rows, migration 014), and the versification and
+book-identity tables (migration 016). Those are not part of the plan below.
 
 ---
 

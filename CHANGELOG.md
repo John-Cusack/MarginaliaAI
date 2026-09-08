@@ -1,5 +1,133 @@
 # Changelog
 
+### Lemma lookup that produces citable references (`find_lemma`, migrations 015-017)
+
+`find_lemma` asks the question a lexicographic survey exists to ask — where
+does this word occur — of `core.words` rather than of the text, and returns
+**verse references, never character spans**. The index is built on WLC and the
+survey quotes LHB (52 citations to 7); the editions agree on verse count in all
+929 shared chapters but only ~47% are consonantally identical, so a WLC offset
+does not address the same characters in LHB. A reference survives the hop and
+`verify_quote` resolves the span in the edition being cited. Verified over all
+579 occurrences of the two survey lemmas: 574 of the words are present verbatim
+in the LHB verse at the same reference and all 574 verify as `exact` there. The
+five that are not are exactly the five rows with `from_qere` true — WLC reads
+the qere where LHB prints the ketiv — so the tool reports that flag as a
+warning rather than leaving it to be discovered.
+
+`homograph` is a first-class parameter with three states (absent, a letter, the
+empty string), because 59,061 rows carry an OSHB letter splitting a number
+Strong's conflated. Prefixes are counted rather than normalised away: `k/4941`
+is 37 occurrences of "according to the *mishpat* of", `b/4941` is 33.
+
+**Versification and book identity are now data** (migration 016). LHB and WLC
+write `ECC HO MIC NAH` where ESV writes `EC HOS MI NA`, so a join on the
+article code returned silence — not an error — for four of the thirty-nine Old
+Testament books, and those four were among the versification-divergent ones.
+`core.edition_books` maps `(edition, code)` to an OSIS id with a canonical
+ordinal; `core.verse_map` holds the 1,978 mappings in `wlc/VerseMap.xml` that
+the WLC ingest discarded; `core.editions_versification` names a scheme per
+edition. The map is a pair table rather than an offset column because seven
+mappings are `type="partial"` — a verse beginning midway through another — and
+no integer offset expresses one. Completeness is checkable: joined on the raw
+code 23 books diverge, joined through `edition_books` 27 do, and VerseMap maps
+exactly 27.
+
+Migration 015 indexes `core.words` on `(language, strong)`. A Strong's number
+is unique only inside its lexicon, and closing the latent H4941/G4941 collision
+is cheapest while every row is Hebrew.
+
+Where `core.words` belongs was settled before any of this was built, while it
+still had zero consumers: it stays in core as a token index, with the boundary
+at "core owns tokens, a pack owns what they mean". Reasoning and the revisit
+trigger are in `docs/design/decision-001-words-belongs-in-core.md`.
+
+### `requires.plugins` is enforced
+
+Parsed in `plugins/manifest.py` and read by nothing, so a pack depending on
+another pack's chunker failed at use time with `Unknown chunker:
+verse_boundary` and nothing naming the missing install. The loader now checks
+it against the packs that will actually load, and repeats to a fixed point so a
+dropped pack takes its dependents with it.
+
+### The HNSW index was gone, and nothing could have noticed
+
+Migration 006 typed `passage_embeddings.embedding` and built an HNSW index on
+it. The column was still typed and the index was gone; every semantic search
+had quietly returned to a parallel sequential scan (~275 ms warm on 94,858
+vectors, against 1.9 ms once rebuilt). Migration 017 rebuilds it.
+
+The invisibility mattered more than the loss. `schema.py` declared the column
+as `Vector()` with no dimension and no index, and `test_schema_truthfulness`
+asserted only `declared - actual` — which cannot see an index the database has
+lost when the declaration never had it either. The test now also asserts
+`actual - declared`, and that direction immediately found five more real
+indexes nobody had written down, including the GiST index behind every ltree
+subtree test and the GIN index that is the whole of keyword search. All are now
+declared. Separately, `VACUUM FULL core.passage_embeddings` reclaimed 974 MB of
+TOAST that had never been vacuumed.
+
+### The completeness guard for `core.words` is now a proof
+
+`unclaimed_letters` stripped every samekh, pe and nun from a gap before looking
+for a Hebrew letter, so a dropped word spelled only from those three letters
+emptied its own gap and reported nothing — 33 words of the corpus are spelled
+that way. Marks are now claimed by the span each `<seg>` occupied, which no
+spelling can imitate. The repaired guard passes all 929 chapters and reproduces
+the same 305,517 rows, so the index was complete; the guard could not prove it.
+`research-engine doctor` now asks the same question of the stored rows, so a
+re-parse cannot silently invalidate 305,517 offsets.
+
+### Quotations report the node they sit in, not just their chunk
+
+`verify_quote` answered "where is this" with the locators of the passages
+covering the match, which describe the chunker's window rather than the
+quotation: a quote in Genesis 18:19 came back as "Genesis 18:18-23", and two
+quotes from the same verse reported different ranges because a chunk boundary
+fell between them. `QuoteLocation` gains a `node` block — the deepest node
+whose span encloses the match, via `find_by_span`, which was built and never
+called. `locators` stays for the page numbers it has always carried, now
+documented as chunk-wide. A quotation crossing a verse boundary is enclosed by
+no verse and resolves to the chapter, which is right. **This changes an
+existing tool's response shape.**
+
+### The verse boundaries of the LHB and ESV chapters, recovered
+
+WLC was the only Bible here that knew where its own verses were, because its
+chapters could be re-rendered from morphhb and checked byte for byte. LHB and
+ESV have no source in this repository, so their 7,809 passages carried `{}` for
+a locator and sat under no structure: a quotation could name only the 500-token
+chunk it came from. Both editions lay their chapters out predictably, so the
+verses were read back out of the stored text under a guard — `coverage_gaps`
+blanks out every span a parser claims, and what remains must be verse markers
+and whitespace and nothing else, so a parser that lost a verse gets its chapter
+refused rather than written from a guess. All 929 LHB and 1,189 ESV chapters
+pass, and both agree with WLC on the verse count of all 929 shared chapters.
+
+### The WLC ingest is reproducible from the repository
+
+The Westminster Leningrad Codex had been in the corpus since 2026-09-07 with
+the code that put it there living only in `/tmp` — the OSIS extractor, the
+ingest driver, and two backfills. Every editorial decision about what this
+witness reads was encoded there and nowhere else. `tests/unit/test_wlc_extract.py`
+now pins them: morpheme slashes are morphology; a maqqef binds and a paseq
+stands apart because of the source's own spacing; setumah and petuchah stay;
+the qere is the running text with the ketiv kept in `metadata.ketiv_qere`; a
+ketiv spanning two words is replaced whole; ketiv velo qere takes its orphaned
+maqqef with it; and `alternative` and `exegesis` notes are apparatus.
+
+### The Hebrew text is indexed by lemma (migration 014)
+
+A pointed Hebrew word has no single searchable form: *mishpat* is written 204
+distinct ways across the WLC, and its commonest spelling finds 21 of 422
+occurrences. The analysis was never missing, only discarded — every one of
+morphhb's `<w>` elements carries a Strong's number and a parsing code, and
+`_word_text` reads character data, so the attributes were invisible to the
+ingest. `core.words` holds 305,517 of them, addressed the way passages and
+nodes already are. The hard part is knowing the index is complete, and a count
+cannot tell you: one row per word means any word missing from the table leaves
+its letters in a stretch of text no row claims.
+
 ### `zotero_key` is now `edition_key` (migration 013)
 
 The edition identifier never touched Zotero's servers — a plain string in
