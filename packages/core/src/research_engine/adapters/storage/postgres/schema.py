@@ -141,6 +141,55 @@ sa.Index(
     document_nodes.c.char_end,
 )
 
+# Every word of a source text that carries a morphological analysis, addressed
+# against the same canonical string the passages are addressed against. This is
+# the layer that makes a lexical question answerable: a pointed, inflected,
+# prefixed Hebrew word has no searchable form — one lemma appears as hundreds of
+# distinct strings — so "every occurrence of this word" cannot be asked of the
+# text and has to be asked of its analysis.
+#
+# One row per word of the running text, never per morpheme: the row's span must
+# quote its own word exactly, and that invariant is what lets the loader prove
+# the index is complete by showing that no unclaimed stretch of the text holds a
+# letter. `lemma` keeps the source's own compound value ("c/4941" — conjunction
+# plus Strong's 4941); `strong` and `prefixes` are that value parsed, because a
+# survey queries the number and reads the prefixes as findings.
+words = sa.Table(
+    "words",
+    metadata,
+    sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    sa.Column(
+        "document_id",
+        sa.Uuid,
+        sa.ForeignKey("core.documents.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("position", sa.Integer, nullable=False),
+    sa.Column("char_start", sa.Integer, nullable=False),
+    sa.Column("char_end", sa.Integer, nullable=False),
+    sa.Column("surface", sa.Text, nullable=False),
+    sa.Column("lemma", sa.Text, nullable=False),
+    # Nullable on purpose: 5,967 words are a bare preposition or article whose
+    # lemma is a morpheme letter with no Strong's number behind it at all.
+    sa.Column("strong", sa.Text),
+    # The homograph letter Strong's lacks — OSHB splits words Strong's merged,
+    # so "834 a" and "834 b" are different words sharing a number.
+    sa.Column("homograph", sa.Text),
+    sa.Column("prefixes", sa.Text),
+    sa.Column("morph", sa.Text, nullable=False),
+    sa.Column("language", sa.Text, nullable=False),
+    sa.Column("ref", sa.Text, nullable=False),
+    sa.Column("from_qere", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.UniqueConstraint("document_id", "position"),
+)
+
+sa.Index("words_strong_idx", words.c.strong)
+sa.Index("words_lemma_idx", words.c.lemma)
+sa.Index("words_document_idx", words.c.document_id)
+# Resolving a word to the verse that contains it is the same span lookup the
+# passage layer makes, so it wants the same index shape.
+sa.Index("words_doc_span_idx", words.c.document_id, words.c.char_start, words.c.char_end)
+
 passage_embeddings = sa.Table(
     "passage_embeddings",
     metadata,
