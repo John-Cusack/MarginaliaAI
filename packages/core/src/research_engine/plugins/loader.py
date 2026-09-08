@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from research_engine.domain.errors import PluginLoadError
-from research_engine.plugins.compatibility import check_core_api
+from research_engine.plugins.compatibility import check_core_api, check_plugin_deps
 from research_engine.plugins.manifest import PluginManifest, parse_manifest
 from research_engine.plugins.permissions import (
     DeniedEdgeClient,
@@ -80,6 +80,43 @@ class PluginLoader:
                 missing.append(pkg_name)
         return missing
 
+    @staticmethod
+    def _resolve_plugin_deps(
+        validated: list[tuple[Any, Path, PluginManifest]],
+    ) -> list[tuple[Any, Path, PluginManifest]]:
+        """Drop every pack whose declared pack dependencies will not be loaded.
+
+        Repeats until stable so a dropped pack takes its dependents with it:
+        one pass would drop a pack whose dependency is missing but keep the pack
+        that depended on *it*, which is the case worth the extra pass.
+
+        Two packs that require each other and are both installed both survive,
+        which is correct — each one's dependency is satisfied. A cycle only
+        collapses when something it rests on is genuinely absent, and then it
+        collapses entirely.
+        """
+        surviving = list(validated)
+        while True:
+            available = {m.name: m.version for _, _, m in surviving}
+            kept = []
+            for entry in surviving:
+                manifest = entry[2]
+                reasons = check_plugin_deps(
+                    [(dep.name, dep.version) for dep in manifest.requires.plugins],
+                    available,
+                )
+                if reasons:
+                    logger.error(
+                        "plugin_missing_plugin_deps",
+                        plugin=manifest.name,
+                        reasons=reasons,
+                    )
+                    continue
+                kept.append(entry)
+            if len(kept) == len(surviving):
+                return kept
+            surviving = kept
+
     async def load_enabled(self) -> list[str]:
         """Load all enabled plugins. Returns list of loaded plugin names."""
         enabled = await self._installed.list_enabled()
@@ -124,6 +161,15 @@ class PluginLoader:
                 validated.append((installed, plugin_dir, manifest))
             except Exception as e:
                 logger.error("plugin_validate_failed", plugin=installed.id, error=str(e))
+
+        # Phase 3b: Pack dependencies, resolved against what will actually load.
+        #
+        # Checked after the per-pack loop rather than inside it, because the
+        # answer depends on the whole surviving set: a pack whose dependency
+        # was itself dropped for an incompatible core_api must drop too. Hence
+        # the fixed point — each pass may remove a pack that another pack
+        # needed, so it repeats until a pass removes nothing.
+        validated = self._resolve_plugin_deps(validated)
 
         # Phase 4-8: Register types, load code, register contributions
         for _installed, plugin_dir, manifest in validated:

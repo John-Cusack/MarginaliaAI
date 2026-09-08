@@ -1,12 +1,19 @@
 """Add `core.words`: the morphological analysis of a source text, word by word.
 
-A pointed Hebrew word has no searchable form. `mishpat` is written 205 distinct
-ways across the Westminster Leningrad Codex — inflected, pointed, accented, and
-carrying prefixed conjunctions, articles and prepositions — so the question a
-lexicographic survey exists to ask, "where does this word occur", cannot be put
-to the text at all. Measured on this corpus: the commonest single spelling finds
-31 of 422 occurrences, and the unpointed consonantal form finds none, because
-the vowel points sit between the letters.
+A pointed Hebrew word has no single searchable form. `mishpat` is written 204
+distinct ways across the Westminster Leningrad Codex — inflected, pointed,
+accented, and carrying prefixed conjunctions, articles and prepositions — so the
+question a lexicographic survey exists to ask, "where does this word occur",
+cannot be put to the text as written. Measured on this corpus: the commonest
+single spelling finds 21 of 422 occurrences, and no whole-string match on the
+unpointed form finds any, because the vowel points sit between the letters.
+
+A consonantal-skeleton regex does better than that sentence once implied, and
+saying so is what marks out the case the index is actually for: stripping the
+points and matching `משפט` anywhere finds all 422. The word that needs this
+table is `tsedaqah` (6666), where the same trick finds 82 of 157 — the
+construct and suffixed forms (`צדקתך`, `צדקתו`, `צדקות`) have no final he, so
+no skeleton derived from the lexical form matches them at all.
 
 The analysis already exists in the sources; it was simply never stored. This
 table holds it, addressed the way passages and nodes already are — a document
