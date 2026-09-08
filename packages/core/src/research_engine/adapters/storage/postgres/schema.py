@@ -169,7 +169,7 @@ words = sa.Table(
     sa.Column("char_end", sa.Integer, nullable=False),
     sa.Column("surface", sa.Text, nullable=False),
     sa.Column("lemma", sa.Text, nullable=False),
-    # Nullable on purpose: 5,967 words are a bare preposition or article whose
+    # Nullable on purpose: 5,966 words are a bare preposition or article whose
     # lemma is a morpheme letter with no Strong's number behind it at all.
     sa.Column("strong", sa.Text),
     # The homograph letter Strong's lacks — OSHB splits words Strong's merged,
@@ -184,11 +184,99 @@ words = sa.Table(
 )
 
 sa.Index("words_strong_idx", words.c.strong)
+# A Strong's number is unique only inside its lexicon: H4941 and G4941 are
+# different words. Every lookup by number must name a language, and this is the
+# index that makes the correct query shape the fast one.
+sa.Index("words_language_strong_idx", words.c.language, words.c.strong)
 sa.Index("words_lemma_idx", words.c.lemma)
 sa.Index("words_document_idx", words.c.document_id)
 # Resolving a word to the verse that contains it is the same span lookup the
 # passage layer makes, so it wants the same index shape.
+#
+# Measured 2026-09-08 at 305,517 rows, resolving all 422 occurrences of Strong's
+# 4941 to their verse nodes: the span-containment join runs in 8.3 ms — an index
+# scan here, then one `document_nodes_span_idx` probe per word at 0.012 ms.
+# There is no foreign key to `document_nodes` and it is not missed at this size.
+#
+# `find_lemma` does not pay even that, because `words.ref` already carries the
+# verse reference the ingest knew (1.4 ms for the same question). The
+# containment join is the fallback for questions `ref` cannot answer — which
+# node of some *other* edition a word sits in — and the number to re-measure
+# before anything multiplies this table by an order of magnitude.
 sa.Index("words_doc_span_idx", words.c.document_id, words.c.char_start, words.c.char_end)
+
+# --- Versification: how editions disagree about where a verse sits ---
+#
+# Three editions of the same text in this corpus use three vocabularies for the
+# same book and two traditions for the same verse number. Both are recorded as
+# data rather than as rules, because both are already written down somewhere
+# authoritative and a second implementation would be a second thing to be wrong.
+
+editions_versification = sa.Table(
+    "editions_versification",
+    metadata,
+    sa.Column("edition_key", sa.Text, primary_key=True),
+    sa.Column("scheme", sa.Text, nullable=False),
+    sa.Column("notes", sa.Text),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+)
+
+# `(edition, article code) -> OSIS book id`. LHB writes Ecclesiastes "ECC" and
+# ESV writes it "EC"; a join on the raw code loses four Old Testament books and
+# reports nothing wrong.
+edition_books = sa.Table(
+    "edition_books",
+    metadata,
+    sa.Column("edition_key", sa.Text, nullable=False),
+    sa.Column("code", sa.Text, nullable=False),
+    sa.Column("osis_id", sa.Text, nullable=False),
+    sa.Column("name", sa.Text),
+    # Canonical position, so "order by book" is a column rather than a hardcoded
+    # list of sixty-six names somewhere in core.
+    sa.Column("ordinal", sa.Integer, nullable=False),
+    sa.PrimaryKeyConstraint("edition_key", "code"),
+)
+
+sa.Index(
+    "edition_books_osis_idx",
+    edition_books.c.edition_key,
+    edition_books.c.osis_id,
+    unique=True,
+)
+
+# A pair table, not an offset column: seven of the 1,978 WLC-KJV mappings are
+# a verse beginning midway through another, which no integer offset expresses.
+verse_map = sa.Table(
+    "verse_map",
+    metadata,
+    sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    sa.Column("from_scheme", sa.Text, nullable=False),
+    sa.Column("to_scheme", sa.Text, nullable=False),
+    sa.Column("from_ref", sa.Text, nullable=False),
+    sa.Column("to_ref", sa.Text, nullable=False),
+    sa.Column("from_part", sa.Text),
+    sa.Column("to_part", sa.Text),
+    sa.Column("mapping_type", sa.Text, nullable=False),
+    sa.Column("source", sa.Text, nullable=False),
+    sa.CheckConstraint("mapping_type IN ('full', 'partial')", name="verse_map_type_known"),
+    sa.CheckConstraint(
+        "(from_part IS NULL AND to_part IS NULL) OR mapping_type = 'partial'",
+        name="verse_map_parts_are_partial",
+    ),
+)
+
+sa.Index(
+    "verse_map_from_idx",
+    verse_map.c.from_scheme,
+    verse_map.c.to_scheme,
+    verse_map.c.from_ref,
+)
+sa.Index(
+    "verse_map_to_idx",
+    verse_map.c.to_scheme,
+    verse_map.c.from_scheme,
+    verse_map.c.to_ref,
+)
 
 passage_embeddings = sa.Table(
     "passage_embeddings",
