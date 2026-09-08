@@ -14,6 +14,7 @@ from research_engine.mcp.tools import (
     corpus_stats,
     events,
     extract,
+    find_lemma,
     find_mentions,
     find_passages,
     get_document,
@@ -87,6 +88,8 @@ CORE_TOOL_MODULES = [
     get_document_outline,
     read_node,
     locate_passage,
+    # Below the passage: a lemma to the verses that hold it.
+    find_lemma,
     resolve_entity,
     get_entity,
     find_mentions,
