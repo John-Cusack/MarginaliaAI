@@ -74,11 +74,13 @@ async def ensure_test_database(url: str) -> bool:
     except Exception:  # noqa: BLE001 - unreachable server means "skip", not "fail"
         return False
 
-    # Build the schema with Alembic, not `metadata.create_all`. The SQLAlchemy
-    # metadata is not a faithful description of the real schema — it declares
-    # GIN indexes on `json` columns, which Postgres rejects outright and which
-    # migration 001 never created. Migrating means the test database is built
-    # exactly the way the real one was.
+    # Build the schema with Alembic, not `metadata.create_all`. The original
+    # reason no longer holds — `schema.py` declared GIN indexes on `json`
+    # columns that Postgres rejects outright, and it is now faithful in both
+    # directions (`test_schema_truthfulness` asserts declared-minus-actual *and*
+    # actual-minus-declared). The choice stands on the better reason: migrating
+    # builds the test database exactly the way the real one was built, so a
+    # defect in a migration shows up here rather than being stepped around.
     try:
         await asyncio.to_thread(_run_migrations, url)
     except Exception as exc:  # noqa: BLE001 - report, never swallow silently
