@@ -8,6 +8,10 @@ from sqlalchemy import MetaData
 
 metadata = MetaData(schema="core")
 
+#: bge-m3's width. Migration 006 types the embedding column to it, and the
+#: HNSW index below cannot exist without a dimensioned column.
+EMBEDDING_DIM = 1024
+
 
 class Ltree(sa.types.UserDefinedType):
     """Minimal `ltree` binding: correct DDL, values as plain strings.
@@ -102,6 +106,15 @@ document_texts = sa.Table(
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
 )
 
+# Quote verification searches the folded text, which is a substring match over
+# whole documents; without this it is a sequential scan of every one of them.
+sa.Index(
+    "document_texts_norm_trgm",
+    document_texts.c.normalized_text,
+    postgresql_using="gin",
+    postgresql_ops={"normalized_text": "gin_trgm_ops"},
+)
+
 # The document's structural tree: parts, chapters, sections as the author wrote
 # them. Like passages, nodes are spans into `document_texts.text` and carry no
 # prose of their own, so the tree survives re-chunking and costs only its
@@ -132,6 +145,9 @@ document_nodes = sa.Table(
 
 sa.Index("document_nodes_document_idx", document_nodes.c.document_id)
 sa.Index("document_nodes_parent_idx", document_nodes.c.parent_id)
+# Subtree tests use ltree's `<@`/`@>`, which need a GiST index to be anything
+# but a scan.
+sa.Index("document_nodes_path_gist", document_nodes.c.path, postgresql_using="gist")
 # Containment lookups — "which node holds this passage" — probe by span within
 # one document, which is the hot path joining the passage layer to the tree.
 sa.Index(
@@ -288,9 +304,25 @@ passage_embeddings = sa.Table(
     sa.Column("model", sa.Text, nullable=False),
     sa.Column("model_version", sa.Text, nullable=False),
     sa.Column("dim", sa.Integer, nullable=False),
-    sa.Column("embedding", Vector(), nullable=False),
+    # Dimensioned, because migration 006 types it and an HNSW index cannot be
+    # built on a `vector` without a dimension. Declaring it bare said the column
+    # was less constrained than it is, and left the index below undescribed.
+    sa.Column("embedding", Vector(EMBEDDING_DIM), nullable=False),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     sa.PrimaryKeyConstraint("passage_id", "model", "model_version"),
+)
+
+# Every semantic search depends on this and nothing described it. The index
+# migration 006 built had been dropped by something that left no record, and it
+# could not be noticed: `schema.py` never declared it, and the truthfulness test
+# only asserted that declared indexes exist. Declared here so its absence is a
+# failure rather than a slow query — see migration 017.
+sa.Index(
+    "passage_embeddings_hnsw",
+    passage_embeddings.c.embedding,
+    postgresql_using="hnsw",
+    postgresql_ops={"embedding": "vector_cosine_ops"},
+    postgresql_with={"m": 16, "ef_construction": 64},
 )
 
 passage_fts = sa.Table(
@@ -305,7 +337,10 @@ passage_fts = sa.Table(
 )
 
 # Note: passage_fts.ts is a tsvector column. SQLAlchemy Core doesn't have native
-# tsvector support, so we handle it via raw SQL in migrations and queries.
+# tsvector support, so we handle it via raw SQL in migrations and queries. The
+# GIN index is declarable even though the type is not — and it is the whole of
+# keyword search, so it is worth saying so.
+sa.Index("passage_fts_ts_idx", passage_fts.c.ts, postgresql_using="gin")
 
 # --- Entities ---
 
@@ -322,6 +357,14 @@ entities = sa.Table(
 )
 
 sa.Index("entities_type_idx", entities.c.entity_type)
+# Entity resolution matches names approximately, so the trigram index is what
+# makes `resolve_entity` a lookup rather than a table scan.
+sa.Index(
+    "entities_name_trgm",
+    entities.c.canonical_name,
+    postgresql_using="gin",
+    postgresql_ops={"canonical_name": "gin_trgm_ops"},
+)
 # No GIN index on this `json` column — Postgres has no default GIN operator
 # class for `json` (only `jsonb`), so the declaration was unbuildable and the
 # index never existed. See the note above `passages`.
@@ -336,6 +379,15 @@ entity_aliases = sa.Table(
     sa.Column("alias", sa.Text, nullable=False),
     sa.Column("alias_type", sa.Text),
     sa.PrimaryKeyConstraint("entity_id", "alias"),
+)
+
+# The same approximate match as `entities_name_trgm`, over the names an entity
+# is also known by.
+sa.Index(
+    "entity_aliases_alias_trgm",
+    entity_aliases.c.alias,
+    postgresql_using="gin",
+    postgresql_ops={"alias": "gin_trgm_ops"},
 )
 
 # --- Mentions ---
