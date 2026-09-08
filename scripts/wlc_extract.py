@@ -64,6 +64,11 @@ class _Token:
     #: maqqef is punctuation, not a word, and the coverage check below depends
     #: on that distinction being exact.
     words: list = field(default_factory=list)
+    #: `(offset within this token, text)` for the `<seg>` elements it
+    #: contributes — the scribal marks. Tracked positionally, so the coverage
+    #: check can claim exactly the characters that came from a `<seg>` rather
+    #: than guessing from the character class which letters are marks.
+    marks: list = field(default_factory=list)
 
 
 @dataclass
@@ -86,6 +91,21 @@ class Word:
 
 
 @dataclass
+class Mark:
+    """One scribal mark of the running text, and where in that text it sits.
+
+    A maqqef, sof pasuq, paseq, or a setumah/petuchah paragraph letter. Not a
+    word — it gets no row in the index — but it is text, and the completeness
+    check has to know it was accounted for rather than dropped.
+    """
+
+    verse: int
+    offset: int
+    length: int
+    text: str
+
+
+@dataclass
 class KQ:
     """One ketiv/qere pair, kept so the reading the codex *writes* is recoverable."""
 
@@ -101,6 +121,7 @@ class Chapter:
     verses: list[tuple[int, str]] = field(default_factory=list)
     kq: list[KQ] = field(default_factory=list)
     words: list[Word] = field(default_factory=list)
+    marks: list[Mark] = field(default_factory=list)
 
 
 def _render_run(children: list[ET.Element]) -> str:
@@ -113,7 +134,7 @@ def _render_run(children: list[ET.Element]) -> str:
     return "".join(out)
 
 
-def _render_run_words(children: list[ET.Element]) -> tuple[str, list]:
+def _render_run_words(children: list[ET.Element]) -> tuple[str, list, list]:
     """`_render_run`, additionally reporting where each word landed in the run.
 
     A qere may read several words (Josh 8:16 reads two). Flattening it to one
@@ -123,6 +144,7 @@ def _render_run_words(children: list[ET.Element]) -> tuple[str, list]:
     """
     out: list[str] = []
     words: list = []
+    marks: list = []
     pos = 0
     for i, child in enumerate(children):
         if _tag(child) == "w":
@@ -132,23 +154,27 @@ def _render_run_words(children: list[ET.Element]) -> tuple[str, list]:
             )
         else:
             piece = child.text or ""
+            if piece:
+                marks.append((pos, piece))
         out.append(piece)
         pos += len(piece)
         if i < len(children) - 1:
             sep = _sep_after(child)
             out.append(sep)
             pos += len(sep)
-    return "".join(out), words
+    return "".join(out), words, marks
 
 
 def _verse_text(verse: ET.Element) -> tuple[str, list[tuple[str, str]]]:
     """Canonical text of one verse, plus its ketiv/qere pairs."""
-    text, pairs, _ = _verse_parse(verse)
+    text, pairs, _, _ = _verse_parse(verse)
     return text, pairs
 
 
-def _verse_parse(verse: ET.Element) -> tuple[str, list[tuple[str, str]], list[Word]]:
-    """Canonical text of one verse, its ketiv/qere pairs, and its words."""
+def _verse_parse(
+    verse: ET.Element,
+) -> tuple[str, list[tuple[str, str]], list[Word], list[Mark]]:
+    """Canonical text of one verse, its ketiv/qere pairs, its words, its marks."""
     tokens: list[_Token] = []
     pairs: list[tuple[str, str]] = []
 
@@ -169,8 +195,20 @@ def _verse_parse(verse: ET.Element) -> tuple[str, list[tuple[str, str]], list[Wo
                 )
             )
         elif tag == "seg":
+            # A `<seg>` that is a direct child of a verse is always a scribal
+            # mark — maqqef, sof pasuq, paseq, samekh, pe, reversed nun. The
+            # `x-large`/`x-small`/`x-suspended` segs, which *are* letters of a
+            # word, are children of `<w>` and reach the text through
+            # `_word_text` instead, so claiming every seg here claims marks and
+            # only marks.
+            text = child.text or ""
             tokens.append(
-                _Token(child.text or "", sep, ketiv=(child.get("subType") == "x-ketiv"))
+                _Token(
+                    text,
+                    sep,
+                    ketiv=(child.get("subType") == "x-ketiv"),
+                    marks=[(0, text)] if text else [],
+                )
             )
         elif tag == "note":
             if typ != "variant":
@@ -178,8 +216,8 @@ def _verse_parse(verse: ET.Element) -> tuple[str, list[tuple[str, str]], list[Wo
                 # `type="alternative"` accentuations. Not text.
                 continue
             rdg = child.find(f"{NS}rdg[@type='x-qere']")
-            qere, qere_words = (
-                _render_run_words(list(rdg)) if rdg is not None else ("", [])
+            qere, qere_words, qere_marks = (
+                _render_run_words(list(rdg)) if rdg is not None else ("", [], [])
             )
 
             # The ketiv may be a run of words (1Kgs 17:15 reads two, joined by a
@@ -193,7 +231,7 @@ def _verse_parse(verse: ET.Element) -> tuple[str, list[tuple[str, str]], list[Wo
             )
 
             if qere:
-                tokens.append(_Token(qere, sep, words=qere_words))
+                tokens.append(_Token(qere, sep, words=qere_words, marks=qere_marks))
             elif tokens and tokens[-1].sep == "" and tokens[-1].text == "־":
                 # Ketiv velo qere: the word is written but not read, so it goes.
                 # 2 Kgs 5:18 hyphenates it to the previous word — drop the
@@ -212,6 +250,7 @@ def _verse_parse(verse: ET.Element) -> tuple[str, list[tuple[str, str]], list[Wo
     # shifted by whatever `strip()` removes, so they cannot drift from it.
     shift = len(raw) - len(raw.lstrip())
     words: list[Word] = []
+    marks: list[Mark] = []
     pos = 0
     for i, tok in enumerate(tokens):
         for offset, surface, lemma, morph, from_qere in tok.words:
@@ -226,8 +265,12 @@ def _verse_parse(verse: ET.Element) -> tuple[str, list[tuple[str, str]], list[Wo
                     qere=from_qere,
                 )
             )
+        for offset, text in tok.marks:
+            marks.append(
+                Mark(verse=0, offset=pos + offset - shift, length=len(text), text=text)
+            )
         pos += len(tok.text) + (len(tok.sep) if i < len(tokens) - 1 else 0)
-    return raw.strip(), pairs, words
+    return raw.strip(), pairs, words, marks
 
 
 def parse_book(path: Path) -> list[Chapter]:
@@ -240,12 +283,15 @@ def parse_book(path: Path) -> list[Chapter]:
         for verse_el in chap_el.iter(f"{NS}verse"):
             v_osis = verse_el.get("osisID") or ""
             verse_no = int(v_osis.rsplit(".", 1)[1])
-            text, pairs, words = _verse_parse(verse_el)
+            text, pairs, words, marks = _verse_parse(verse_el)
             chapter.verses.append((verse_no, text))
             chapter.kq.extend(KQ(verse_no, k, q) for k, q in pairs)
             for word in words:
                 word.verse = verse_no
             chapter.words.extend(words)
+            for mark in marks:
+                mark.verse = verse_no
+            chapter.marks.extend(marks)
         chapters.append(chapter)
     return chapters
 
@@ -295,14 +341,18 @@ def load_all(wlc_dir: Path) -> list[Chapter]:
     return chapters
 
 
-def render_chapter_with_words(chapter: Chapter) -> tuple[str, list[Word]]:
-    """The chapter text and every word in it, addressed against that text.
+def render_chapter_with_words(chapter: Chapter) -> tuple[str, list[Word], list[Mark]]:
+    """The chapter text, every word in it, and every scribal mark in it.
 
     The offsets `parse_book` recorded are relative to each verse; the corpus
     stores one string per chapter, so they are rebased here onto the spans
     `render_chapter_with_spans` already computes. Nothing re-derives a position
     by searching the text, which is the only way this stays correct through a
     verse that repeats a word.
+
+    The marks are rebased the same way and for one reason: `unclaimed_letters`
+    subtracts them positionally. Deriving them from the text instead would be
+    the character-class guess this returns exist to replace.
     """
     text, spans = render_chapter_with_spans(chapter)
     starts = {verse: start for verse, start, _ in spans}
@@ -318,7 +368,16 @@ def render_chapter_with_words(chapter: Chapter) -> tuple[str, list[Word]]:
         )
         for word in chapter.words
     ]
-    return text, words
+    marks = [
+        Mark(
+            verse=mark.verse,
+            offset=starts[mark.verse] + mark.offset,
+            length=mark.length,
+            text=mark.text,
+        )
+        for mark in chapter.marks
+    ]
+    return text, words, marks
 
 
 def misplaced_words(text: str, words: list[Word]) -> list[str]:
@@ -330,27 +389,40 @@ def misplaced_words(text: str, words: list[Word]) -> list[str]:
     ]
 
 
-#: Hebrew letters. What may be left over once every word span is removed is
-#: separators, verse numbers, and the pointing on the scribal marks — never a
-#: letter belonging to a word nobody indexed.
+#: Hebrew letters, final forms included. What may be left over once every word
+#: span and every scribal mark is removed is separators, verse numbers, and the
+#: pointing that hangs off a mark — never a letter belonging to a word nobody
+#: indexed.
 HEBREW_LETTER = re.compile(r"[\u05d0-\u05ea]")
 
-#: The scribal marks `_verse_text` keeps as text: maqqef, sof pasuq, paseq, and
-#: the setumah/petuchah letters, which are letters but are not words.
-SCRIBAL = set("\u05be\u05c3\u05c0\u05e1\u05e4\u05e0")
 
-
-def unclaimed_letters(text: str, words: list[Word]) -> list[str]:
-    """Stretches of text no word claims that still contain a Hebrew letter.
+def unclaimed_letters(
+    text: str, words: list[Word], marks: list[Mark] | None = None
+) -> list[str]:
+    """Stretches of text no word and no mark claims that still hold a letter.
 
     This is the completeness proof. A word missing from the index leaves its
-    letters sitting in a gap, and they show up here. Scribal marks are excluded
-    because samekh and pe *are* letters but stand for a paragraph break rather
-    than a word.
+    letters sitting in a gap, and they show up here.
+
+    Scribal marks are subtracted **positionally**, by the span each `<seg>`
+    occupied in the source. The earlier version subtracted them by character
+    class — deleting every samekh, pe and nun from a gap before looking for a
+    letter — which meant a dropped word spelled only from those three letters
+    left a gap that emptied itself and reported nothing. Thirty-three words of
+    the corpus are spelled that way (`נס` x30, and one each of `פס`, `נסס`,
+    `סס`), so any of them could have gone missing and still passed all three
+    guards. A mark's position is known exactly, and a claim by position cannot
+    be fooled by what the mark happens to be spelled with.
+
+    `marks` is optional only so a caller mid-upgrade fails loudly rather than
+    silently: without it, the real paragraph markers become unclaimed letters
+    and the check refuses a chapter it should pass.
     """
     covered = bytearray(len(text))
-    for w in words:
-        for i in range(w.offset, min(w.offset + w.length, len(text))):
+    for span_start, span_len in [(w.offset, w.length) for w in words] + [
+        (m.offset, m.length) for m in (marks or [])
+    ]:
+        for i in range(span_start, min(span_start + span_len, len(text))):
             covered[i] = 1
     gaps, run = [], []
     for i, ch in enumerate(text):
@@ -362,7 +434,4 @@ def unclaimed_letters(text: str, words: list[Word]) -> list[str]:
             run.append(ch)
     if run:
         gaps.append("".join(run))
-    return [
-        g for g in gaps
-        if HEBREW_LETTER.search("".join(c for c in g if c not in SCRIBAL))
-    ]
+    return [g for g in gaps if HEBREW_LETTER.search(g)]

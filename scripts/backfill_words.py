@@ -125,7 +125,7 @@ async def main() -> int:
           for doc_id, title, article, osis, digest in docs:
               code_chapter = article.split(".", 1)[1]
               chapter_obj = chapters[code_chapter]
-              text, found = W.render_chapter_with_words(chapter_obj)
+              text, found, marks = W.render_chapter_with_words(chapter_obj)
               text = unicodedata.normalize("NFC", text)
               for word in found:
                   word.surface = unicodedata.normalize("NFC", word.surface)
@@ -137,7 +137,7 @@ async def main() -> int:
               if misplaced:
                   refused.append((title, f"span does not quote its word: {misplaced[0]}"))
                   continue
-              unclaimed = W.unclaimed_letters(text, found)
+              unclaimed = W.unclaimed_letters(text, found, marks)
               if unclaimed:
                   refused.append((title, f"unindexed letters: {unclaimed[:2]}"))
                   continue

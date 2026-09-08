@@ -184,17 +184,20 @@ class TestWordSpans:
     def make(self, verses):
         chapter = W.Chapter(book="Gen", number=1)
         for number, inner in verses:
-            text, pairs, words = W._verse_parse(verse(inner))
+            text, pairs, words, marks = W._verse_parse(verse(inner))
             chapter.verses.append((number, text))
             for word in words:
                 word.verse = number
             chapter.words.extend(words)
+            for mark in marks:
+                mark.verse = number
+            chapter.marks.extend(marks)
         return chapter
 
     def test_every_word_span_quotes_its_own_word(self):
         chapter = self.make([(1, word("alpha") + word("beta", tail="")),
                              (2, word("gamma", tail=""))])
-        text, words = W.render_chapter_with_words(chapter)
+        text, words, marks = W.render_chapter_with_words(chapter)
         assert [w.surface for w in words] == ["alpha", "beta", "gamma"]
         assert W.misplaced_words(text, words) == []
 
@@ -206,13 +209,13 @@ class TestWordSpans:
         prevent, because nothing downstream could detect it.
         """
         chapter = self.make([(1, word("alpha") + word("alpha", tail=""))])
-        text, words = W.render_chapter_with_words(chapter)
+        text, words, marks = W.render_chapter_with_words(chapter)
         assert len({(w.offset, w.length) for w in words}) == 2
         assert W.misplaced_words(text, words) == []
 
     def test_a_word_carries_its_lemma_and_morphology(self):
         chapter = self.make([(1, '<w lemma="c/4941" morph="HC/Ncmsa" id="x">וּמִשְׁפָּט</w>')])
-        _, words = W.render_chapter_with_words(chapter)
+        _, words, _ = W.render_chapter_with_words(chapter)
         assert (words[0].lemma, words[0].morph) == ("c/4941", "HC/Ncmsa")
 
     def test_punctuation_is_not_a_word(self):
@@ -223,9 +226,9 @@ class TestWordSpans:
             + word("הָאָרֶץ", tail="")
         )
         chapter = self.make([(1, inner)])
-        text, words = W.render_chapter_with_words(chapter)
+        text, words, marks = W.render_chapter_with_words(chapter)
         assert [w.surface for w in words] == ["אֶת", "הָאָרֶץ"]
-        assert W.unclaimed_letters(text, words) == []
+        assert W.unclaimed_letters(text, words, marks) == []
 
     def test_a_qere_reading_is_indexed_word_by_word(self):
         """The qere is what the text reads, so it is what the index holds."""
@@ -236,12 +239,12 @@ class TestWordSpans:
             '<w lemma="4941" morph="HNcmsa">QRE</w></rdg></note>'
         )
         chapter = self.make([(1, inner)])
-        text, words = W.render_chapter_with_words(chapter)
+        text, words, marks = W.render_chapter_with_words(chapter)
         assert [w.surface for w in words] == ["alpha", "QRE"]
         assert [w.qere for w in words] == [False, True]
         assert words[1].lemma == "4941"
         assert W.misplaced_words(text, words) == []
-        assert W.unclaimed_letters(text, words) == []
+        assert W.unclaimed_letters(text, words, marks) == []
 
     def test_the_ketiv_is_not_indexed_because_it_is_not_in_the_text(self):
         inner = (
@@ -250,7 +253,7 @@ class TestWordSpans:
             + '<note type="variant"><rdg type="x-qere">'
             '<w lemma="4941" morph="HNcmsa">QRE</w></rdg></note>'
         )
-        _, words = W.render_chapter_with_words(self.make([(1, inner)]))
+        _, words, _ = W.render_chapter_with_words(self.make([(1, inner)]))
         assert "KTV" not in [w.surface for w in words]
 
     def test_a_missing_word_is_caught_by_the_gap_check(self):
@@ -261,17 +264,56 @@ class TestWordSpans:
         """
         inner = word("אֶרֶץ") + word("שָׁלוֹם", tail="")
         chapter = self.make([(1, inner)])
-        text, words = W.render_chapter_with_words(chapter)
-        assert W.unclaimed_letters(text, words) == []
-        assert W.unclaimed_letters(text, words[:1]) != []
+        text, words, marks = W.render_chapter_with_words(chapter)
+        assert W.unclaimed_letters(text, words, marks) == []
+        assert W.unclaimed_letters(text, words[:1], marks) != []
 
     def test_scribal_marks_are_not_words_and_are_not_gaps(self):
         """Samekh and pe are letters, but they mark a paragraph, not a word."""
         inner = word("alpha", tail="") + '<seg type="x-samekh">ס</seg>'
         chapter = self.make([(1, inner)])
-        text, words = W.render_chapter_with_words(chapter)
+        text, words, marks = W.render_chapter_with_words(chapter)
         assert [w.surface for w in words] == ["alpha"]
-        assert W.unclaimed_letters(text, words) == []
+        assert W.unclaimed_letters(text, words, marks) == []
+
+    def test_a_dropped_word_spelled_only_from_mark_letters_is_still_caught(self):
+        """The hole the old guard had, and the reason it is claimed by position.
+
+        The guard used to delete every samekh, pe and nun from a gap before
+        looking for a Hebrew letter, on the grounds that those letters can be
+        paragraph markers. A word spelled only from them therefore emptied its
+        own gap and reported nothing missing. The corpus contains 33 such words
+        — `נס` thirty times, and one each of `פס`, `נסס` and `סס` — so the
+        completeness proof had a shape of word it could not see.
+
+        Marks are now subtracted by the span the `<seg>` occupied, which no
+        spelling can imitate.
+        """
+        inner = word("נס") + word("אֶרֶץ", tail="")
+        chapter = self.make([(1, inner)])
+        text, words, marks = W.render_chapter_with_words(chapter)
+        assert [w.surface for w in words] == ["נס", "אֶרֶץ"]
+        assert W.unclaimed_letters(text, words, marks) == []
+        # Drop the samekh/nun word: its letters are now in text nothing claims.
+        # The gap carries the verse marker it follows, so match on the letters.
+        gaps = W.unclaimed_letters(text, words[1:], marks)
+        assert len(gaps) == 1
+        assert "נס" in gaps[0]
+
+    def test_a_real_paragraph_marker_is_still_not_a_gap_beside_such_a_word(self):
+        """Claiming by position must keep telling the two apart in one verse."""
+        inner = (
+            word("נס")
+            + word("alpha", tail="")
+            + '<seg type="x-samekh">ס</seg>'
+        )
+        chapter = self.make([(1, inner)])
+        text, words, marks = W.render_chapter_with_words(chapter)
+        assert [m.text for m in marks] == ["ס"]
+        assert W.unclaimed_letters(text, words, marks) == []
+        gaps = W.unclaimed_letters(text, words[1:], marks)
+        assert len(gaps) == 1
+        assert "נס" in gaps[0]
 
 
 class TestLemmaParsing:
