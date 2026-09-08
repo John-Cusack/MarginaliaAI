@@ -78,6 +78,50 @@ class LemmaResult:
     notes: list[str] = field(default_factory=list)
 
 
+#: The scheme pair every occurrence is reported against. `core.words.ref` is
+#: written by the WLC ingest in the Masoretic numbering, and the reference a
+#: caller quoting an English edition needs is the other side of this pair.
+HEBREW, ENGLISH = "hebrew", "english"
+
+
+def english_reference(
+    ref: str,
+    to_ref: str | None,
+    to_part: str | None,
+    from_part: str | None,
+    mapping_type: str | None,
+    *,
+    map_loaded: bool,
+) -> dict[str, Any]:
+    """Render one occurrence's English-side reference.
+
+    Split out and made pure because this is where two very different facts were
+    being reported identically. A verse the traditions agree on has no row in
+    `core.verse_map`, and so did *every* verse when the map had not been loaded
+    — `mapping: "same"` in both cases. The second is not an answer, and looked
+    exactly like one: migration 016 creates the tables but
+    `scripts/load_versification.py` fills them, so a migrate without that step
+    left `find_lemma` confidently wrong about 1,978 verses.
+
+    Three outcomes now, and `unmapped` is not `same`:
+
+    * ``unmapped`` — there is no map to consult. `ref` is None, because the
+      honest answer is that this is unknown, not that it is unchanged.
+    * ``same`` — the map is loaded and holds no row, so the traditions agree.
+    * ``full`` / ``partial`` — the map says where the verse moved.
+    """
+    if not map_loaded:
+        return {"ref": None, "mapping": "unmapped", "part": None, "hebrew_part": None}
+    if to_ref is None:
+        return {"ref": ref, "mapping": "same", "part": None, "hebrew_part": None}
+    return {
+        "ref": to_ref,
+        "mapping": mapping_type,
+        "part": to_part,
+        "hebrew_part": from_part,
+    }
+
+
 class LemmaLookup:
     """Reads `core.words`, `core.verse_map` and `core.edition_books`."""
 
@@ -108,6 +152,25 @@ class LemmaLookup:
             clauses.append("split_part(w.ref, '.', 2)::int <= :chapter_end")
             params["chapter_end"] = q.chapter_end
         return " AND ".join(clauses), params
+
+    async def verse_map_is_loaded(self, conn: Any) -> bool:
+        """Whether there is a Hebrew-to-English map to consult at all.
+
+        Coarse on purpose: it separates "migrated but never loaded" — the
+        failure that actually happens, and the one that used to be silent —
+        from a working map. A partially loaded map is not detectable here and
+        is the integration suite's job, which asserts the exact row count.
+        """
+        found = (
+            await conn.execute(
+                sa.text(
+                    "SELECT 1 FROM core.verse_map "
+                    "WHERE from_scheme = :src AND to_scheme = :dst LIMIT 1"
+                ),
+                {"src": HEBREW, "dst": ENGLISH},
+            )
+        ).first()
+        return found is not None
 
     async def known_books(self, language: str = "he") -> list[str]:
         """The OSIS book ids `core.words` actually holds, in canonical order."""
@@ -169,6 +232,20 @@ class LemmaLookup:
             # caller asked not to enumerate it.
             result.counts = await self._aggregates(conn, where, params)
 
+            map_loaded = await self.verse_map_is_loaded(conn)
+            if not map_loaded:
+                # First in the list: every English reference below is withheld
+                # because of this, and a caller that reads one note reads this.
+                result.notes.append(
+                    "core.verse_map is empty, so no English-tradition reference "
+                    "could be resolved and every occurrence reports "
+                    "mapping='unmapped'. The Hebrew references are unaffected "
+                    "and remain citable in LHB and WLC. Run "
+                    "`uv run python scripts/load_versification.py` to load the "
+                    "1,978 mappings; migration 016 creates the tables but does "
+                    "not fill them."
+                )
+
             if not q.include_occurrences:
                 return result
             if total > MAX_OCCURRENCES:
@@ -179,7 +256,9 @@ class LemmaLookup:
                 )
                 return result
 
-            result.occurrences = await self._occurrences(conn, where, params)
+            result.occurrences = await self._occurrences(
+                conn, where, params, map_loaded=map_loaded
+            )
 
         partials = [o for o in result.occurrences if o["english"]["mapping"] == "partial"]
         if partials:
@@ -208,15 +287,17 @@ class LemmaLookup:
         return result
 
     async def _occurrences(
-        self, conn: Any, where: str, params: dict[str, Any]
+        self, conn: Any, where: str, params: dict[str, Any], *, map_loaded: bool
     ) -> list[dict[str, Any]]:
         """One row per word, ordered canonically, carrying no span at all.
 
         The English reference is a LEFT JOIN, so a verse the two traditions
-        agree on comes back with no mapping row and is reported as `same`. The
-        join is on `from_ref` alone rather than on the part, so a partial
-        produces one row per half and the caller sees that the verse is split
-        instead of silently receiving whichever half sorted first.
+        agree on comes back with no mapping row — which is why `map_loaded` has
+        to be passed in rather than inferred from the absence of a row. See
+        `english_reference`. The join is on `from_ref` alone rather than on the
+        part, so a partial produces one row per half and the caller sees that
+        the verse is split instead of silently receiving whichever half sorted
+        first.
         """
         sql = sa.text(
             f"""
@@ -233,25 +314,30 @@ class LemmaLookup:
                    ON b.edition_key = 'WLC'
                   AND b.osis_id = split_part(w.ref, '.', 1)
             LEFT JOIN core.verse_map vm
-                   ON vm.from_scheme = 'hebrew'
-                  AND vm.to_scheme = 'english'
+                   ON vm.from_scheme = :from_scheme
+                  AND vm.to_scheme = :to_scheme
                   AND vm.from_ref = w.ref
             WHERE {where}
             ORDER BY ordinal, chapter, verse, w.document_id, w.position,
                      vm.from_part NULLS FIRST
             """  # noqa: S608 - `where` is built from literal clauses only
         )
-        rows = (await conn.execute(sql, params)).fetchall()
+        rows = (
+            await conn.execute(
+                sql, {**params, "from_scheme": HEBREW, "to_scheme": ENGLISH}
+            )
+        ).fetchall()
 
         out: list[dict[str, Any]] = []
         for row in rows:
-            mapped = row.to_ref is not None
-            english = {
-                "ref": row.to_ref if mapped else row.ref,
-                "mapping": row.mapping_type if mapped else "same",
-                "part": row.to_part,
-                "hebrew_part": row.from_part,
-            }
+            english = english_reference(
+                row.ref,
+                row.to_ref,
+                row.to_part,
+                row.from_part,
+                row.mapping_type,
+                map_loaded=map_loaded,
+            )
             occurrence = {
                 # The Hebrew-scheme reference: what LHB and WLC both call this
                 # verse, and what the caller cites.

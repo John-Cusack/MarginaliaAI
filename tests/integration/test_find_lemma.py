@@ -133,6 +133,44 @@ class TestTheVersificationHop:
             }
 
 
+class TestTheMapMustActuallyBeLoaded:
+    """Migration 016 creates `core.verse_map`; a script fills it.
+
+    The gap between those two steps used to be invisible: a verse the
+    traditions agree on has no row, so an unloaded map was indistinguishable
+    from universal agreement and every occurrence reported `same`.
+    """
+
+    async def test_this_corpus_has_its_map_loaded(
+        self, lookup: LemmaLookup, engine: AsyncEngine
+    ) -> None:
+        async with engine.connect() as conn:
+            assert await lookup.verse_map_is_loaded(conn) is True
+
+    async def test_an_empty_map_yields_unmapped_and_says_so(
+        self, lookup: LemmaLookup, engine: AsyncEngine
+    ) -> None:
+        """Emptied inside a transaction that is rolled back, never committed.
+
+        The session-wide `corpus_is_unchanged` guard measures every table in
+        `core`, so this would fail the whole run if it leaked.
+        """
+        conn = await engine.connect()
+        trans = await conn.begin()
+        try:
+            await conn.execute(sa.text("DELETE FROM core.verse_map"))
+            assert await lookup.verse_map_is_loaded(conn) is False
+        finally:
+            await trans.rollback()
+            await conn.close()
+
+        async with engine.connect() as check:
+            remaining = (
+                await check.execute(sa.text("SELECT count(*) FROM core.verse_map"))
+            ).scalar()
+        assert remaining == 1978, "the rollback must leave the corpus untouched"
+
+
 class TestHomographs:
     """59,061 rows carry a letter Strong's does not have.
 
