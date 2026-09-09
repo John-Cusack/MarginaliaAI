@@ -10,19 +10,28 @@
 
 .PHONY: db db-stop db-status migrate migrate-down migrate-status test test-integration test-all lint help
 
+COMPOSE := tools/dev-postgres/docker-compose.yml
+
+# The port the dev container publishes. `tools/dev-postgres/docker-compose.yml`
+# is the source of truth; `tests/unit/test_dev_environment.py` fails if the two
+# drift, because a host check against the wrong port reports a healthy database
+# as down and there is nothing in the message to say which happened.
+DB_PORT := 5435
+
 db: ## Start Postgres with pgvector
-	docker compose -f tools/dev-postgres/docker-compose.yml up -d
+	docker compose -f $(COMPOSE) up -d
 	@echo "Waiting for Postgres..."
-	@until docker compose -f tools/dev-postgres/docker-compose.yml exec -T postgres \
+	@until docker compose -f $(COMPOSE) exec -T postgres \
 		pg_isready -U re_dev -d research_engine > /dev/null 2>&1; do sleep 1; done
-	@echo "Postgres ready on localhost:5432"
+	@echo "Postgres ready on localhost:$(DB_PORT)"
 
 db-stop: ## Stop Postgres
-	docker compose -f tools/dev-postgres/docker-compose.yml down
+	docker compose -f $(COMPOSE) down
 
 db-status: ## Check DB status
-	@pg_isready -U re_dev -d research_engine -h localhost 2>/dev/null \
-		&& echo "DB is up" || echo "DB is down"
+	@pg_isready -U re_dev -d research_engine -h localhost -p $(DB_PORT) > /dev/null 2>&1 \
+		&& echo "DB is up on localhost:$(DB_PORT)" \
+		|| echo "DB is down (checked localhost:$(DB_PORT))"
 
 ALEMBIC_INI := packages/core/src/research_engine/adapters/storage/postgres/migrations/alembic.ini
 
