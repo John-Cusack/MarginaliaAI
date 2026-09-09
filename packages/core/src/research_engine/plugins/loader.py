@@ -252,9 +252,24 @@ class PluginLoader:
                     f"Failed to load tool {tool_contrib.id}: {e}"
                 ) from e
 
-        # Phase 6: Register contributions
-        for tool_id, handler in loaded.tools.items():
-            self._registry.register_mcp_tool(tool_id, handler, manifest.name)
+        # Phase 6: Register contributions. Iterate the manifest contributions
+        # (not the loaded handlers) so each tool's manifest description and
+        # input schema are in hand when its spec is built.
+        for contrib in provides.mcp_tools:
+            handler = loaded.tools[contrib.id]
+            self._registry.register_mcp_tool(
+                contrib.id,
+                handler,
+                manifest.name,
+                description=contrib.description,
+                input_schema=contrib.input_schema,
+            )
+            spec = self._registry.get_mcp_tool_specs()[contrib.id]
+            if not spec.input_schema:
+                raise PluginLoadError(
+                    f"Tool {contrib.id} has no input schema. Decorate its entry "
+                    f"with @tool(input_schema=...) or add input_schema: to pack.yaml."
+                )
 
         # Phase 7: Extraction schemas
         for es in provides.extraction_schemas:

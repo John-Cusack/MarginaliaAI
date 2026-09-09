@@ -308,9 +308,11 @@ def _register_all(server: Server, container: Any) -> None:
                     _plugin_clients_cache[plugin_name] = {}
             return _plugin_clients_cache[plugin_name]
 
+        tool_specs = registry.get_mcp_tool_specs()
         for tool_id, plugin_handler_fn in plugin_tools.items():
-            p_description = getattr(plugin_handler_fn, "_tool_description", tool_id)
-            p_input_schema = getattr(plugin_handler_fn, "_tool_input_schema", {})
+            spec = tool_specs[tool_id]
+            p_description = spec.description
+            p_input_schema = spec.input_schema
 
             tool_defs.append(types.Tool(
                 name=tool_id,

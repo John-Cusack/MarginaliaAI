@@ -52,8 +52,51 @@ provides:
       description: >
         Detect likely missing letters between two correspondents
         using referenced letters, cadence analysis, and content inference.
+      input_schema:
+        type: object
+        properties:
+          correspondent_a_entity_id:
+            type: string
+            description: Entity id of the first correspondent.
+          correspondent_b_entity_id:
+            type: string
+            description: Entity id of the second correspondent.
+          date_range:
+            type: object
+            description: Optional ISO 8601 bounds for the cadence analysis.
+            properties:
+              start: {type: string}
+              end: {type: string}
+          method:
+            type: string
+            enum: [referenced, cadence, all]
+            default: all
+          min_confidence:
+            type: number
+            default: 0.6
+        required: [correspondent_a_entity_id, correspondent_b_entity_id]
     - id: history.correspondence_cadence
       entry: history.tools.correspondence_cadence:tool_handler
       description: >
         Analyze the density and cadence of correspondence between
         two entities over a time range.
+      input_schema:
+        type: object
+        properties:
+          correspondent_a_entity_id:
+            type: string
+            description: Entity id of the first correspondent.
+          correspondent_b_entity_id:
+            type: string
+            description: Entity id of the second correspondent.
+          date_range:
+            type: object
+            description: Optional ISO 8601 bounds for the analysis window.
+            properties:
+              start: {type: string}
+              end: {type: string}
+          time_bin:
+            type: string
+            enum: [month, week, day]
+            default: month
+        required: [correspondent_a_entity_id, correspondent_b_entity_id]

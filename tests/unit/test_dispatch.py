@@ -131,12 +131,13 @@ class _StubServer:
 
 def _wire(plugin_tools: dict[str, Any], plugin_loader: Any = None) -> _StubServer:
     """Register core + the given pack tools against stub container wiring."""
+    from research_engine.plugins.registry import PluginRegistry
+
     server = _StubServer()
-    registry = SimpleNamespace(
-        get_mcp_tools=lambda: dict(plugin_tools),
-        get_tool_plugin=lambda tool_id: "test_pack",
-        get_filter_extensions=lambda: {},
-    )
+    registry = PluginRegistry()
+    for tool_id, handler in plugin_tools.items():
+        registry.register_mcp_tool(tool_id, handler, "test_pack")
+    registry.get_filter_extensions = lambda: {}  # type: ignore[method-assign]
     container = SimpleNamespace(registry=registry, plugin_loader=plugin_loader)
     register_core_tools(server, container)
     return server
