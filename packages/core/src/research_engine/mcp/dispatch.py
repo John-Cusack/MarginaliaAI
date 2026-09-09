@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from mcp import types
 
+from research_engine.domain.errors import PermissionDenied
 from research_engine.mcp.errors import envelope, failed
 from research_engine.mcp.tools import (
     citations,
@@ -273,6 +274,13 @@ def _register_all(server: Server, container: Any) -> None:
             try:
                 result = await _fn(container, **arguments)
                 return [{"type": "text", "text": json.dumps(result, default=str)}]
+            except PermissionDenied as e:
+                logger.warning("plugin_permission_denied", tool=_name,
+                               plugin=e.plugin, permission=e.permission)
+                return [{"type": "text", "text": json.dumps(
+                    envelope("permission_denied", str(e),
+                             {"plugin": e.plugin, "permission": e.permission})
+                )}]
             except Exception as e:
                 logger.error("tool_error", tool=_name, error=str(e))
                 return [{"type": "text", "text": json.dumps(failed(_name, e))}]
@@ -326,6 +334,13 @@ def _register_all(server: Server, container: Any) -> None:
                     clients = _get_plugin_clients(_name)
                     result = await _fn(**_select_clients(_fn, clients), **arguments)
                     return [{"type": "text", "text": json.dumps(result, default=str)}]
+                except PermissionDenied as e:
+                    logger.warning("plugin_permission_denied", tool=_name,
+                                   plugin=e.plugin, permission=e.permission)
+                    return [{"type": "text", "text": json.dumps(
+                        envelope("permission_denied", str(e),
+                                 {"plugin": e.plugin, "permission": e.permission})
+                    )}]
                 except Exception as e:
                     logger.error("plugin_tool_error", tool=_name, error=str(e))
                     return [{"type": "text", "text": json.dumps(failed(_name, e))}]
