@@ -35,7 +35,16 @@ tools compose with. Pack tools are where domain expertise lives.
 
 ## General conventions
 
-- All tool inputs validated against JSON Schema on invocation.
+- Tool inputs are validated against their JSON Schema on invocation — but
+  shallowly, by decision (WI-6, Option A). Dispatch checks top-level
+  `required` fields, primitive `type`s, and `enum`s only: it does not descend
+  into nested objects, does not check array `items`, does not enforce
+  `format`, and does not apply `default`. The schema is therefore a contract
+  with the agent, not a guarantee to the handler — handlers must treat nested
+  values as arbitrary JSON and re-check what they depend on. Full
+  `jsonschema` validation is deferred until packs are installed from outside
+  this machine, at which point an unvalidated extension schema becomes
+  untrusted input and the deep option stops being optional.
 - All tool outputs are JSON; human-readable formatting is the agent's job.
 - Every tool returns structured objects — never pre-formatted prose.
 - IDs are UUIDs (strings in JSON).

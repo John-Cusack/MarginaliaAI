@@ -188,9 +188,21 @@ def _validate_input(schema: dict[str, Any], arguments: dict[str, Any]) -> str | 
 
     Checks that every ``required`` field is present, and for each provided field
     that has a declared ``type``/``enum`` in ``properties``, that the value
-    conforms. Not a full JSON Schema implementation (no nested/array-item or
-    format validation). Returns an error message string if validation fails,
-    None if valid.
+    conforms. Returns an error message string if validation fails, None if
+    valid.
+
+    Validation contract (WI-6, Option A — shallow by decision, not by
+    accident): the schema is a contract with the agent, not a guarantee to
+    the handler. Nested objects are NOT descended into, array ``items`` are
+    NOT checked, ``format`` is NOT enforced, and ``default`` is NOT applied.
+    The richest schemas on this surface are exactly the nested ones
+    (``find_passages.filters`` and every injected extension schema), so the
+    tools that most look validated are the least validated. Handlers must
+    treat every nested value as arbitrary JSON and re-check what they depend
+    on (see e.g. ``work_cite_entry._checked_window``). Full ``jsonschema``
+    validation stays out until packs come from outside this machine — at that
+    point an unvalidated extension schema is untrusted input reaching a
+    SQL-building filter, and Option B stops being optional.
     """
     required = schema.get("required", [])
     for field in required:
