@@ -180,6 +180,18 @@ class Container:
         return self.extraction
 
     @property
+    def document_nodes_repo(self) -> PGDocumentNodeRepo:
+        return self.document_nodes
+
+    @property
+    def document_texts_repo(self) -> PGDocumentTextRepo:
+        return self.document_texts
+
+    @property
+    def ingestion_service(self) -> IngestionOrchestrator:
+        return self.ingestion
+
+    @property
     def llm_calls_repo(self) -> PGLLMCallLogRepo:
         return self.llm_calls
 

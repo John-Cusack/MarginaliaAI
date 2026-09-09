@@ -63,7 +63,7 @@ async def handler(
     """Return a node's prose, sliced from the document's canonical text."""
     try:
         nid = UUID(node_id)
-        nodes_repo = container.document_nodes
+        nodes_repo = container.document_nodes_repo
 
         ancestors = await nodes_repo.get_ancestors(nid)
         if not ancestors:
@@ -89,7 +89,7 @@ async def handler(
                         f"{limit} limit. Read a node further down the tree, or "
                         f"set include_descendants=false.", {"char_length": end - start, "limit": limit})
 
-        text = await container.document_texts.get_span(node.document_id, start, end)
+        text = await container.document_texts_repo.get_span(node.document_id, start, end)
         if text is None:
             return envelope("no_canonical_text", "The document's canonical text is not stored, so its "
                         "structure cannot be read back.", None)

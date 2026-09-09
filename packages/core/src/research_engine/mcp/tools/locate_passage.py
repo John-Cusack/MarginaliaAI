@@ -42,7 +42,7 @@ async def handler(
     """Locate each passage in its document's structure, and group by node."""
     try:
         passage_repo = container.passage_repo
-        nodes_repo = container.document_nodes
+        nodes_repo = container.document_nodes_repo
 
         located: list[dict[str, Any]] = []
         unlocated: list[str] = []

@@ -23,6 +23,11 @@
 > inventory. Response shapes here are also behind — `verify_quote` gained a
 > `location.node` block and an optional `window`, and `find_passages` hits
 > gained a `source` block, all of which are recorded in `CHANGELOG.md`.
+>
+> **Update (2026-09-09, WI-8):** `annotate_document` / `annotate_passage`
+> struck below — never built, no plan to build. `available_relation_types`
+> joined `list_available_filters`, so `list_relation_types` is now surfaced
+> as a field, like its two siblings.
 
 This document defines the MCP tool surface exposed by Corpus Engine.
 The surface is divided into:
@@ -438,13 +443,6 @@ event).
 ### `upsert_edge`
 
 Create a relationship between nodes.
-
-### `annotate_document` / `annotate_passage`
-
-Attach user-supplied metadata corrections.
-
-These write-tools require explicit capability grant in the MCP server
-config; by default they are read-only-safe.
 
 ## Pack tool conventions
 

@@ -68,6 +68,10 @@ class StubContainer:
     def registry(self) -> PluginRegistry:
         return self.plugin_registry
 
+    @property
+    def ingestion_service(self) -> Any | None:
+        return self.ingestion
+
 
 # ---------- Protocol conformance ----------
 

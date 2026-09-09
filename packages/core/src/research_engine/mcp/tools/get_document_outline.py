@@ -50,7 +50,7 @@ async def handler(
     """Return the document's node tree, depth-limited."""
     try:
         doc_id = UUID(document_id)
-        nodes = await container.document_nodes.get_outline(doc_id, max_depth=max_depth)
+        nodes = await container.document_nodes_repo.get_outline(doc_id, max_depth=max_depth)
 
         if not nodes:
             # Absence is not emptiness: a document ingested before structure

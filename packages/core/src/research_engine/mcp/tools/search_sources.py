@@ -128,7 +128,7 @@ async def _enrich_with_corpus(
     silently skip ingesting the real source. Best-effort — providers without a
     stable source hint simply skip enrichment.
     """
-    ingestion = getattr(container, "ingestion", None)
+    ingestion = getattr(container, "ingestion_service", None)
     if ingestion is None or not hasattr(ingestion, "find_existing"):
         return matches
 

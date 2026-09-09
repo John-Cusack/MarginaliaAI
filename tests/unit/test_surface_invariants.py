@@ -8,6 +8,8 @@ from __future__ import annotations
 import ast
 import inspect
 import pathlib
+import re
+from types import SimpleNamespace
 
 import pytest
 
@@ -96,3 +98,37 @@ def test_no_raw_engine_access_from_the_mcp_layer():  # WI-7
         or 'getattr(container, "engine"' in p.read_text()
     ]
     assert offenders == []
+
+
+# The three Container dependencies that gained stable aliases. `document_nodes`
+# is a prefix of `document_nodes_repo`, so the patterns anchor past it.
+_REAL_NAME_USE = [
+    re.compile(r"container\.document_nodes(?!_repo)"),
+    re.compile(r"container\.document_texts(?!_repo)"),
+    re.compile(r'getattr\(container, "ingestion"'),
+]
+
+
+def test_mcp_tools_use_stable_container_aliases():  # WI-8
+    """No tool bypasses an alias for a dependency that has one."""
+    offenders = {
+        p.name: [pat.pattern for pat in _REAL_NAME_USE if pat.search(p.read_text())]
+        for p in TOOLS_DIR.glob("*.py")
+        if p.stem != "__init__"
+    }
+    assert {k: v for k, v in offenders.items() if v} == {}
+
+
+async def test_list_filters_surfaces_relation_types():  # WI-8
+    """`PluginRegistry.list_relation_types` reaches the agent."""
+    from research_engine.mcp.tools import list_filters
+
+    registry = SimpleNamespace(
+        get_filter_extensions=lambda: {},
+        list_document_types=lambda: {},
+        list_entity_types=lambda: {},
+        list_event_types=lambda: {},
+        list_relation_types=lambda: {"replies_to": {}},
+    )
+    result = await list_filters.handler(SimpleNamespace(registry=registry))
+    assert result["available_relation_types"] == ["replies_to"]
