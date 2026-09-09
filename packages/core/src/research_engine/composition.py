@@ -42,6 +42,7 @@ from research_engine.mcp.catalog import ToolCatalog
 from research_engine.mcp.dispatch import refresh_pack_tools
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
+from research_engine.services.diagnostics import PGDiagnosticsRepo
 from research_engine.services.entities.service import EntityService
 from research_engine.services.events.service import EventService
 from research_engine.services.extraction.executor import ExtractionExecutor
@@ -52,6 +53,7 @@ from research_engine.services.search.hit_source import HitSourceReader
 from research_engine.services.search.hybrid import HybridSearchService
 from research_engine.services.search.windows import PassageWindowReader
 from research_engine.services.verification import QuoteVerifier
+from research_engine.services.words import LemmaLookup
 from research_engine.services.works.attach import CitationService
 from research_engine.services.works.cite import WorkCiter
 from research_engine.services.works.drafting import WorkExportService
@@ -98,6 +100,11 @@ class Container:
     extraction: ExtractionExecutor
     entity_service: EntityService
     event_service: EventService
+    #: Word index lookups. Built once here so the `find_lemma` tool does not
+    #: reach past the container for the engine to construct it with.
+    lemma_lookup: LemmaLookup
+    #: Corpus coverage stats over `core.documents`, read by `corpus_stats`.
+    diagnostics_repo: PGDiagnosticsRepo
     plugin_loader: PluginLoader
     plugin_registry: PluginRegistry
     engine: Any  # AsyncEngine
@@ -210,6 +217,8 @@ async def build_container(settings: Settings) -> Container:
     llm_calls_repo = PGLLMCallLogRepo(sql_engine)
     ingestion_runs_repo = PGIngestionRunRepo(sql_engine)
     installed_plugins_repo = PGInstalledPluginRepo(sql_engine)
+    diagnostics_repo = PGDiagnosticsRepo(sql_engine)
+    lemma_lookup = LemmaLookup(sql_engine)
 
     # External ports
     if settings.llm_provider == "anthropic":
@@ -483,6 +492,8 @@ async def build_container(settings: Settings) -> Container:
         extraction=extraction_service,
         entity_service=entity_service,
         event_service=event_service,
+        lemma_lookup=lemma_lookup,
+        diagnostics_repo=diagnostics_repo,
         plugin_loader=plugin_loader,
         plugin_registry=registry,
         engine=sql_engine,

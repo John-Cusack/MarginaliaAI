@@ -252,13 +252,12 @@ class TestTheTool:
         assert "find_lemma" in {module.TOOL_NAME for module in CORE_TOOL_MODULES}
 
     async def _call(self, engine: AsyncEngine, **kwargs: Any) -> dict[str, Any]:
+        from types import SimpleNamespace
+
         from research_engine.mcp.tools import find_lemma
+        from research_engine.services.words import LemmaLookup
 
-        class _Container:
-            pass
-
-        container = _Container()
-        container.engine = engine
+        container = SimpleNamespace(lemma_lookup=LemmaLookup(engine))
         return await find_lemma.handler(container, **kwargs)
 
     async def test_the_tool_returns_the_survey_counts(self, engine: AsyncEngine) -> None:

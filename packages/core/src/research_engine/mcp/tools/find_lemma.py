@@ -7,7 +7,7 @@ from typing import Any
 import structlog
 
 from research_engine.mcp.errors import envelope, failed
-from research_engine.services.words import LemmaLookup, LemmaQuery
+from research_engine.services.words import LemmaQuery
 
 logger = structlog.get_logger()
 
@@ -115,7 +115,7 @@ async def handler(
                 return envelope("invalid_input", f"chapters start {chapter_start} is after end "
                             f"{chapter_end}.", None)
 
-        lookup = LemmaLookup(container.engine)
+        lookup = container.lemma_lookup
 
         if book:
             known = await lookup.known_books(language)

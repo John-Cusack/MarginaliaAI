@@ -89,7 +89,6 @@ def test_works_guard_only_where_the_dependency_is_optional():  # WI-3
     assert guarded == {"work_citations", "work_render", "work_verify"}
 
 
-@pytest.mark.xfail(strict=True, reason="WI-7")
 def test_no_raw_engine_access_from_the_mcp_layer():  # WI-7
     offenders = [
         p.name for p in TOOLS_DIR.glob("*.py")
