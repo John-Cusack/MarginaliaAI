@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import inspect
 import json
 from typing import TYPE_CHECKING, Any
@@ -10,6 +12,7 @@ import structlog
 from mcp import types
 
 from research_engine.domain.errors import PermissionDenied
+from research_engine.mcp.catalog import ToolCatalog
 from research_engine.mcp.errors import envelope, failed
 from research_engine.mcp.tools import (
     citations,
@@ -236,47 +239,118 @@ def register_core_tools(server: Server, container: Any) -> None:
     _register_all(server, container)
 
 
-def _register_all(server: Server, container: Any) -> None:
-    """Register list_tools and call_tool handlers for all core + plugin tools.
+def _make_core_handler(
+    container: Any, handler_fn: Any, input_schema: dict[str, Any], tool_name: str
+) -> Any:
+    """One core tool's wire handler: validate, call, envelop failures."""
 
-    The low-level MCP Server uses two decorator-based handlers:
-    - ``@server.list_tools()`` returns the full tool catalogue
-    - ``@server.call_tool()`` dispatches a call by tool name
-    """
-    # -- Build tool catalogue --
-    # TODO(hot-reload): tool_defs and handler_map are captured in the list_tools/call_tool
-    # closures below. To support live plugin install without server restart, lift these
-    # into a ToolCatalog object on the container and emit notifications/tools/list_changed
-    # after PluginLoader.load_plugin(...) mutates it. See plan: restart-on-install.
-    tool_defs: list[types.Tool] = []
-    handler_map: dict[str, Any] = {}  # tool_name -> async handler(arguments)
+    async def _handle(arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        error = _validate_input(input_schema, arguments)
+        if error:
+            return [{"type": "text", "text": json.dumps(
+                envelope("validation_error", error)
+            )}]
+        try:
+            result = await handler_fn(container, **arguments)
+            return [{"type": "text", "text": json.dumps(result, default=str)}]
+        except PermissionDenied as e:
+            logger.warning("plugin_permission_denied", tool=tool_name,
+                           plugin=e.plugin, permission=e.permission)
+            return [{"type": "text", "text": json.dumps(
+                envelope("permission_denied", str(e),
+                         {"plugin": e.plugin, "permission": e.permission})
+            )}]
+        except Exception as e:
+            logger.error("tool_error", tool=tool_name, error=str(e))
+            return [{"type": "text", "text": json.dumps(failed(tool_name, e))}]
 
-    # Resolve dynamic schema for find_passages if extensions are loaded
-    registry = getattr(container, "registry", None) or getattr(container, "plugin_registry", None)
+    return _handle
 
-    # Core tools
+
+def _find_passages_entry(
+    container: Any, registry: Any
+) -> tuple[types.Tool, Any]:
+    """The ``find_passages`` catalogue entry with its current dynamic schema."""
+    if registry is not None and hasattr(find_passages, "build_dynamic_schema"):
+        input_schema = find_passages.build_dynamic_schema(registry)
+    else:
+        input_schema = find_passages.TOOL_SCHEMA
+    tool_def = types.Tool(
+        name=find_passages.TOOL_NAME,
+        description=find_passages.TOOL_DESCRIPTION,
+        inputSchema=input_schema,
+    )
+    return tool_def, _make_core_handler(
+        container, find_passages.handler, input_schema, find_passages.TOOL_NAME
+    )
+
+
+def _build_core_entries(
+    container: Any, registry: Any
+) -> tuple[list[types.Tool], dict[str, Any]]:
+    """Snapshot the core slice. ``find_passages`` resolves its filter-extension
+    schema from the registry; everything else lists its static schema."""
+    defs: list[types.Tool] = []
+    handlers: dict[str, Any] = {}
     for module in CORE_TOOL_MODULES:
-        tool_name: str = module.TOOL_NAME
-        description: str = module.TOOL_DESCRIPTION
-        # Use dynamic schema for find_passages when registry is available
-        if tool_name == "find_passages" and registry and hasattr(module, "build_dynamic_schema"):
-            input_schema: dict[str, Any] = module.build_dynamic_schema(registry)
+        if module.TOOL_NAME == "find_passages":
+            tool_def, handler = _find_passages_entry(container, registry)
         else:
-            input_schema = module.TOOL_SCHEMA
-        handler_fn = module.handler
+            tool_def = types.Tool(
+                name=module.TOOL_NAME,
+                description=module.TOOL_DESCRIPTION,
+                inputSchema=module.TOOL_SCHEMA,
+            )
+            handler = _make_core_handler(
+                container, module.handler, module.TOOL_SCHEMA, module.TOOL_NAME
+            )
+        defs.append(tool_def)
+        handlers[module.TOOL_NAME] = handler
+    logger.info("core_tools_registered", count=len(CORE_TOOL_MODULES))
+    return defs, handlers
 
-        tool_defs.append(types.Tool(
-            name=tool_name,
-            description=description,
-            inputSchema=input_schema,
+
+def _build_pack_entries(
+    registry: Any, plugin_loader: Any
+) -> tuple[list[types.Tool], dict[str, Any]]:
+    """Snapshot the pack slice from the registry's ToolSpecs (WI-4).
+
+    Scoped clients are resolved fresh on every build, so a rebuild after an
+    install never serves a previous pack set's clients.
+    """
+    defs: list[types.Tool] = []
+    handlers: dict[str, Any] = {}
+    plugin_tools = registry.get_mcp_tools()
+    tool_specs = registry.get_mcp_tool_specs()
+
+    _plugin_clients_cache: dict[str, dict[str, Any]] = {}
+
+    def _get_plugin_clients(tool_id: str) -> dict[str, Any]:
+        plugin_name = registry.get_tool_plugin(tool_id)
+        if not plugin_name:
+            return {}
+        if plugin_name not in _plugin_clients_cache:
+            if plugin_loader:
+                _plugin_clients_cache[plugin_name] = plugin_loader.build_plugin_clients(plugin_name)
+            else:
+                _plugin_clients_cache[plugin_name] = {}
+        return _plugin_clients_cache[plugin_name]
+
+    for tool_id, plugin_handler_fn in plugin_tools.items():
+        spec = tool_specs[tool_id]
+
+        defs.append(types.Tool(
+            name=tool_id,
+            description=spec.description,
+            inputSchema=spec.input_schema,
         ))
 
-        async def _make_handler(
+        async def _handle_pack(
             arguments: dict[str, Any],
             *,
-            _fn: Any = handler_fn,
-            _schema: dict[str, Any] = input_schema,
-            _name: str = tool_name,
+            _fn: Any = plugin_handler_fn,
+            _schema: dict[str, Any] = spec.input_schema,
+            _name: str = tool_id,
         ) -> list[dict[str, Any]]:
             error = _validate_input(_schema, arguments)
             if error:
@@ -284,7 +358,8 @@ def _register_all(server: Server, container: Any) -> None:
                     envelope("validation_error", error)
                 )}]
             try:
-                result = await _fn(container, **arguments)
+                clients = _get_plugin_clients(_name)
+                result = await _fn(**_select_clients(_fn, clients), **arguments)
                 return [{"type": "text", "text": json.dumps(result, default=str)}]
             except PermissionDenied as e:
                 logger.warning("plugin_permission_denied", tool=_name,
@@ -294,85 +369,112 @@ def _register_all(server: Server, container: Any) -> None:
                              {"plugin": e.plugin, "permission": e.permission})
                 )}]
             except Exception as e:
-                logger.error("tool_error", tool=_name, error=str(e))
+                logger.error("plugin_tool_error", tool=_name, error=str(e))
                 return [{"type": "text", "text": json.dumps(failed(_name, e))}]
 
-        handler_map[tool_name] = _make_handler
+        handlers[tool_id] = _handle_pack
 
-    logger.info("core_tools_registered", count=len(CORE_TOOL_MODULES))
+    if plugin_tools:
+        logger.info("plugin_tools_registered", count=len(plugin_tools))
+    return defs, handlers
 
-    # Plugin tools — inject scoped clients instead of raw container
+
+def get_tool_catalog(container: Any) -> ToolCatalog:
+    """The container's catalogue, creating and hanging it there if needed."""
+    catalog = getattr(container, "tool_catalog", None)
+    if catalog is None:
+        catalog = ToolCatalog()
+        container.tool_catalog = catalog
+    return catalog
+
+
+def refresh_pack_tools(container: Any) -> ToolCatalog:
+    """Rebuild the pack slice of the live catalogue after an install/unload.
+
+    Replaces the whole pack set atomically (an unload is as expressible as a
+    load), rebuilds the ``find_passages`` core entry — a pack contributing a
+    filter extension changes that core tool's signature — and emits the change
+    event the server subscribes to.
+    """
+    catalog = get_tool_catalog(container)
+    registry = getattr(container, "registry", None) or getattr(container, "plugin_registry", None)
     plugin_loader = getattr(container, "plugin_loader", None)
-    if registry:
-        plugin_tools = registry.get_mcp_tools()
+    if registry is None:
+        logger.warning("pack_refresh_without_registry")
+        return catalog
+    pack_defs, pack_handlers = _build_pack_entries(registry, plugin_loader)
+    catalog.replace_packs(pack_defs, pack_handlers)
+    tool_def, handler = _find_passages_entry(container, registry)
+    catalog.update_core_tool(tool_def, handler)
+    catalog.notify_changed()
+    logger.info("pack_tools_refreshed", pack_count=len(pack_defs))
+    return catalog
 
-        # Pre-build scoped clients for each plugin that contributes tools
-        _plugin_clients_cache: dict[str, dict[str, Any]] = {}
 
-        def _get_plugin_clients(tool_id: str) -> dict[str, Any]:
-            plugin_name = registry.get_tool_plugin(tool_id)
-            if not plugin_name:
-                return {}
-            if plugin_name not in _plugin_clients_cache:
-                if plugin_loader:
-                    _plugin_clients_cache[plugin_name] = plugin_loader.build_plugin_clients(plugin_name)
-                else:
-                    _plugin_clients_cache[plugin_name] = {}
-            return _plugin_clients_cache[plugin_name]
+def _register_all(server: Server, container: Any) -> None:
+    """Register list_tools and call_tool handlers for all core + plugin tools.
 
-        tool_specs = registry.get_mcp_tool_specs()
-        for tool_id, plugin_handler_fn in plugin_tools.items():
-            spec = tool_specs[tool_id]
-            p_description = spec.description
-            p_input_schema = spec.input_schema
+    The low-level MCP Server uses two decorator-based handlers:
+    - ``@server.list_tools()`` returns the full tool catalogue
+    - ``@server.call_tool()`` dispatches a call by tool name
 
-            tool_defs.append(types.Tool(
-                name=tool_id,
-                description=p_description,
-                inputSchema=p_input_schema,
-            ))
+    Both closures read through the container's ``ToolCatalog`` rather than
+    capturing a snapshot, so ``refresh_pack_tools`` after an install is
+    visible on the wire without a restart.
+    """
+    registry = getattr(container, "registry", None) or getattr(container, "plugin_registry", None)
+    plugin_loader = getattr(container, "plugin_loader", None)
 
-            async def _make_plugin_handler(
-                arguments: dict[str, Any],
-                *,
-                _fn: Any = plugin_handler_fn,
-                _schema: dict[str, Any] = p_input_schema,
-                _name: str = tool_id,
-            ) -> list[dict[str, Any]]:
-                error = _validate_input(_schema, arguments)
-                if error:
-                    return [{"type": "text", "text": json.dumps(
-                        envelope("validation_error", error)
-                    )}]
-                try:
-                    clients = _get_plugin_clients(_name)
-                    result = await _fn(**_select_clients(_fn, clients), **arguments)
-                    return [{"type": "text", "text": json.dumps(result, default=str)}]
-                except PermissionDenied as e:
-                    logger.warning("plugin_permission_denied", tool=_name,
-                                   plugin=e.plugin, permission=e.permission)
-                    return [{"type": "text", "text": json.dumps(
-                        envelope("permission_denied", str(e),
-                                 {"plugin": e.plugin, "permission": e.permission})
-                    )}]
-                except Exception as e:
-                    logger.error("plugin_tool_error", tool=_name, error=str(e))
-                    return [{"type": "text", "text": json.dumps(failed(_name, e))}]
+    catalog = get_tool_catalog(container)
+    catalog.set_core(*_build_core_entries(container, registry))
+    if registry is not None:
+        catalog.replace_packs(*_build_pack_entries(registry, plugin_loader))
 
-            handler_map[tool_id] = _make_plugin_handler
+    # Live sessions for change notification. The low-level Server keeps no
+    # session registry of its own, so track them from the request context
+    # inside the two closures. The loader emits through the catalogue (it
+    # must not import the server); this subscription pushes
+    # notifications/tools/list_changed to sessions that are still alive. A
+    # client that never calls back still sees the new catalogue on its next
+    # list_tools call, because the closures read the catalogue live.
+    live_sessions: set[Any] = set()
 
-        if plugin_tools:
-            logger.info("plugin_tools_registered", count=len(plugin_tools))
+    def _track_session() -> None:
+        # Outside a request, or a server double without request_context
+        # (tests, dispatch_tool): nothing to push to.
+        with contextlib.suppress(LookupError, AttributeError):
+            live_sessions.add(server.request_context.session)
+
+    def _push_tool_list_changed() -> None:
+        tracked = list(live_sessions)
+        logger.info("tools_list_changed", version=catalog.changed_version,
+                    sessions=len(tracked))
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # no loop (e.g. refresh from a test): next list call sees it
+        for session in tracked:
+            task = loop.create_task(session.send_tool_list_changed())
+
+            def _prune(t: Any, s: Any = session) -> None:
+                if t.exception() is not None:
+                    live_sessions.discard(s)
+
+            task.add_done_callback(_prune)
+
+    catalog.subscribe(_push_tool_list_changed)
 
     # -- Register with the MCP server --
 
     @server.list_tools()
     async def handle_list_tools() -> list[types.Tool]:
-        return tool_defs
+        _track_session()
+        return catalog.defs
 
     @server.call_tool()
     async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[dict[str, Any]]:
-        handler = handler_map.get(name)
+        _track_session()
+        handler = catalog.handler(name)
         if handler is None:
             return [{"type": "text", "text": json.dumps(
                 envelope("unknown_tool", f"Unknown tool: {name}")

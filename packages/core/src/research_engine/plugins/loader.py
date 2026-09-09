@@ -23,6 +23,7 @@ from research_engine.plugins.permissions import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from research_engine.plugins.registry import PluginRegistry
@@ -57,6 +58,10 @@ class PluginLoader:
         self._loaded: dict[str, LoadedPlugin] = {}
         # Top-level Python module name -> owning plugin, to detect collisions.
         self._module_owners: dict[str, str] = {}
+        #: Fired after a pack's tools register. The composition root sets this
+        #: to rebuild the live MCP catalogue; the loader itself never imports
+        #: the server, so the event — not a call — crosses that boundary.
+        self.on_tools_changed: Callable[[], None] | None = None
 
     @staticmethod
     def _check_pip_deps(pip_deps: list[str]) -> list[str]:
@@ -283,6 +288,9 @@ class PluginLoader:
                 )
 
         self._loaded[manifest.name] = loaded
+
+        if self.on_tools_changed is not None:
+            self.on_tools_changed()
 
     def _import_entry(self, plugin_dir: Path, entry: str, plugin_name: str) -> Any:
         """Import a plugin entry point like 'module.path:attr'.

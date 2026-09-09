@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +38,8 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGWorkRepo,
     PGWorkRevisionRepo,
 )
+from research_engine.mcp.catalog import ToolCatalog
+from research_engine.mcp.dispatch import refresh_pack_tools
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
 from research_engine.services.entities.service import EntityService
@@ -120,6 +122,10 @@ class Container:
     #: True once the Step 4 mirror (`core.works_index`) exists and
     #: `work_citations` should query it instead of scanning files.
     works_mirror_available: bool = False
+    #: Live MCP tool catalogue. The list/call closures read through this
+    #: instead of a startup snapshot, so installing a pack is visible on the
+    #: wire after `refresh_pack_tools`, without a restart.
+    tool_catalog: ToolCatalog = field(default_factory=ToolCatalog)
 
     # Aliases used by MCP tool handlers in research_engine.mcp.tools.*
     @property
@@ -450,7 +456,7 @@ async def build_container(settings: Settings) -> Container:
     )
     await plugin_loader.load_enabled()
 
-    return Container(
+    container = Container(
         settings=settings,
         llm=llm,
         embedding=embedding,
@@ -494,6 +500,12 @@ async def build_container(settings: Settings) -> Container:
         # change, so there is no table to detect. `work_citations` scans files.
         works_mirror_available=False,
     )
+    # Live catalogue: a pack loaded after startup rebuilds the wire listing
+    # without a restart. The loader emits; the server (via the catalogue the
+    # MCP closures read through) subscribes. Set after the container exists
+    # because the refresh reads back through it.
+    plugin_loader.on_tools_changed = lambda: refresh_pack_tools(container)
+    return container
 
 
 def _register_builtin_modules(
