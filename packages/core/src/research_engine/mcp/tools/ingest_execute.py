@@ -76,7 +76,7 @@ async def handler(
     """Dispatch ingest actions, skipping matches already in the corpus."""
     from research_engine.mcp.dispatch import dispatch_tool
 
-    ingestion = getattr(container, "ingestion", None)
+    ingestion = getattr(container, "ingestion_service", None)
 
     # Build the work list: explicit actions (no match context) + actions pulled
     # from match.ingest_action (carry the match for dedup).

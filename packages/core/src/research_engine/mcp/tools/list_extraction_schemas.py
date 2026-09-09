@@ -6,6 +6,8 @@ from typing import Any
 
 import structlog
 
+from research_engine.mcp.errors import failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "list_extraction_schemas"
@@ -42,4 +44,4 @@ async def handler(
         }
     except Exception as e:
         logger.error("list_extraction_schemas_error", error=str(e))
-        return {"error": {"code": "list_extraction_schemas_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -16,10 +16,12 @@ from research_engine.adapters.llm.budget_guard import BudgetGuard
 from research_engine.adapters.llm.openai_compatible import OpenAICompatibleLLMAdapter
 from research_engine.adapters.storage.postgres.engine import build_engine, transaction
 from research_engine.adapters.storage.postgres.repositories import (
+    PGCitationRepo,
     PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
     PGEdgeRepo,
+    PGEditionRepo,
     PGEntityRepo,
     PGEventRepo,
     PGExtractionRepo,
@@ -29,18 +31,39 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGLLMCallLogRepo,
     PGMentionRepo,
     PGPassageRepo,
+    PGSourceSpanRepo,
+    PGWaiverRepo,
+    PGWorkBlockRepo,
+    PGWorkLinkRepo,
+    PGWorkRepo,
+    PGWorkRevisionRepo,
 )
+from research_engine.mcp.catalog import ToolCatalog
+from research_engine.mcp.dispatch import refresh_pack_tools
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
+from research_engine.services.diagnostics import PGDiagnosticsRepo
 from research_engine.services.entities.service import EntityService
 from research_engine.services.events.service import EventService
 from research_engine.services.extraction.executor import ExtractionExecutor
 from research_engine.services.extraction.postprocess import RecordEnricher
 from research_engine.services.ingestion.dispatch import ModuleDispatcher
 from research_engine.services.ingestion.orchestrator import IngestionOrchestrator
+from research_engine.services.search.hit_source import HitSourceReader
 from research_engine.services.search.hybrid import HybridSearchService
 from research_engine.services.search.windows import PassageWindowReader
 from research_engine.services.verification import QuoteVerifier
+from research_engine.services.words import LemmaLookup
+from research_engine.services.works.attach import CitationService
+from research_engine.services.works.cite import WorkCiter
+from research_engine.services.works.drafting import WorkExportService
+from research_engine.services.works.files import WorkFileReader
+from research_engine.services.works.publication import WorkPublicationService
+from research_engine.services.works.render import WorkRenderer
+from research_engine.services.works.trace import WorkTraceService
+from research_engine.services.works.validate import WorkValidationService
+from research_engine.services.works.verify import WorkVerifier
+from research_engine.services.works.work_service import WorkService
 
 if TYPE_CHECKING:
     from research_engine.config.settings import Settings
@@ -77,9 +100,39 @@ class Container:
     extraction: ExtractionExecutor
     entity_service: EntityService
     event_service: EventService
+    #: Word index lookups. Built once here so the `find_lemma` tool does not
+    #: reach past the container for the engine to construct it with.
+    lemma_lookup: LemmaLookup
+    #: Corpus coverage stats over `core.documents`, read by `corpus_stats`.
+    diagnostics_repo: PGDiagnosticsRepo
     plugin_loader: PluginLoader
     plugin_registry: PluginRegistry
     engine: Any  # AsyncEngine
+    #: Citation making. Built always: citing needs the corpus, not the works
+    #: directory — the entry is pasted by hand, not written to any file.
+    #: Likewise the Phase-1 spine (works as rows): rows live in the database,
+    #: so no works directory is needed to draft, cite, or freeze. These are
+    #: required fields — `build_container` wires them unconditionally, and the
+    #: work tools read them as plain attributes with no `None` guard.
+    work_citer: WorkCiter
+    work_service: WorkService
+    citation_service: CitationService
+    work_validation: WorkValidationService
+    work_publication: WorkPublicationService
+    work_trace: WorkTraceService
+    #: Work-file services. None when `RE_WORKS_DIR` is unset — tools finding
+    #: them None answer `works_not_configured` rather than an empty result.
+    work_files: WorkFileReader | None = None
+    work_verifier: WorkVerifier | None = None
+    work_renderer: WorkRenderer | None = None
+    work_export: WorkExportService | None = None
+    #: True once the Step 4 mirror (`core.works_index`) exists and
+    #: `work_citations` should query it instead of scanning files.
+    works_mirror_available: bool = False
+    #: Live MCP tool catalogue. The list/call closures read through this
+    #: instead of a startup snapshot, so installing a pack is visible on the
+    #: wire after `refresh_pack_tools`, without a restart.
+    tool_catalog: ToolCatalog = field(default_factory=ToolCatalog)
 
     # Aliases used by MCP tool handlers in research_engine.mcp.tools.*
     @property
@@ -127,6 +180,18 @@ class Container:
         return self.extraction
 
     @property
+    def document_nodes_repo(self) -> PGDocumentNodeRepo:
+        return self.document_nodes
+
+    @property
+    def document_texts_repo(self) -> PGDocumentTextRepo:
+        return self.document_texts
+
+    @property
+    def ingestion_service(self) -> IngestionOrchestrator:
+        return self.ingestion
+
+    @property
     def llm_calls_repo(self) -> PGLLMCallLogRepo:
         return self.llm_calls
 
@@ -164,6 +229,8 @@ async def build_container(settings: Settings) -> Container:
     llm_calls_repo = PGLLMCallLogRepo(sql_engine)
     ingestion_runs_repo = PGIngestionRunRepo(sql_engine)
     installed_plugins_repo = PGInstalledPluginRepo(sql_engine)
+    diagnostics_repo = PGDiagnosticsRepo(sql_engine)
+    lemma_lookup = LemmaLookup(sql_engine)
 
     # External ports
     if settings.llm_provider == "anthropic":
@@ -244,7 +311,103 @@ async def build_container(settings: Settings) -> Container:
         document_texts=document_texts_repo,
         passages=passages_repo,
         documents=docs,
+        document_nodes=document_nodes_repo,
     )
+    spans_repo = PGSourceSpanRepo(sql_engine)
+    work_citer = WorkCiter(
+        verification=quote_verifier,
+        spans=spans_repo,
+        engine=sql_engine,
+    )
+
+    # The Phase-1 spine: one repo per table group, services over them.
+    tx_factory = partial(transaction, sql_engine)
+    works_repo = PGWorkRepo(sql_engine)
+    revisions_repo = PGWorkRevisionRepo(sql_engine)
+    blocks_repo = PGWorkBlockRepo(sql_engine)
+    citations_repo = PGCitationRepo(sql_engine)
+    links_repo = PGWorkLinkRepo(sql_engine)
+    editions_repo = PGEditionRepo(sql_engine)
+    waivers_repo = PGWaiverRepo(sql_engine)
+    work_service = WorkService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        transaction_factory=tx_factory,
+    )
+    citation_service = CitationService(
+        verification=quote_verifier,
+        spans=spans_repo,
+        editions=editions_repo,
+        citations=citations_repo,
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        passages=passages_repo,
+        documents=docs,
+        transaction_factory=tx_factory,
+    )
+    work_export = WorkExportService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        transaction_factory=tx_factory,
+    )
+    work_validation = WorkValidationService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        editions=editions_repo,
+        waivers=waivers_repo,
+        spans=spans_repo,
+        documents=docs,
+        document_texts=document_texts_repo,
+        passages=passages_repo,
+        policy=settings.works_policy,
+        works_dir=settings.works_dir,
+        export_markdown=work_export.export_draft_text,
+    )
+    work_publication = WorkPublicationService(
+        validation=work_validation,
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        waivers=waivers_repo,
+        transaction_factory=tx_factory,
+    )
+    work_trace = WorkTraceService(
+        works=works_repo,
+        revisions=revisions_repo,
+        blocks=blocks_repo,
+        citations=citations_repo,
+        links=links_repo,
+        spans=spans_repo,
+        documents=docs,
+    )
+
+    # Created works live as files until their first freeze. Without a works
+    # directory there is nothing to verify, cite, or render, and the tools
+    # say so instead of answering empty.
+    if settings.works_dir is not None:
+        work_files = WorkFileReader(settings.works_dir)
+        work_verifier = WorkVerifier(
+            document_texts_repo, docs, passages_repo, quote_verifier,
+            settings.works_dir,
+        )
+        work_renderer = WorkRenderer(docs, quote_verifier, settings.works_dir)
+    else:
+        work_files = work_verifier = work_renderer = None
 
     # What a hit is *read* as, rather than what it was ranked as. Always on:
     # a chunk boundary is where the ingester happened to cut, and there is no
@@ -262,6 +425,9 @@ async def build_container(settings: Settings) -> Container:
         reranker=reranker,
         get_filter_extensions=registry.get_filter_extensions,
         windows=window_reader,
+        hit_sources=HitSourceReader(
+            documents=docs, document_texts=document_texts_repo
+        ),
     )
 
     # Dispatcher with built-in modules
@@ -280,6 +446,7 @@ async def build_container(settings: Settings) -> Container:
         default_language=settings.default_language,
         document_texts=document_texts_repo,
         document_nodes=document_nodes_repo,
+        editions=editions_repo,
     )
 
     # Plugin-facing client adapters. Built here (not in the Container) because
@@ -310,7 +477,7 @@ async def build_container(settings: Settings) -> Container:
     )
     await plugin_loader.load_enabled()
 
-    return Container(
+    container = Container(
         settings=settings,
         llm=llm,
         embedding=embedding,
@@ -337,10 +504,31 @@ async def build_container(settings: Settings) -> Container:
         extraction=extraction_service,
         entity_service=entity_service,
         event_service=event_service,
+        lemma_lookup=lemma_lookup,
+        diagnostics_repo=diagnostics_repo,
         plugin_loader=plugin_loader,
         plugin_registry=registry,
         engine=sql_engine,
+        work_files=work_files,
+        work_verifier=work_verifier,
+        work_renderer=work_renderer,
+        work_citer=work_citer,
+        work_service=work_service,
+        citation_service=citation_service,
+        work_validation=work_validation,
+        work_publication=work_publication,
+        work_trace=work_trace,
+        work_export=work_export,
+        # The Step 4 mirror does not exist in Phase 0: no migration in this
+        # change, so there is no table to detect. `work_citations` scans files.
+        works_mirror_available=False,
     )
+    # Live catalogue: a pack loaded after startup rebuilds the wire listing
+    # without a restart. The loader emits; the server (via the catalogue the
+    # MCP closures read through) subscribes. Set after the container exists
+    # because the refresh reads back through it.
+    plugin_loader.on_tools_changed = lambda: refresh_pack_tools(container)
+    return container
 
 
 def _register_builtin_modules(

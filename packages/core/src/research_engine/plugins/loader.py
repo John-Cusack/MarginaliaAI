@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from research_engine.domain.errors import PluginLoadError
-from research_engine.plugins.compatibility import check_core_api
+from research_engine.plugins.compatibility import check_core_api, check_plugin_deps
 from research_engine.plugins.manifest import PluginManifest, parse_manifest
 from research_engine.plugins.permissions import (
     DeniedEdgeClient,
@@ -23,6 +23,7 @@ from research_engine.plugins.permissions import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from research_engine.plugins.registry import PluginRegistry
@@ -57,6 +58,10 @@ class PluginLoader:
         self._loaded: dict[str, LoadedPlugin] = {}
         # Top-level Python module name -> owning plugin, to detect collisions.
         self._module_owners: dict[str, str] = {}
+        #: Fired after a pack's tools register. The composition root sets this
+        #: to rebuild the live MCP catalogue; the loader itself never imports
+        #: the server, so the event — not a call — crosses that boundary.
+        self.on_tools_changed: Callable[[], None] | None = None
 
     @staticmethod
     def _check_pip_deps(pip_deps: list[str]) -> list[str]:
@@ -79,6 +84,43 @@ class PluginLoader:
             except PackageNotFoundError:
                 missing.append(pkg_name)
         return missing
+
+    @staticmethod
+    def _resolve_plugin_deps(
+        validated: list[tuple[Any, Path, PluginManifest]],
+    ) -> list[tuple[Any, Path, PluginManifest]]:
+        """Drop every pack whose declared pack dependencies will not be loaded.
+
+        Repeats until stable so a dropped pack takes its dependents with it:
+        one pass would drop a pack whose dependency is missing but keep the pack
+        that depended on *it*, which is the case worth the extra pass.
+
+        Two packs that require each other and are both installed both survive,
+        which is correct — each one's dependency is satisfied. A cycle only
+        collapses when something it rests on is genuinely absent, and then it
+        collapses entirely.
+        """
+        surviving = list(validated)
+        while True:
+            available = {m.name: m.version for _, _, m in surviving}
+            kept = []
+            for entry in surviving:
+                manifest = entry[2]
+                reasons = check_plugin_deps(
+                    [(dep.name, dep.version) for dep in manifest.requires.plugins],
+                    available,
+                )
+                if reasons:
+                    logger.error(
+                        "plugin_missing_plugin_deps",
+                        plugin=manifest.name,
+                        reasons=reasons,
+                    )
+                    continue
+                kept.append(entry)
+            if len(kept) == len(surviving):
+                return kept
+            surviving = kept
 
     async def load_enabled(self) -> list[str]:
         """Load all enabled plugins. Returns list of loaded plugin names."""
@@ -124,6 +166,15 @@ class PluginLoader:
                 validated.append((installed, plugin_dir, manifest))
             except Exception as e:
                 logger.error("plugin_validate_failed", plugin=installed.id, error=str(e))
+
+        # Phase 3b: Pack dependencies, resolved against what will actually load.
+        #
+        # Checked after the per-pack loop rather than inside it, because the
+        # answer depends on the whole surviving set: a pack whose dependency
+        # was itself dropped for an incompatible core_api must drop too. Hence
+        # the fixed point — each pass may remove a pack that another pack
+        # needed, so it repeats until a pass removes nothing.
+        validated = self._resolve_plugin_deps(validated)
 
         # Phase 4-8: Register types, load code, register contributions
         for _installed, plugin_dir, manifest in validated:
@@ -206,9 +257,24 @@ class PluginLoader:
                     f"Failed to load tool {tool_contrib.id}: {e}"
                 ) from e
 
-        # Phase 6: Register contributions
-        for tool_id, handler in loaded.tools.items():
-            self._registry.register_mcp_tool(tool_id, handler, manifest.name)
+        # Phase 6: Register contributions. Iterate the manifest contributions
+        # (not the loaded handlers) so each tool's manifest description and
+        # input schema are in hand when its spec is built.
+        for contrib in provides.mcp_tools:
+            handler = loaded.tools[contrib.id]
+            self._registry.register_mcp_tool(
+                contrib.id,
+                handler,
+                manifest.name,
+                description=contrib.description,
+                input_schema=contrib.input_schema,
+            )
+            spec = self._registry.get_mcp_tool_specs()[contrib.id]
+            if not spec.input_schema:
+                raise PluginLoadError(
+                    f"Tool {contrib.id} has no input schema. Decorate its entry "
+                    f"with @tool(input_schema=...) or add input_schema: to pack.yaml."
+                )
 
         # Phase 7: Extraction schemas
         for es in provides.extraction_schemas:
@@ -222,6 +288,9 @@ class PluginLoader:
                 )
 
         self._loaded[manifest.name] = loaded
+
+        if self.on_tools_changed is not None:
+            self.on_tools_changed()
 
     def _import_entry(self, plugin_dir: Path, entry: str, plugin_name: str) -> Any:
         """Import a plugin entry point like 'module.path:attr'.

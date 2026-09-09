@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -21,6 +22,22 @@ logger = structlog.get_logger()
 _global_registry: PluginRegistry | None = None
 
 
+@dataclass(frozen=True)
+class ToolSpec:
+    """One pack tool as the agent sees it: handler plus its metadata.
+
+    The description and schema live here — one record — rather than as
+    attributes stamped onto the imported function, so the loader (which holds
+    the manifest) and dispatch (which lists the tools) cannot disagree.
+    """
+
+    id: str
+    handler: Any
+    description: str
+    input_schema: dict[str, Any]
+    plugin: str
+
+
 class PluginRegistry:
     """Central runtime catalog of all registered contributions."""
 
@@ -32,7 +49,7 @@ class PluginRegistry:
         self._ingestion_modules: dict[str, Any] = {}
         self._chunkers: dict[str, Any] = {}
         self._extraction_schemas: dict[tuple[str, int], Any] = {}
-        self._mcp_tools: dict[str, Any] = {}
+        self._mcp_tools: dict[str, ToolSpec] = {}
         self._post_ingestion_hooks: dict[str, list[Callable]] = {}
         self._filter_extensions: dict[str, FilterExtension] = {}
         self._source_search_providers: dict[str, SourceSearchProvider] = {}
@@ -208,11 +225,35 @@ class PluginRegistry:
 
     # --- MCP tools ---
 
-    def register_mcp_tool(self, id: str, handler: Any, plugin: str) -> None:
+    def register_mcp_tool(
+        self,
+        id: str,
+        handler: Any,
+        plugin: str,
+        *,
+        description: str | None = None,
+        input_schema: dict[str, Any] | None = None,
+    ) -> None:
         self._check_conflict("mcp_tool", id, plugin)
-        self._mcp_tools[id] = handler
+        # The decorator wins where a pack used it — the working packs carry
+        # richer decorator metadata than their one-line manifest blurbs. The
+        # manifest is the fallback, so a bare entrypoint is still described.
+        self._mcp_tools[id] = ToolSpec(
+            id=id,
+            handler=handler,
+            plugin=plugin,
+            description=getattr(handler, "_tool_description", None)
+            or description
+            or id,
+            input_schema=getattr(handler, "_tool_input_schema", None)
+            or input_schema
+            or {},
+        )
 
     def get_mcp_tools(self) -> dict[str, Any]:
+        return {k: s.handler for k, s in self._mcp_tools.items()}
+
+    def get_mcp_tool_specs(self) -> dict[str, ToolSpec]:
         return dict(self._mcp_tools)
 
     def get_tool_plugin(self, tool_id: str) -> str | None:

@@ -83,6 +83,20 @@ class PGDocumentRepo:
             ).all()
         return [self._to_domain(row) for row in rows]
 
+    async def get_many(self, doc_ids: list[UUID]) -> list[Document]:
+        """Several documents in one round trip.
+
+        The read path for a page of search hits: one query for the whole page,
+        never one per hit. Ids that no longer resolve are omitted.
+        """
+        if not doc_ids:
+            return []
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(documents.select().where(documents.c.id.in_(doc_ids)))
+            ).all()
+        return [self._to_domain(row) for row in rows]
+
     async def update_metadata(self, doc_id: UUID, patch: dict[str, Any]) -> Document:
         async with self._engine.begin() as conn:
             # Merge metadata

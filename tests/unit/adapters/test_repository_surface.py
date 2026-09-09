@@ -18,27 +18,54 @@ import inspect
 import pytest
 
 from research_engine.adapters.storage.postgres.repositories import (
+    PGCitationRepo,
     PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
+    PGEditionRepo,
     PGPassageRepo,
+    PGSourceSpanRepo,
+    PGWaiverRepo,
+    PGWorkBlockRepo,
+    PGWorkLinkRepo,
+    PGWorkRepo,
+    PGWorkRevisionRepo,
 )
 
 EXPECTED = {
     PGDocumentTextRepo: [
         "put", "get", "get_text", "get_span", "count", "missing_document_ids",
         "find_documents_containing", "lengths", "find_raw", "find_normalized",
-        "get_spans",
+        "get_spans", "parser_versions",
     ],
     PGPassageRepo: [
         "get", "get_many", "get_by_document", "covering_span", "set_locators",
-        "vector_search", "keyword_search", "insert_many",
+        "set_node_ids", "vector_search", "keyword_search", "insert_many",
     ],
-    PGDocumentRepo: ["get", "insert", "find_by_hash", "find_by_metadata"],
+    PGDocumentRepo: ["get", "get_many", "insert", "find_by_hash", "find_by_metadata"],
     PGDocumentNodeRepo: [
         "get", "get_tree", "get_outline", "get_subtree",
         "get_ancestors", "get_ancestors_many", "find_by_span", "insert_many",
     ],
+    PGSourceSpanRepo: ["resolve", "get", "for_document", "stale"],
+    PGEditionRepo: ["get", "get_by_key", "upsert_key", "list_keys"],
+    PGWorkRepo: [
+        "insert", "get", "get_by_slug", "list", "set_current_revision",
+        "update", "archive",
+    ],
+    PGWorkRevisionRepo: [
+        "insert", "get", "latest", "copy_forward", "set_message", "freeze",
+        "publish", "supersede",
+    ],
+    PGWorkBlockRepo: ["upsert", "tree", "by_key", "delete"],
+    PGCitationRepo: [
+        "insert_occurrence", "insert_item", "for_block", "for_revision",
+        "by_key", "citing_span", "citing_key",
+    ],
+    PGWorkLinkRepo: [
+        "add_source_link", "add_entity_link", "for_block", "for_span", "for_entity",
+    ],
+    PGWaiverRepo: ["insert", "for_revision"],
 }
 
 

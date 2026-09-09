@@ -34,6 +34,7 @@ class _FakeLoader:
 class _FakeContainer:
     def __init__(self, ingestion, registry=None, loader=None):
         self.ingestion = ingestion
+        self.ingestion_service = ingestion
         self.registry = registry
         self.plugin_registry = registry
         self.plugin_loader = loader

@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "provenance_of"
@@ -70,15 +72,15 @@ async def handler(
                 passage_id = event.source_passage_id
 
         else:
-            return {"error": {"code": "invalid_input", "message": f"Unknown kind: {kind}", "details": None}}
+            return envelope("invalid_input", f"Unknown kind: {kind}", None)
 
         if not passage_id:
-            return {"error": {"code": "not_found", "message": f"Could not trace provenance for {kind}:{id}", "details": None}}
+            return envelope("not_found", f"Could not trace provenance for {kind}:{id}", None)
 
         # Load passage
         passage = await passage_repo.get(passage_id)
         if not passage:
-            return {"error": {"code": "not_found", "message": f"Source passage not found: {passage_id}", "details": None}}
+            return envelope("not_found", f"Source passage not found: {passage_id}", None)
 
         # Load document
         document = await document_repo.get(passage.document_id)
@@ -111,7 +113,7 @@ async def handler(
 
         return result
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("provenance_of_error", error=str(e))
-        return {"error": {"code": "provenance_of_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

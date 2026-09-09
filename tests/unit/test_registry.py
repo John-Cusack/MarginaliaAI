@@ -2,10 +2,77 @@
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+from unittest.mock import AsyncMock
+
 import pytest
 
 from research_engine.domain.errors import PluginConflict, UnknownType
+from research_engine.plugins.loader import PluginLoader
+from research_engine.plugins.manifest import parse_manifest
 from research_engine.plugins.registry import PluginRegistry
+
+HISTORY_PACK_DIR = Path(__file__).resolve().parents[2] / "packages" / "plugins" / "history"
+
+
+@pytest.fixture
+def loaded_history_registry() -> PluginRegistry:
+    """The in-tree history pack, loaded the way install loads it.
+
+    `PluginLoader._load_one` is the load entry point; the manifest comes from
+    the pack's own pack.yaml so description/schema coverage is measured, not
+    stubbed.
+    """
+    registry = PluginRegistry()
+    loader = PluginLoader(AsyncMock(), registry, HISTORY_PACK_DIR.parent)
+    manifest = parse_manifest(HISTORY_PACK_DIR / "pack.yaml")
+    asyncio.run(loader._load_one(manifest, HISTORY_PACK_DIR))
+    return registry
+
+
+def test_decorator_metadata_wins_over_manifest_blurb():
+    """Precedence WI-4 decided: the decorator is richer, the manifest fills gaps."""
+    from research_engine.plugins.sdk.decorators import tool
+
+    @tool(
+        id="x",
+        description="rich decorator description",
+        input_schema={"type": "object", "properties": {"q": {"type": "string"}}},
+    )
+    async def handler(**kwargs):
+        return {}
+
+    r = PluginRegistry()
+    r.register_mcp_tool(
+        "x", handler, "p",
+        description="one-line blurb", input_schema={"type": "object"},
+    )
+    spec = r.get_mcp_tool_specs()["x"]
+    assert spec.description == "rich decorator description"
+    assert spec.input_schema["properties"] == {"q": {"type": "string"}}
+
+
+def test_manifest_fills_gap_for_bare_entrypoint():
+    async def handler(**kwargs):
+        return {}
+
+    r = PluginRegistry()
+    r.register_mcp_tool(
+        "x", handler, "p",
+        description="manifest blurb", input_schema={"type": "object"},
+    )
+    spec = r.get_mcp_tool_specs()["x"]
+    assert spec.description == "manifest blurb"
+    assert spec.input_schema == {"type": "object"}
+
+
+def test_pack_tools_are_fully_described(loaded_history_registry):
+    for tool_id, spec in loaded_history_registry.get_mcp_tool_specs().items():
+        assert spec.description and spec.description != tool_id, \
+            f"{tool_id} reaches the agent as its own id"
+        assert spec.input_schema.get("type") == "object", \
+            f"{tool_id} has no usable schema; _validate_input would check nothing"
 
 
 class TestPluginRegistry:

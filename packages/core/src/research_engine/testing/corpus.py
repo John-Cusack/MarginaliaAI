@@ -8,10 +8,25 @@ from uuid import UUID
 import sqlalchemy as sa
 from uuid_utils import uuid7
 
-from research_engine.adapters.storage.postgres.schema import documents, passages
+from research_engine.adapters.storage.postgres.engine import transaction
+from research_engine.adapters.storage.postgres.repositories.authored import (
+    PGWorkRepo,
+    PGWorkRevisionRepo,
+)
+from research_engine.adapters.storage.postgres.repositories.spans import PGSourceSpanRepo
+from research_engine.adapters.storage.postgres.schema import (
+    documents,
+    passages,
+    source_spans,
+    works,
+)
+from research_engine.domain.works import WorkDraft, WorkRevisionDraft
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from research_engine.domain.spans import SourceSpan
+    from research_engine.domain.works import Work, WorkRevision
 
 
 def new_id() -> UUID:
@@ -36,6 +51,7 @@ class Corpus:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._document_ids: list[UUID] = []
+        self._span_ids: list[UUID] = []
         self._extra: list[tuple[Any, UUID]] = []
 
     def track(self, table: Any, row_id: UUID) -> UUID:
@@ -116,16 +132,75 @@ class Corpus:
         self._document_ids.append(document_id)
         return document_id
 
+    async def add_span(
+        self, document_id: UUID, char_start: int, char_end: int
+    ) -> SourceSpan:
+        """Resolve a span through the real resolver and track it for cleanup."""
+        async with transaction(self._engine) as tx:
+            span = await PGSourceSpanRepo(self._engine).resolve(
+                tx,
+                document_id=document_id,
+                char_start=char_start,
+                char_end=char_end,
+            )
+        self._span_ids.append(span.id)
+        return span
+
+    def adopt_span(self, span_id: UUID) -> UUID:
+        """Track a span resolved by something else — a citer under test.
+
+        A span RESTRICT-guards its document, so an untracked span fails
+        document cleanup with a foreign key violation rather than a leak.
+        """
+        self._span_ids.append(span_id)
+        return span_id
+
+    async def add_work(
+        self, slug: str, title: str = "A work", work_type: str = "essay"
+    ) -> tuple[Work, WorkRevision]:
+        """Create a work with its first draft revision, tracked for cleanup.
+
+        The work row cascades to revisions, blocks, occurrences, items, links
+        and waivers, so tracking the work alone removes the whole tree —
+        after spans and documents, which RESTRICT from below.
+        """
+        async with transaction(self._engine) as tx:
+            work = await PGWorkRepo(self._engine).insert(
+                tx, WorkDraft(slug=slug, title=title, work_type=work_type)
+            )
+            revision = await PGWorkRevisionRepo(self._engine).insert(
+                tx, WorkRevisionDraft(work_id=work.id, revision_number=1)
+            )
+            await PGWorkRepo(self._engine).set_current_revision(
+                tx, work.id, revision.id
+            )
+        self._extra.append((works, work.id))
+        return work, revision
+
     async def cleanup(self) -> None:
-        # Documents first: their cascades clear the rows referencing the tracked
-        # entities and schemas, which would otherwise block deletion.
+        # Works first: they cascade to items and links, which RESTRICT the
+        # spans and editions below. Spans next: they RESTRICT their document.
+        # Documents next: their cascades clear the rows referencing tracked
+        # entities and schemas. The remaining extras (entities, editions, …)
+        # go last, unreferenced by then.
+        first = [(table, row_id) for table, row_id in self._extra if table is works]
+        rest = [
+            (table, row_id) for table, row_id in self._extra if table is not works
+        ]
         async with self._engine.begin() as conn:
+            for table, row_id in reversed(first):
+                await conn.execute(table.delete().where(table.c.id == row_id))
+            if self._span_ids:
+                await conn.execute(
+                    source_spans.delete().where(source_spans.c.id.in_(self._span_ids))
+                )
             if self._document_ids:
                 await conn.execute(
                     documents.delete().where(documents.c.id.in_(self._document_ids))
                 )
-            for table, row_id in reversed(self._extra):
+            for table, row_id in reversed(rest):
                 await conn.execute(table.delete().where(table.c.id == row_id))
+        self._span_ids.clear()
         self._document_ids.clear()
         self._extra.clear()
 

@@ -1,5 +1,255 @@
 # Changelog
 
+### Lemma lookup that produces citable references (`find_lemma`, migrations 015-017)
+
+`find_lemma` asks the question a lexicographic survey exists to ask — where
+does this word occur — of `core.words` rather than of the text, and returns
+**verse references, never character spans**. The index is built on WLC and the
+survey quotes LHB (52 citations to 7); the editions agree on verse count in all
+929 shared chapters but only ~47% are consonantally identical, so a WLC offset
+does not address the same characters in LHB. A reference survives the hop and
+`verify_quote` resolves the span in the edition being cited. Verified over all
+579 occurrences of the two survey lemmas: 574 of the words are present verbatim
+in the LHB verse at the same reference and all 574 verify as `exact` there. The
+five that are not are exactly the five rows with `from_qere` true — WLC reads
+the qere where LHB prints the ketiv — so the tool reports that flag as a
+warning rather than leaving it to be discovered.
+
+`homograph` is a first-class parameter with three states (absent, a letter, the
+empty string), because 59,061 rows carry an OSHB letter splitting a number
+Strong's conflated. Prefixes are counted rather than normalised away: `k/4941`
+is 37 occurrences of "according to the *mishpat* of", `b/4941` is 33.
+
+**Versification and book identity are now data** (migration 016). LHB and WLC
+write `ECC HO MIC NAH` where ESV writes `EC HOS MI NA`, so a join on the
+article code returned silence — not an error — for four of the thirty-nine Old
+Testament books, and those four were among the versification-divergent ones.
+`core.edition_books` maps `(edition, code)` to an OSIS id with a canonical
+ordinal; `core.verse_map` holds the 1,978 mappings in `wlc/VerseMap.xml` that
+the WLC ingest discarded; `core.editions_versification` names a scheme per
+edition. The map is a pair table rather than an offset column because seven
+mappings are `type="partial"` — a verse beginning midway through another — and
+no integer offset expresses one. Completeness is checkable: joined on the raw
+code 23 books diverge, joined through `edition_books` 27 do, and VerseMap maps
+exactly 27.
+
+Migration 015 indexes `core.words` on `(language, strong)`. A Strong's number
+is unique only inside its lexicon, and closing the latent H4941/G4941 collision
+is cheapest while every row is Hebrew.
+
+Where `core.words` belongs was settled before any of this was built, while it
+still had zero consumers: it stays in core as a token index, with the boundary
+at "core owns tokens, a pack owns what they mean". Reasoning and the revisit
+trigger are in `docs/design/decision-001-words-belongs-in-core.md`.
+
+### `requires.plugins` is enforced
+
+Parsed in `plugins/manifest.py` and read by nothing, so a pack depending on
+another pack's chunker failed at use time with `Unknown chunker:
+verse_boundary` and nothing naming the missing install. The loader now checks
+it against the packs that will actually load, and repeats to a fixed point so a
+dropped pack takes its dependents with it.
+
+### The HNSW index was gone, and nothing could have noticed
+
+Migration 006 typed `passage_embeddings.embedding` and built an HNSW index on
+it. The column was still typed and the index was gone; every semantic search
+had quietly returned to a parallel sequential scan (~275 ms warm on 94,858
+vectors, against 1.9 ms once rebuilt). Migration 017 rebuilds it.
+
+The invisibility mattered more than the loss. `schema.py` declared the column
+as `Vector()` with no dimension and no index, and `test_schema_truthfulness`
+asserted only `declared - actual` — which cannot see an index the database has
+lost when the declaration never had it either. The test now also asserts
+`actual - declared`, and that direction immediately found five more real
+indexes nobody had written down, including the GiST index behind every ltree
+subtree test and the GIN index that is the whole of keyword search. All are now
+declared. Separately, `VACUUM FULL core.passage_embeddings` reclaimed 974 MB of
+TOAST that had never been vacuumed.
+
+### The completeness guard for `core.words` is now a proof
+
+`unclaimed_letters` stripped every samekh, pe and nun from a gap before looking
+for a Hebrew letter, so a dropped word spelled only from those three letters
+emptied its own gap and reported nothing — 33 words of the corpus are spelled
+that way. Marks are now claimed by the span each `<seg>` occupied, which no
+spelling can imitate. The repaired guard passes all 929 chapters and reproduces
+the same 305,517 rows, so the index was complete; the guard could not prove it.
+`research-engine doctor` now asks the same question of the stored rows, so a
+re-parse cannot silently invalidate 305,517 offsets.
+
+### Quotations report the node they sit in, not just their chunk
+
+`verify_quote` answered "where is this" with the locators of the passages
+covering the match, which describe the chunker's window rather than the
+quotation: a quote in Genesis 18:19 came back as "Genesis 18:18-23", and two
+quotes from the same verse reported different ranges because a chunk boundary
+fell between them. `QuoteLocation` gains a `node` block — the deepest node
+whose span encloses the match, via `find_by_span`, which was built and never
+called. `locators` stays for the page numbers it has always carried, now
+documented as chunk-wide. A quotation crossing a verse boundary is enclosed by
+no verse and resolves to the chapter, which is right. **This changes an
+existing tool's response shape.**
+
+### The verse boundaries of the LHB and ESV chapters, recovered
+
+WLC was the only Bible here that knew where its own verses were, because its
+chapters could be re-rendered from morphhb and checked byte for byte. LHB and
+ESV have no source in this repository, so their 7,809 passages carried `{}` for
+a locator and sat under no structure: a quotation could name only the 500-token
+chunk it came from. Both editions lay their chapters out predictably, so the
+verses were read back out of the stored text under a guard — `coverage_gaps`
+blanks out every span a parser claims, and what remains must be verse markers
+and whitespace and nothing else, so a parser that lost a verse gets its chapter
+refused rather than written from a guess. All 929 LHB and 1,189 ESV chapters
+pass, and both agree with WLC on the verse count of all 929 shared chapters.
+
+### The WLC ingest is reproducible from the repository
+
+The Westminster Leningrad Codex had been in the corpus since 2026-09-07 with
+the code that put it there living only in `/tmp` — the OSIS extractor, the
+ingest driver, and two backfills. Every editorial decision about what this
+witness reads was encoded there and nowhere else. `tests/unit/test_wlc_extract.py`
+now pins them: morpheme slashes are morphology; a maqqef binds and a paseq
+stands apart because of the source's own spacing; setumah and petuchah stay;
+the qere is the running text with the ketiv kept in `metadata.ketiv_qere`; a
+ketiv spanning two words is replaced whole; ketiv velo qere takes its orphaned
+maqqef with it; and `alternative` and `exegesis` notes are apparatus.
+
+### The Hebrew text is indexed by lemma (migration 014)
+
+A pointed Hebrew word has no single searchable form: *mishpat* is written 204
+distinct ways across the WLC, and its commonest spelling finds 21 of 422
+occurrences. The analysis was never missing, only discarded — every one of
+morphhb's `<w>` elements carries a Strong's number and a parsing code, and
+`_word_text` reads character data, so the attributes were invisible to the
+ingest. `core.words` holds 305,517 of them, addressed the way passages and
+nodes already are. The hard part is knowing the index is complete, and a count
+cannot tell you: one row per word means any word missing from the table leaves
+its letters in a stretch of text no row claims.
+
+### `zotero_key` is now `edition_key` (migration 013)
+
+The edition identifier never touched Zotero's servers — a plain string in
+this database — and the name kept implying an account nobody needs. Every
+column, field, tool and CLI parameter, front-matter key, export field, and
+the two rule ids move together (`AUTH_EDITION_KEY_UNKNOWN`,
+`AUTH_EDITION_KEY_MISMATCH`); values are preserved, including the
+`core.documents.metadata` keys. No signup exists or ever did.
+
+### `work_cite` inherits its edition from the cited document
+
+Passing `edition_key` or `edition_id` on every cite was friction without
+function: the span's document already names its edition. `attach` now
+inherits the document's key (and edition id) when the caller names neither;
+explicit identity still wins and is what the edition-mismatch check tests
+against. The `AUTH_CITATION_EDITION_MISSING` refusal stays for spanless
+cites and keyless documents, where there is nothing to inherit.
+
+### Works as rows: the Phase-1 spine (create, cite, validate, trace, freeze, draft loop)
+
+Eight MCP tools and five `research-engine work` commands draft a work as
+database rows: `work_create` starts the work and its revision 1;
+`work_block_upsert` writes blocks under optimistic locking (`conflict` on a
+stale `expected_updated_at`); `work_cite` verifies a quote, resolves its
+span, applies the narrowing rule for the intent, and writes the occurrence
+plus item atomically — any refusal names its rule id and stores nothing;
+`work_link` types one edge to a span or an entity; `work_validate` judges a
+revision at gate `none`, `freeze`, or `publish` with Appendix A rule ids
+keyed by block and citation; `work_trace` walks grounding down to document
+offsets or up to every citing block; `work_freeze` validates, records waiver
+rows, hashes the authored content, and seals the draft. `work export
+--draft` renders the §6.4 markdown and `work import` reads an edited file
+back into a new current draft revision (copy-forward; dangling markers
+refuse the whole import). Ingest keeps `bibliography.editions` behind
+`documents.insert`, so row citations join edition keys. Per-work-type policy
+lives under `RE_WORKS_POLICY` (error, warn, allow over the core floor).
+
+### `copy_forward` repaired for multi-block revisions
+
+The revision copy never ran before the Phase-1 tests and was broken twice:
+it unpacked a list of block ids as a list of rows (`TypeError` on any copy
+with citations), and parked every copied block parentless at its real
+position, colliding on `(revision_id, parent_id, position)` whenever two
+blocks shared a position under different parents. The first pass now parks
+blocks at transient negative positions; the second pass restores parents
+and positions together. Fixed in place, no migration.
+
+### Making citations: `work cite-entry` verifies a quote and resolves its span
+
+`research-engine work cite-entry --document <uuid> --quote "<text>" --intent <intent>`
+(tool `work_cite_entry`) is the file-phase write boundary for new citations: it verifies the
+quote (exact or normalized to pass), resolves the span — creating the
+`evidence.source_spans` row on a miss — and prints a paste-ready front-matter
+entry carrying the *verified* offsets plus its YAML. Anything below
+exact/normalized is refused with nothing stored. A `--window` pins a repeated
+quote to a search hit's span; without one the first occurrence wins. The entry
+id is echoed, never collision-checked — `work verify` judges narrowing and
+markers afterwards.
+
+### The span table and the claim ledger (migrations 009 and 010)
+
+Two additive migrations, no tools yet. `evidence.source_spans` owns one row
+per cited address — `(document_id, char_start, char_end)` plus the canonical
+slice at it — and every span writer goes through `PGSourceSpanRepo.resolve`,
+which reads the slice itself (callers pass no text) and converges concurrent
+writers on one row through `ON CONFLICT DO NOTHING` plus a re-select. The
+passage cache on the row is best-overlap and `SET NULL`: re-chunking may drop
+it, and the overlap query rebuilds it. `argument` holds `claims` (with its
+`ref` unique and its edges RESTRICT-guarded), `claim_edges`, and `anchors`,
+whose address is the shared span while the typed quote and tier stay the
+row's own. `verify_status` keeps only `exact | normalized | near` — enforced
+by a check constraint, so `not_found` can never be stored. Staleness is a
+query (`stale()`), not a column: a span is stale when its parser version
+differs from its document's. Downgrading past either migration drops its
+tables and schema cleanly.
+
+### Works Phase 0: verify, cite, and render created works from files
+
+Works live as markdown files under `RE_WORKS_DIR` until their first freeze.
+Every citation is a front-matter entry naming a document and exact character
+offsets, and three tools plus their CLI commands check them against the
+corpus — no database migration, no new tables.
+
+- **`research-engine work verify [path] [--gate review|publish]`** (tool
+  `work_verify`) parses the file and checks each entry in a fixed order:
+  entry validity, document existence, canonical text, quote tier (exact or
+  normalized to pass, with the entry span passed as the verify window),
+  span staleness, the region rule (a quotation or translation citing a whole
+  passage, or more than 1000 characters, is `AUTH_SPAN_NOT_NARROWED`; support,
+  source and definition citing one warn `AUTH_SPAN_REGION`), edition identity,
+  Zotero key agreement, and body markers. Dangling markers are errors, claim
+  refs report `AUTH_CLAIM_UNRESOLVED` as info until the ledger exists, and a
+  file saying `published` that fails the publish gate earns
+  `AUTH_STATUS_UNEARNED`. Review fails on any error; publish additionally
+  fails on a missing edition.
+- **`research-engine work citations (--document | --zotero | --claim)`**
+  (tool `work_citations`) lists the works citing a source by scanning the
+  files. Exactly one selector.
+- **`research-engine work render <path> [--out <file>]`** (tool
+  `work_render`) appends one footnote definition per entry, in id order, with
+  author, title and year from document metadata and the verified tier. Any
+  missing part renders as `document <id>` and tags the note `[provisional]`.
+- **`research-engine work set-key <document_id> <ZOTERO_KEY>`** stores a
+  Zotero key in a document's metadata for the later join. Packs that know
+  their material's key should write `metadata["zotero_key"]` at ingest;
+  nothing enforces it, and its absence is a `work_verify` finding.
+
+### Search hits carry their citation draft, and verify takes a window
+
+Both change an existing tool's response.
+
+- **`find_passages` hits gain a `source` block**: the document title, the
+  Zotero key and edition when a pack wrote them, the parser version, and
+  whether the hit has canonical text and offsets at all. A hit without
+  offsets or text is not a citation draft. Read batched — one document query
+  and one text query per result page, never one per hit.
+- **`verify_quote` gains an optional `window`**: `{char_start, char_end}`
+  where the quotation is believed to sit, e.g. the span from a search hit.
+  The window is checked first (exact, then folded); on a miss the
+  whole-document search runs unchanged. `QuoteVerifier.verify` takes the same
+  `window` keyword.
+
 ### A document demoted out of structural chunking says so
 
 Three built-in modules shipped for months returning `"structural"` from

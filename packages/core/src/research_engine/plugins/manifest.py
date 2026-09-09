@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -90,6 +91,7 @@ class MCPToolContribution(BaseModel):
     id: str
     entry: str
     description: str
+    input_schema: dict[str, Any] | None = None
 
 
 class HookContribution(BaseModel):

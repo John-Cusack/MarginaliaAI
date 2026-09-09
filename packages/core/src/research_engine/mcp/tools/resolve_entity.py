@@ -6,6 +6,8 @@ from typing import Any
 
 import structlog
 
+from research_engine.mcp.errors import failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "resolve_entity"
@@ -78,4 +80,4 @@ async def handler(
         }
     except Exception as e:
         logger.error("resolve_entity_error", error=str(e))
-        return {"error": {"code": "resolve_entity_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

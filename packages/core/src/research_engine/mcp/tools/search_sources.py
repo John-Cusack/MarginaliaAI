@@ -20,6 +20,7 @@ from research_engine.domain.source_search import (
     SourceSearchProvider,
     availability_rank,
 )
+from research_engine.mcp.errors import failed
 
 logger = structlog.get_logger()
 
@@ -127,7 +128,7 @@ async def _enrich_with_corpus(
     silently skip ingesting the real source. Best-effort — providers without a
     stable source hint simply skip enrichment.
     """
-    ingestion = getattr(container, "ingestion", None)
+    ingestion = getattr(container, "ingestion_service", None)
     if ingestion is None or not hasattr(ingestion, "find_existing"):
         return matches
 
@@ -247,4 +248,4 @@ async def handler(
         }
     except Exception as e:
         logger.error("search_sources_error", error=str(e))
-        return {"error": {"code": "search_sources_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

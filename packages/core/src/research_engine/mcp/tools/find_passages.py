@@ -9,6 +9,7 @@ import structlog
 
 from research_engine.domain.common import FusionMode
 from research_engine.domain.passages import SearchFilters, SearchQuery
+from research_engine.mcp.errors import failed
 
 logger = structlog.get_logger()
 
@@ -210,6 +211,10 @@ async def handler(
                     "char_end": h.char_end,
                     "node_id": str(h.node_id) if h.node_id else None,
                     "window": h.window.model_dump(mode="json") if h.window else None,
+                    # The citation draft: what this hit can be cited from, and
+                    # whether it can be cited at all. Null only when the
+                    # service was built without the document tables.
+                    "source": h.source.model_dump() if h.source else None,
                 }
                 for h in result.hits
             ],
@@ -222,4 +227,4 @@ async def handler(
         }
     except Exception as e:
         logger.error("find_passages_error", error=str(e))
-        return {"error": {"code": "find_passages_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

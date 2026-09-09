@@ -7,6 +7,7 @@ from typing import Any
 import structlog
 
 from research_engine.domain.entities import EntityDraft
+from research_engine.mcp.errors import failed
 
 logger = structlog.get_logger()
 
@@ -80,4 +81,4 @@ async def handler(
         }
     except Exception as e:
         logger.error("upsert_entity_error", error=str(e))
-        return {"error": {"code": "upsert_entity_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

@@ -280,6 +280,50 @@ _CHECKS: list[tuple[str, str, str, str | None, str]] = [
            OR r.evidence_end <= r.evidence_start
         """,
     ),
+    # `core.words` addresses its document by character span, exactly as passages
+    # and nodes do, and 305,517 of those offsets rest on one invariant: the span
+    # quotes its own word. The loader proves it once, at write time, inside a
+    # hand-run script — so a re-parse, a re-normalisation, or a text repair that
+    # shifted a single document could invalidate every offset in it and nothing
+    # would say so. This asks the same question of the stored rows, which is the
+    # only version of it that keeps holding after the script has stopped running.
+    (
+        "word_span_quotes_its_word",
+        "critical",
+        "Indexed word's span does not quote that word in the document text",
+        "re-run scripts/backfill_words.py after repairing the document's text",
+        """
+        SELECT w.id::text
+        FROM core.words w
+        JOIN core.document_texts dt ON dt.document_id = w.document_id
+        WHERE substring(dt.text FROM w.char_start + 1 FOR w.char_end - w.char_start)
+              IS DISTINCT FROM w.surface
+        """,
+    ),
+    (
+        "word_span_is_inside_its_document",
+        "critical",
+        "Indexed word's span runs past the end of the document text",
+        "re-run scripts/backfill_words.py after repairing the document's text",
+        """
+        SELECT w.id::text
+        FROM core.words w
+        JOIN core.document_texts dt ON dt.document_id = w.document_id
+        WHERE w.char_start < 0 OR w.char_end > length(dt.text)
+        """,
+    ),
+    (
+        "word_has_document_text_to_address",
+        "warning",
+        "Indexed word's document has no stored text, so its span addresses nothing",
+        "research-engine reindex text --include-slow, then re-run backfill_words.py",
+        """
+        SELECT DISTINCT w.document_id::text
+        FROM core.words w
+        LEFT JOIN core.document_texts dt ON dt.document_id = w.document_id
+        WHERE dt.document_id IS NULL
+        """,
+    ),
     (
         "extraction_records_are_materialized",
         "warning",

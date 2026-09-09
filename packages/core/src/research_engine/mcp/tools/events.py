@@ -9,6 +9,7 @@ from uuid import UUID
 import structlog
 
 from research_engine.domain.events import EventFilter
+from research_engine.mcp.errors import envelope, failed
 
 logger = structlog.get_logger()
 
@@ -140,7 +141,7 @@ async def handler(
             ],
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("events_error", error=str(e))
-        return {"error": {"code": "events_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "get_passage_context"
@@ -66,7 +68,7 @@ async def handler(
             "document_id": str(target.document_id),
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("get_passage_context_error", error=str(e))
-        return {"error": {"code": "get_passage_context_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)
