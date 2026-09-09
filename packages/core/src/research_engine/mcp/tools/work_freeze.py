@@ -49,9 +49,7 @@ async def handler(
     message: str | None = None,
     waivers: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    service = getattr(container, "work_publication", None)
-    if service is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The publication service is not built.", None)
+    service = container.work_publication
     given: list[WaiverGiven] = []
     for waiver in waivers or []:
         if not isinstance(waiver, dict) or not waiver.get("rule_id") or not waiver.get("reason"):

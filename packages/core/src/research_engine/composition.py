@@ -99,21 +99,23 @@ class Container:
     plugin_loader: PluginLoader
     plugin_registry: PluginRegistry
     engine: Any  # AsyncEngine
+    #: Citation making. Built always: citing needs the corpus, not the works
+    #: directory — the entry is pasted by hand, not written to any file.
+    #: Likewise the Phase-1 spine (works as rows): rows live in the database,
+    #: so no works directory is needed to draft, cite, or freeze. These are
+    #: required fields — `build_container` wires them unconditionally, and the
+    #: work tools read them as plain attributes with no `None` guard.
+    work_citer: WorkCiter
+    work_service: WorkService
+    citation_service: CitationService
+    work_validation: WorkValidationService
+    work_publication: WorkPublicationService
+    work_trace: WorkTraceService
     #: Work-file services. None when `RE_WORKS_DIR` is unset — tools finding
     #: them None answer `works_not_configured` rather than an empty result.
     work_files: WorkFileReader | None = None
     work_verifier: WorkVerifier | None = None
     work_renderer: WorkRenderer | None = None
-    #: Citation making. Built always: citing needs the corpus, not the works
-    #: directory — the entry is pasted by hand, not written to any file.
-    work_citer: WorkCiter | None = None
-    #: The Phase-1 spine: works as rows. Built always — rows live in the
-    #: database, so no works directory is needed to draft, cite, or freeze.
-    work_service: WorkService | None = None
-    citation_service: CitationService | None = None
-    work_validation: WorkValidationService | None = None
-    work_publication: WorkPublicationService | None = None
-    work_trace: WorkTraceService | None = None
     work_export: WorkExportService | None = None
     #: True once the Step 4 mirror (`core.works_index`) exists and
     #: `work_citations` should query it instead of scanning files.

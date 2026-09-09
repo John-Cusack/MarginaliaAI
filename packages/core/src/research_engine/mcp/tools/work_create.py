@@ -41,9 +41,7 @@ async def handler(
     language: str | None = None,
     abstract: str | None = None,
 ) -> dict[str, Any]:
-    service = getattr(container, "work_service", None)
-    if service is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The work service is not built.", None)
+    service = container.work_service
     try:
         created = await service.create(
             slug=slug, title=title, work_type=work_type,

@@ -37,9 +37,7 @@ async def handler(
     revision: int | None = None,
     gate: str = "none",
 ) -> dict[str, Any]:
-    service = getattr(container, "work_validation", None)
-    if service is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The validation service is not built.", None)
+    service = container.work_validation
     try:
         report = await service.validate(slug=slug, revision=revision, gate=gate)  # type: ignore[arg-type]
         return report.model_dump(mode="json")

@@ -49,9 +49,7 @@ async def handler(
     attributes: dict[str, Any] | None = None,
     expected_updated_at: str | None = None,
 ) -> dict[str, Any]:
-    service = getattr(container, "work_service", None)
-    if service is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The work service is not built.", None)
+    service = container.work_service
     try:
         block_uuid = UUID(block_key) if block_key is not None else None
         parent_uuid = UUID(parent_key) if parent_key is not None else None

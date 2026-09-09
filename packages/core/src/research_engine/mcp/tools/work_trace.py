@@ -38,9 +38,7 @@ async def handler(
     source_span_id: str | None = None,
     document_id: str | None = None,
 ) -> dict[str, Any]:
-    service = getattr(container, "work_trace", None)
-    if service is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The trace service is not built.", None)
+    service = container.work_trace
     try:
         node = await service.trace(
             slug=slug,

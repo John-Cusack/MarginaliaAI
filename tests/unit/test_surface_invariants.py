@@ -81,7 +81,6 @@ def test_self_caught_failure_code_matches_tool_name():  # WI-1
     assert not drift, f"hand-typed _failed codes disagree with tool names: {drift}"
 
 
-@pytest.mark.xfail(strict=True, reason="WI-3")
 def test_works_guard_only_where_the_dependency_is_optional():  # WI-3
     guarded = {
         p.stem for p in TOOLS_DIR.glob("work_*.py")

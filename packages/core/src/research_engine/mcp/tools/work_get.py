@@ -35,9 +35,7 @@ async def handler(
     work_id: str | None = None,
     revision: int | None = None,
 ) -> dict[str, Any]:
-    service = getattr(container, "work_service", None)
-    if service is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The work service is not built.", None)
+    service = container.work_service
     if slug is None and work_id is None:
         return envelope("invalid_input", "work_get needs slug or work_id", None)
     work_uuid = None

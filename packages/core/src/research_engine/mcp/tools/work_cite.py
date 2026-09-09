@@ -88,9 +88,7 @@ async def handler(
     placement: str = "inline",
     citation_key: str | None = None,
 ) -> dict[str, Any]:
-    service = getattr(container, "citation_service", None)
-    if service is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The citation service is not built.", None)
+    service = container.citation_service
     try:
         block_uuid = UUID(block_key)
         doc_uuid = UUID(document_id) if document_id is not None else None

@@ -39,16 +39,6 @@ KEY = "11111111-1111-1111-1111-111111111111"
 WORK = "33333333-3333-3333-3333-333333333333"
 
 
-def _bare() -> SimpleNamespace:
-    return SimpleNamespace(
-        work_service=None,
-        citation_service=None,
-        work_validation=None,
-        work_publication=None,
-        work_trace=None,
-    )
-
-
 class _FakeWorkService:
     def __init__(self, **behaviour: Any) -> None:
         self._behaviour = behaviour
@@ -73,12 +63,6 @@ class _FakeWorkService:
 
 
 class TestWorkCreateTool:
-    @pytest.mark.asyncio
-    async def test_unconfigured(self):
-        result = await work_create.handler(_bare(), slug="s", title="t", work_type="essay")
-
-        assert result["error"]["code"] == "works_not_configured"
-
     @pytest.mark.asyncio
     async def test_taken_slug(self):
         container = SimpleNamespace(
@@ -186,12 +170,6 @@ class TestWorkCiteTool:
         )
 
     @pytest.mark.asyncio
-    async def test_unconfigured(self):
-        result = await work_cite.handler(_bare(), slug="s", block_key=KEY, intent="support")
-
-        assert result["error"]["code"] == "works_not_configured"
-
-    @pytest.mark.asyncio
     async def test_bad_key(self):
         container = SimpleNamespace(citation_service=object())
 
@@ -272,12 +250,6 @@ class TestWorkValidateTool:
         )
 
     @pytest.mark.asyncio
-    async def test_unconfigured(self):
-        result = await work_validate.handler(_bare(), slug="s")
-
-        assert result["error"]["code"] == "works_not_configured"
-
-    @pytest.mark.asyncio
     async def test_bad_gate(self):
         async def validate(**kwargs: Any) -> Any:
             raise ValueError("Unknown gate 'someday'")
@@ -322,12 +294,6 @@ class TestWorkTraceTool:
 
 
 class TestWorkFreezeTool:
-    @pytest.mark.asyncio
-    async def test_unconfigured(self):
-        result = await work_freeze.handler(_bare(), slug="s")
-
-        assert result["error"]["code"] == "works_not_configured"
-
     @pytest.mark.asyncio
     async def test_bad_waiver_shape(self):
         container = SimpleNamespace(work_publication=object())

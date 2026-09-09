@@ -88,9 +88,7 @@ async def handler(
     locator: dict[str, Any] | None = None,
     window: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    citer = getattr(container, "work_citer", None)
-    if citer is None:  # pragma: no cover - composition always builds it
-        return envelope("works_not_configured", "The citation service is not built.", None)
+    citer = container.work_citer
     try:
         doc_uuid = UUID(document_id)
     except (ValueError, TypeError):
