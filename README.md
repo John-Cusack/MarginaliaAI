@@ -26,6 +26,11 @@ uv run alembic -c packages/core/src/research_engine/adapters/storage/postgres/mi
 uv run research-engine serve
 ```
 
+That leaves you with an empty corpus. Filling one is a separate, ordered
+sequence — see [docs/corpus-setup.md](docs/corpus-setup.md) for the Bible
+corpus, whose six steps must run in order because later ones validate against
+rows the earlier ones write.
+
 ## Configuration
 
 Create a `.env` file in the project root:
@@ -132,6 +137,13 @@ Full project documentation is in [corpus-engine-docs/](corpus-engine-docs/):
 | [07-pack-system.md](corpus-engine-docs/docs/07-pack-system.md) | Pack manifest, SDK contract |
 | [08-search-and-extraction.md](corpus-engine-docs/docs/08-search-and-extraction.md) | Hybrid search and extraction |
 | [11-implementation-architecture.md](corpus-engine-docs/docs/11-implementation-architecture.md) | Implementation guide |
+
+Operational notes live in [docs/](docs/):
+
+| Document | Purpose |
+|----------|---------|
+| [corpus-setup.md](docs/corpus-setup.md) | Ordered sequence for populating the Bible corpus |
+| [design/](docs/design/) | Decision records and implementation notes |
 
 ## License
 

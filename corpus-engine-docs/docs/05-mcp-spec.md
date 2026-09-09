@@ -1,13 +1,20 @@
 # 05 — MCP Tool Specification
 
-> **Status (2026-09-08): this is the original design specification, and the
-> implemented surface has outgrown it.** Measured on this date: 39 core tools
-> are registered and 19 are described here. Twenty-two implemented tools are
-> absent — `verify_quote`, `read_node`, `locate_passage`,
-> `get_document_outline`, `find_lemma`, `search_sources`, `ingest_execute`,
-> `citations`, `llm_usage`, `list_available_filters`, and the twelve `work_*`
-> tools — and two described here were never built (`annotate_document`,
-> `list_entity_types`).
+> **Status (2026-09-09): this is the original design specification, and the
+> implemented surface has outgrown it.** Measured on this date: **39** core
+> tools are registered; **22** core tool names are described here, of which only
+> **17** exist. So the drift runs both ways.
+>
+> **Registered but undescribed (22):** `verify_quote`, `read_node`,
+> `locate_passage`, `get_document_outline`, `find_lemma`, `search_sources`,
+> `ingest_execute`, `citations`, `llm_usage`, `list_available_filters`, and the
+> twelve `work_*` tools.
+>
+> **Described but not registered (5):** `annotate_document` and
+> `annotate_passage` were never built. `list_entity_types` and
+> `list_event_types` were built, but as fields of `list_available_filters`
+> rather than as tools of their own; `list_relation_types` exists on
+> `PluginRegistry` and is surfaced by no tool at all.
 >
 > **The authority on what exists is `CORE_TOOL_MODULES` in
 > `packages/core/src/research_engine/mcp/dispatch.py`,** and each tool's own
