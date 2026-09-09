@@ -8,6 +8,7 @@ from uuid import UUID
 import structlog
 
 from research_engine.domain.errors import FrozenRevisionError, NotFoundError, StaleWriteError
+from research_engine.mcp.errors import envelope, failed
 
 logger = structlog.get_logger()
 
@@ -50,24 +51,12 @@ async def handler(
 ) -> dict[str, Any]:
     service = getattr(container, "work_service", None)
     if service is None:  # pragma: no cover - composition always builds it
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "The work service is not built.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "The work service is not built.", None)
     try:
         block_uuid = UUID(block_key) if block_key is not None else None
         parent_uuid = UUID(parent_key) if parent_key is not None else None
     except (ValueError, TypeError):
-        return {
-            "error": {
-                "code": "invalid_input",
-                "message": "block_key and parent_key must be UUIDs",
-                "details": None,
-            }
-        }
+        return envelope("invalid_input", "block_key and parent_key must be UUIDs", None)
     try:
         written = await service.upsert_block(
             slug=slug,
@@ -82,13 +71,11 @@ async def handler(
         )
         return written.model_dump(mode="json")
     except NotFoundError as exc:
-        return {"error": {"code": "not_found", "message": str(exc), "details": None}}
+        return envelope("not_found", str(exc), None)
     except (StaleWriteError, FrozenRevisionError) as exc:
-        return {"error": {"code": "conflict", "message": str(exc), "details": None}}
+        return envelope("conflict", str(exc), None)
     except ValueError as exc:
-        return {"error": {"code": "invalid_input", "message": str(exc), "details": None}}
+        return envelope("invalid_input", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_block_upsert_error", error=str(exc))
-        return {
-            "error": {"code": "work_block_upsert_failed", "message": str(exc), "details": None}
-        }
+        return failed(TOOL_NAME, exc)

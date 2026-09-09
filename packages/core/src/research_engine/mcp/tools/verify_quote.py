@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "verify_quote"
@@ -65,16 +67,8 @@ async def handler(
 ) -> dict[str, Any]:
     window_tuple = _checked_window(window)
     if window is not None and window_tuple is None:
-        return {
-            "error": {
-                "code": "invalid_input",
-                "message": (
-                    "window must be {char_start: int >= 0, char_end: int} "
-                    "with char_end > char_start"
-                ),
-                "details": None,
-            }
-        }
+        return envelope("invalid_input", "window must be {char_start: int >= 0, char_end: int} "
+                    "with char_end > char_start", None)
     result = await container.verification.verify(
         text, UUID(document_id) if document_id else None, window=window_tuple
     )

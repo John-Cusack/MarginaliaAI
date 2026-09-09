@@ -6,6 +6,7 @@ from typing import Any
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
 from research_engine.services.works.files import WorkFileError
 from research_engine.services.works.verify import VerifyOutput
 
@@ -51,33 +52,15 @@ async def handler(
 ) -> dict[str, Any]:
     verifier = getattr(container, "work_verifier", None)
     if verifier is None:
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "RE_WORKS_DIR is not set, so no work file can be read.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "RE_WORKS_DIR is not set, so no work file can be read.", None)
     if gate not in _VALID_GATES:
-        return {
-            "error": {
-                "code": "validation_error",
-                "message": f"gate must be one of {_VALID_GATES}",
-                "details": None,
-            }
-        }
+        return envelope("validation_error", f"gate must be one of {_VALID_GATES}", None)
     try:
         if path is None:
             return (await verifier.verify_all(gate)).model_dump(mode="json")
         reader = container.work_files
         if reader is not None and not (reader.works_dir / path).is_file():
-            return {
-                "error": {
-                    "code": "not_found",
-                    "message": f"Work file not found: {path}",
-                    "details": None,
-                }
-            }
+            return envelope("not_found", f"Work file not found: {path}", None)
         report = await verifier.verify_work(path, gate)  # type: ignore[arg-type]
         output = VerifyOutput(
             works=[report],
@@ -90,7 +73,7 @@ async def handler(
         )
         return output.model_dump(mode="json")
     except WorkFileError as exc:
-        return {"error": {"code": "validation_error", "message": str(exc), "details": None}}
+        return envelope("validation_error", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_verify_error", error=str(exc))
-        return {"error": {"code": "work_verify_failed", "message": str(exc), "details": None}}
+        return failed(TOOL_NAME, exc)

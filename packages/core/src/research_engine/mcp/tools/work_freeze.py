@@ -7,6 +7,7 @@ from typing import Any
 import structlog
 
 from research_engine.domain.errors import NotFoundError
+from research_engine.mcp.errors import envelope, failed
 from research_engine.services.works.publication import FreezeBlocked, WaiverGiven
 
 logger = structlog.get_logger()
@@ -50,23 +51,11 @@ async def handler(
 ) -> dict[str, Any]:
     service = getattr(container, "work_publication", None)
     if service is None:  # pragma: no cover - composition always builds it
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "The publication service is not built.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "The publication service is not built.", None)
     given: list[WaiverGiven] = []
     for waiver in waivers or []:
         if not isinstance(waiver, dict) or not waiver.get("rule_id") or not waiver.get("reason"):
-            return {
-                "error": {
-                    "code": "invalid_input",
-                    "message": "waivers need rule_id and reason",
-                    "details": None,
-                }
-            }
+            return envelope("invalid_input", "waivers need rule_id and reason", None)
         given.append(
             WaiverGiven(
                 rule_id=str(waiver["rule_id"]),
@@ -79,17 +68,11 @@ async def handler(
         sealed = await service.freeze(slug=slug, message=message, waivers=given)
         return sealed.model_dump(mode="json")
     except FreezeBlocked as exc:
-        return {
-            "error": {
-                "code": "validation_error",
-                "message": str(exc),
-                "details": {"blockers": exc.blockers},
-            }
-        }
+        return envelope("validation_error", str(exc), {"blockers": exc.blockers})
     except NotFoundError as exc:
-        return {"error": {"code": "not_found", "message": str(exc), "details": None}}
+        return envelope("not_found", str(exc), None)
     except ValueError as exc:
-        return {"error": {"code": "invalid_input", "message": str(exc), "details": None}}
+        return envelope("invalid_input", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_freeze_error", error=str(exc))
-        return {"error": {"code": "work_freeze_failed", "message": str(exc), "details": None}}
+        return failed(TOOL_NAME, exc)

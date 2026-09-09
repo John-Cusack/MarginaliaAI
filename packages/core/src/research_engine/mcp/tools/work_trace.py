@@ -7,6 +7,7 @@ from typing import Any
 import structlog
 
 from research_engine.domain.errors import NotFoundError
+from research_engine.mcp.errors import envelope, failed
 
 logger = structlog.get_logger()
 
@@ -39,13 +40,7 @@ async def handler(
 ) -> dict[str, Any]:
     service = getattr(container, "work_trace", None)
     if service is None:  # pragma: no cover - composition always builds it
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "The trace service is not built.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "The trace service is not built.", None)
     try:
         node = await service.trace(
             slug=slug,
@@ -56,9 +51,9 @@ async def handler(
         )
         return node.model_dump(mode="json")
     except NotFoundError as exc:
-        return {"error": {"code": "not_found", "message": str(exc), "details": None}}
+        return envelope("not_found", str(exc), None)
     except ValueError as exc:
-        return {"error": {"code": "invalid_input", "message": str(exc), "details": None}}
+        return envelope("invalid_input", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_trace_error", error=str(exc))
-        return {"error": {"code": "work_trace_failed", "message": str(exc), "details": None}}
+        return failed(TOOL_NAME, exc)

@@ -6,6 +6,7 @@ from typing import Any
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
 from research_engine.services.words import LemmaLookup, LemmaQuery
 
 logger = structlog.get_logger()
@@ -101,16 +102,8 @@ async def handler(
         if strong[:1].upper() in ("H", "G") and strong[1:].isdigit():
             stripped_prefix, strong = strong[0].upper(), strong[1:]
         if not strong.isdigit():
-            return {
-                "error": {
-                    "code": "invalid_input",
-                    "message": (
-                        f"strong must be digits, got {strong!r}. Pass '4941', "
-                        f"not 'H4941' or a lemma string."
-                    ),
-                    "details": None,
-                }
-            }
+            return envelope("invalid_input", f"strong must be digits, got {strong!r}. Pass '4941', "
+                        f"not 'H4941' or a lemma string.", None)
 
         chapter_start = chapter_end = None
         if chapters:
@@ -119,16 +112,8 @@ async def handler(
             else:
                 chapter_start, chapter_end = int(chapters[0]), int(chapters[1])
             if chapter_start > chapter_end:
-                return {
-                    "error": {
-                        "code": "invalid_input",
-                        "message": (
-                            f"chapters start {chapter_start} is after end "
-                            f"{chapter_end}."
-                        ),
-                        "details": None,
-                    }
-                }
+                return envelope("invalid_input", f"chapters start {chapter_start} is after end "
+                            f"{chapter_end}.", None)
 
         lookup = LemmaLookup(container.engine)
 
@@ -137,16 +122,8 @@ async def handler(
             if book not in known:
                 match = [b for b in known if b.lower() == book.lower()]
                 if not match:
-                    return {
-                        "error": {
-                            "code": "unknown_book",
-                            "message": (
-                                f"No book {book!r} in the {language!r} index. "
-                                f"Use an OSIS id."
-                            ),
-                            "details": {"known_books": known},
-                        }
-                    }
+                    return envelope("unknown_book", f"No book {book!r} in the {language!r} index. "
+                                f"Use an OSIS id.", {"known_books": known})
                 book = match[0]
 
         result = await lookup.find(
@@ -185,9 +162,7 @@ async def handler(
             "notes": notes,
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("find_lemma_error", error=str(e))
-        return {
-            "error": {"code": "find_lemma_failed", "message": str(e), "details": None}
-        }
+        return failed(TOOL_NAME, e)

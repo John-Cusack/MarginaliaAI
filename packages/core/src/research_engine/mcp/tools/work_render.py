@@ -6,6 +6,7 @@ from typing import Any
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
 from research_engine.services.works.files import WorkFileError
 
 logger = structlog.get_logger()
@@ -32,26 +33,14 @@ TOOL_SCHEMA: dict[str, Any] = {
 async def handler(container: Any, *, path: str) -> dict[str, Any]:
     renderer = getattr(container, "work_renderer", None)
     if renderer is None:
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "RE_WORKS_DIR is not set, so no work file can be read.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "RE_WORKS_DIR is not set, so no work file can be read.", None)
     try:
         reader = container.work_files
         if reader is not None and not (reader.works_dir / path).is_file():
-            return {
-                "error": {
-                    "code": "not_found",
-                    "message": f"Work file not found: {path}",
-                    "details": None,
-                }
-            }
+            return envelope("not_found", f"Work file not found: {path}", None)
         return await renderer.render(path)
     except WorkFileError as exc:
-        return {"error": {"code": "validation_error", "message": str(exc), "details": None}}
+        return envelope("validation_error", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_render_error", error=str(exc))
-        return {"error": {"code": "work_render_failed", "message": str(exc), "details": None}}
+        return failed(TOOL_NAME, exc)

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from mcp import types
 
+from research_engine.mcp.errors import envelope, failed
 from research_engine.mcp.tools import (
     citations,
     corpus_stats,
@@ -267,16 +268,14 @@ def _register_all(server: Server, container: Any) -> None:
             error = _validate_input(_schema, arguments)
             if error:
                 return [{"type": "text", "text": json.dumps(
-                    {"error": {"code": "validation_error", "message": error, "details": None}}
+                    envelope("validation_error", error)
                 )}]
             try:
                 result = await _fn(container, **arguments)
                 return [{"type": "text", "text": json.dumps(result, default=str)}]
             except Exception as e:
                 logger.error("tool_error", tool=_name, error=str(e))
-                return [{"type": "text", "text": json.dumps(
-                    {"error": {"code": f"{_name}_failed", "message": str(e), "details": None}}
-                )}]
+                return [{"type": "text", "text": json.dumps(failed(_name, e))}]
 
         handler_map[tool_name] = _make_handler
 
@@ -321,7 +320,7 @@ def _register_all(server: Server, container: Any) -> None:
                 error = _validate_input(_schema, arguments)
                 if error:
                     return [{"type": "text", "text": json.dumps(
-                        {"error": {"code": "validation_error", "message": error, "details": None}}
+                        envelope("validation_error", error)
                     )}]
                 try:
                     clients = _get_plugin_clients(_name)
@@ -329,9 +328,7 @@ def _register_all(server: Server, container: Any) -> None:
                     return [{"type": "text", "text": json.dumps(result, default=str)}]
                 except Exception as e:
                     logger.error("plugin_tool_error", tool=_name, error=str(e))
-                    return [{"type": "text", "text": json.dumps(
-                        {"error": {"code": f"{_name}_failed", "message": str(e), "details": None}}
-                    )}]
+                    return [{"type": "text", "text": json.dumps(failed(_name, e))}]
 
             handler_map[tool_id] = _make_plugin_handler
 
@@ -349,6 +346,6 @@ def _register_all(server: Server, container: Any) -> None:
         handler = handler_map.get(name)
         if handler is None:
             return [{"type": "text", "text": json.dumps(
-                {"error": {"code": "unknown_tool", "message": f"Unknown tool: {name}", "details": None}}
+                envelope("unknown_tool", f"Unknown tool: {name}")
             )}]
         return await handler(arguments)

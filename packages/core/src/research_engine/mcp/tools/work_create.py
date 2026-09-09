@@ -6,6 +6,8 @@ from typing import Any
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "work_create"
@@ -41,13 +43,7 @@ async def handler(
 ) -> dict[str, Any]:
     service = getattr(container, "work_service", None)
     if service is None:  # pragma: no cover - composition always builds it
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "The work service is not built.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "The work service is not built.", None)
     try:
         created = await service.create(
             slug=slug, title=title, work_type=work_type,
@@ -55,7 +51,7 @@ async def handler(
         )
         return created.model_dump(mode="json")
     except ValueError as exc:
-        return {"error": {"code": "invalid_input", "message": str(exc), "details": None}}
+        return envelope("invalid_input", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_create_error", error=str(exc))
-        return {"error": {"code": "work_create_failed", "message": str(exc), "details": None}}
+        return failed(TOOL_NAME, exc)

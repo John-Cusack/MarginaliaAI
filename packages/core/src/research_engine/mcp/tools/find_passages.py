@@ -9,6 +9,7 @@ import structlog
 
 from research_engine.domain.common import FusionMode
 from research_engine.domain.passages import SearchFilters, SearchQuery
+from research_engine.mcp.errors import failed
 
 logger = structlog.get_logger()
 
@@ -226,4 +227,4 @@ async def handler(
         }
     except Exception as e:
         logger.error("find_passages_error", error=str(e))
-        return {"error": {"code": "find_passages_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

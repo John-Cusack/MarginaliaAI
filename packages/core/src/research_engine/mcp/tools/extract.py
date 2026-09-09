@@ -8,6 +8,7 @@ from uuid import UUID
 import structlog
 
 from research_engine.domain.extractions import ExtractionOptions
+from research_engine.mcp.errors import envelope, failed
 
 logger = structlog.get_logger()
 
@@ -84,13 +85,7 @@ async def handler(
             )
             pids = candidate_ids
         else:
-            return {
-                "error": {
-                    "code": "invalid_input",
-                    "message": "Either passage_ids or passage_filter is required.",
-                    "details": None,
-                }
-            }
+            return envelope("invalid_input", "Either passage_ids or passage_filter is required.", None)
 
         if not pids:
             return {"extractions": [], "message": "No passages matched the filter."}
@@ -124,7 +119,7 @@ async def handler(
             ],
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("extract_error", error=str(e))
-        return {"error": {"code": "extract_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

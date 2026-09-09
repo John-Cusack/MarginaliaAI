@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "get_entity"
@@ -39,7 +41,7 @@ async def handler(
         entity, aliases = await entity_service.get_with_aliases(eid)
 
         if not entity:
-            return {"error": {"code": "not_found", "message": f"Entity not found: {entity_id}", "details": None}}
+            return envelope("not_found", f"Entity not found: {entity_id}", None)
 
         return {
             "id": str(entity.id),
@@ -52,7 +54,7 @@ async def handler(
             "updated_at": entity.updated_at.isoformat(),
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("get_entity_error", error=str(e))
-        return {"error": {"code": "get_entity_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

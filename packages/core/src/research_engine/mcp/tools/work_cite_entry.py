@@ -12,6 +12,7 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
 from research_engine.services.works.cite import QuoteUnverifiedError
 
 logger = structlog.get_logger()
@@ -89,35 +90,15 @@ async def handler(
 ) -> dict[str, Any]:
     citer = getattr(container, "work_citer", None)
     if citer is None:  # pragma: no cover - composition always builds it
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "The citation service is not built.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "The citation service is not built.", None)
     try:
         doc_uuid = UUID(document_id)
     except (ValueError, TypeError):
-        return {
-            "error": {
-                "code": "invalid_input",
-                "message": f"document_id is not a UUID: {document_id}",
-                "details": None,
-            }
-        }
+        return envelope("invalid_input", f"document_id is not a UUID: {document_id}", None)
     window_tuple = _checked_window(window)
     if window is not None and window_tuple is None:
-        return {
-            "error": {
-                "code": "invalid_input",
-                "message": (
-                    "window must be {char_start: int >= 0, char_end: int} "
-                    "with char_end > char_start"
-                ),
-                "details": None,
-            }
-        }
+        return envelope("invalid_input", "window must be {char_start: int >= 0, char_end: int} "
+                    "with char_end > char_start", None)
     try:
         result = await citer.cite(
             document_id=doc_uuid,
@@ -132,18 +113,12 @@ async def handler(
         )
         return result.model_dump(mode="json")
     except ValueError as exc:
-        return {"error": {"code": "invalid_input", "message": str(exc), "details": None}}
+        return envelope("invalid_input", str(exc), None)
     except QuoteUnverifiedError as exc:
-        return {
-            "error": {
-                "code": "quote_unverified",
-                "message": exc.detail,
-                "details": {"tier": exc.tier.value, "divergence": exc.divergence},
-            }
-        }
+        return envelope("quote_unverified", exc.detail, {"tier": exc.tier.value, "divergence": exc.divergence})
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_cite_error", error=str(exc))
-        return {"error": {"code": "work_cite_failed", "message": str(exc), "details": None}}
+        return failed(TOOL_NAME, exc)
 
 
 def _checked_window(window: dict[str, Any] | None) -> tuple[int, int] | None:

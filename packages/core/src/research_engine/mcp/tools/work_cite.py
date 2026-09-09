@@ -15,6 +15,7 @@ from uuid import UUID
 import structlog
 
 from research_engine.domain.errors import FrozenRevisionError, NotFoundError
+from research_engine.mcp.errors import envelope, failed
 from research_engine.services.works.attach import AttachRefused
 
 logger = structlog.get_logger()
@@ -89,38 +90,18 @@ async def handler(
 ) -> dict[str, Any]:
     service = getattr(container, "citation_service", None)
     if service is None:  # pragma: no cover - composition always builds it
-        return {
-            "error": {
-                "code": "works_not_configured",
-                "message": "The citation service is not built.",
-                "details": None,
-            }
-        }
+        return envelope("works_not_configured", "The citation service is not built.", None)
     try:
         block_uuid = UUID(block_key)
         doc_uuid = UUID(document_id) if document_id is not None else None
         edition_uuid = UUID(edition_id) if edition_id is not None else None
         cite_uuid = UUID(citation_key) if citation_key is not None else None
     except (ValueError, TypeError):
-        return {
-            "error": {
-                "code": "invalid_input",
-                "message": "block_key, document_id, edition_id, and citation_key must be UUIDs",
-                "details": None,
-            }
-        }
+        return envelope("invalid_input", "block_key, document_id, edition_id, and citation_key must be UUIDs", None)
     window_tuple = _checked_window(window)
     if window is not None and window_tuple is None:
-        return {
-            "error": {
-                "code": "invalid_input",
-                "message": (
-                    "window must be {char_start: int >= 0, char_end: int} "
-                    "with char_end > char_start"
-                ),
-                "details": None,
-            }
-        }
+        return envelope("invalid_input", "window must be {char_start: int >= 0, char_end: int} "
+                    "with char_end > char_start", None)
     try:
         attached = await service.attach(
             slug=slug,
@@ -139,22 +120,16 @@ async def handler(
         )
         return attached.model_dump(mode="json")
     except AttachRefused as exc:
-        return {
-            "error": {
-                "code": "validation_error",
-                "message": exc.message,
-                "details": {"rule_id": exc.rule_id, **(exc.detail or {})},
-            }
-        }
+        return envelope("validation_error", exc.message, {"rule_id": exc.rule_id, **(exc.detail or {})})
     except NotFoundError as exc:
-        return {"error": {"code": "not_found", "message": str(exc), "details": None}}
+        return envelope("not_found", str(exc), None)
     except FrozenRevisionError as exc:
-        return {"error": {"code": "conflict", "message": str(exc), "details": None}}
+        return envelope("conflict", str(exc), None)
     except ValueError as exc:
-        return {"error": {"code": "invalid_input", "message": str(exc), "details": None}}
+        return envelope("invalid_input", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected
         logger.error("work_cite_error", error=str(exc))
-        return {"error": {"code": "work_cite_failed", "message": str(exc), "details": None}}
+        return failed(TOOL_NAME, exc)
 
 
 def _checked_window(window: dict[str, Any] | None) -> tuple[int, int] | None:

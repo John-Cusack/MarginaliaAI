@@ -8,6 +8,7 @@ import sqlalchemy as sa
 import structlog
 
 from research_engine.domain.documents import DocumentFilter
+from research_engine.mcp.errors import failed
 
 logger = structlog.get_logger()
 
@@ -90,7 +91,7 @@ async def handler(
         return result
     except Exception as e:
         logger.error("corpus_stats_error", error=str(e))
-        return {"error": {"code": "corpus_stats_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)
 
 
 def _where(filters: dict[str, Any]) -> tuple[str, dict[str, Any]]:

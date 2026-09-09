@@ -27,7 +27,7 @@ def _codes(module) -> set[str]:
         v.value
         for n in ast.walk(tree)
         if isinstance(n, ast.Dict)
-        for k, v in zip(n.keys, n.values)
+        for k, v in zip(n.keys, n.values, strict=True)
         if getattr(k, "value", None) == "code" and isinstance(v, ast.Constant)
     }
 
@@ -58,7 +58,6 @@ def test_module_contract(module):
     assert len(module.TOOL_DESCRIPTION) >= 60, "description too thin to guide an agent"
 
 
-@pytest.mark.xfail(strict=True, reason="WI-1")
 def test_self_caught_failure_code_matches_tool_name():  # WI-1
     """Scans for hand-written `"code": "..._failed"` literals.
 

@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "read_node"
@@ -65,13 +67,7 @@ async def handler(
 
         ancestors = await nodes_repo.get_ancestors(nid)
         if not ancestors:
-            return {
-                "error": {
-                    "code": "node_not_found",
-                    "message": f"No node {node_id}.",
-                    "details": None,
-                }
-            }
+            return envelope("node_not_found", f"No node {node_id}.", None)
         node = ancestors[-1]
 
         # The node's own span already covers its descendants — build_node_tree
@@ -89,30 +85,14 @@ async def handler(
 
         limit = min(max_chars or MAX_CHARS, MAX_CHARS)
         if end - start > limit:
-            return {
-                "error": {
-                    "code": "node_too_large",
-                    "message": (
-                        f"This part is {end - start} characters, over the "
+            return envelope("node_too_large", f"This part is {end - start} characters, over the "
                         f"{limit} limit. Read a node further down the tree, or "
-                        f"set include_descendants=false."
-                    ),
-                    "details": {"char_length": end - start, "limit": limit},
-                }
-            }
+                        f"set include_descendants=false.", {"char_length": end - start, "limit": limit})
 
         text = await container.document_texts.get_span(node.document_id, start, end)
         if text is None:
-            return {
-                "error": {
-                    "code": "no_canonical_text",
-                    "message": (
-                        "The document's canonical text is not stored, so its "
-                        "structure cannot be read back."
-                    ),
-                    "details": None,
-                }
-            }
+            return envelope("no_canonical_text", "The document's canonical text is not stored, so its "
+                        "structure cannot be read back.", None)
 
         return {
             "node_id": node_id,
@@ -127,9 +107,7 @@ async def handler(
             "text": text,
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("read_node_error", error=str(e))
-        return {
-            "error": {"code": "read_node_failed", "message": str(e), "details": None}
-        }
+        return failed(TOOL_NAME, e)
