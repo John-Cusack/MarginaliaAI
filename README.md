@@ -148,3 +148,9 @@ Operational notes live in [docs/](docs/):
 ## License
 
 MIT
+
+## Support
+
+If this project saved you some time, you can buy me a coffee. It helps cover compute and API costs and keeps these tools free and maintained.
+
+<a href="https://buymeacoffee.com/johncusack" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="41" width="174"></a>
