@@ -147,7 +147,7 @@ Operational notes live in [docs/](docs/):
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE).
 
 ## Support
 
