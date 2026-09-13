@@ -31,7 +31,7 @@ under `works/` are canonical **until a work's first freeze**; after that the
 primitive (`evidence.source_spans`) is the single copy of source-side anchoring
 across claims, annotations, and works; each citing row keeps its own typed quote
 and verification tier (decision 1). Citations are rows with FKs from day one,
-identified by `zotero_key` through a minimal `bibliography.editions` stub until
+identified by `edition_key` through a minimal `bibliography.editions` stub until
 P3 fills it out (decision 12). Nothing in the target schema depends on P3, and
 nothing in the bridge is thrown away: the file contract was designed as a subset
 of the target rows.
@@ -97,7 +97,7 @@ master is self-contained:
 `works/*.md` front-matter is the authority for what a work cites. The database
 holds a derived, rebuildable mirror (`core.works_index`, `core.work_citations` —
 bridge doc §4). Four tools operate on it (§8). Identity is bridged by
-`zotero_key` (bridge doc §5); claim refs are inert text until 009. This phase
+`edition_key` (bridge doc §5); claim refs are inert text until 009. This phase
 needs **no migration** to start and answers "which works cite this source" from
 day one.
 
@@ -119,7 +119,7 @@ model is the point. Concretely, a work is ported by:
    markdown structure);
 2. one `work_cite` per front-matter citation entry — the entry fields map 1:1
    onto occurrence + item rows (that was the design constraint); `intent` maps
-   directly, and an entry with neither `zotero_key` nor `edition` fails the §5
+   directly, and an entry with neither `edition_key` nor `edition` fails the §5
    CHECK, which is why `work_verify` flags zero-identity entries from day one;
 3. one `work_link` per claim ref / entity mention worth typing.
 
@@ -240,7 +240,7 @@ visit all three. One row per verified span means:
 **Amendments this forces, decided here:**
 
 - **Program doc §2 (`argument.anchors`) is revised:** the anchor keeps
-  `claim_id`, `role`, `person_entity_id`, `edition`, `zotero_key`, `locator`
+  `claim_id`, `role`, `person_entity_id`, `edition`, `edition_key`, `locator`
   **and its own** `quoted_text`, `verify_status`, `verified_at`,
   `parser_version`, and carries `source_span_id NOT NULL REFERENCES
   evidence.source_spans(id) ON DELETE RESTRICT` instead of inline
@@ -268,16 +268,16 @@ from items (what is cited) — with one amendment that removes its P3 dependency
 -- Decision 12: the bibliographic stub that lands with 012. P3-1 extends it
 -- (identifiers, contributors, work_id → bibliography.work) and turns the
 -- document join into a FK. Until then core.documents joins to editions by
--- metadata->>'zotero_key', and the edition-mismatch check compares keys.
+-- metadata->>'edition_key', and the edition-mismatch check compares keys.
 CREATE SCHEMA bibliography;
 
 CREATE TABLE bibliography.editions (
     id          uuid PRIMARY KEY,
-    zotero_key  text NOT NULL UNIQUE,
+    edition_key  text NOT NULL UNIQUE,
     csl         jsonb NOT NULL DEFAULT '{}',   -- CSL-JSON as imported from Zotero
     created_at  timestamptz NOT NULL DEFAULT now()
 );
--- Populated at ingest: one row per distinct documents.metadata->>'zotero_key'.
+-- Populated at ingest: one row per distinct documents.metadata->>'edition_key'.
 
 CREATE TABLE authored.citation_items (
     occurrence_id   uuid NOT NULL
@@ -286,9 +286,9 @@ CREATE TABLE authored.citation_items (
     -- AMENDED: nullable until P3 backfills it. The target doc's NOT NULL made
     -- every citation unrepresentable before edition records exist.
     edition_id      uuid REFERENCES bibliography.editions(id) ON DELETE RESTRICT,
-    -- The bridge, from the work-citations doc §5: identity by Zotero key now;
+    -- The bridge, from the work-citations doc §5: identity by edition key now;
     -- edition_id backfilled and the CHECK tightened when P3-1 lands.
-    zotero_key      text,
+    edition_key      text,
     source_span_id  uuid REFERENCES evidence.source_spans(id) ON DELETE RESTRICT,
     -- Decision 1 (Option B): the typed quote and its tier live here, per citer.
     quoted_text     text,
@@ -300,7 +300,7 @@ CREATE TABLE authored.citation_items (
     suppress_author boolean NOT NULL DEFAULT false,
     PRIMARY KEY (occurrence_id, position),
     CONSTRAINT citation_identity_ck
-      CHECK (edition_id IS NOT NULL OR zotero_key IS NOT NULL),
+      CHECK (edition_id IS NOT NULL OR edition_key IS NOT NULL),
     CONSTRAINT citation_verify_ck
       CHECK (verify_status IS NULL OR verify_status IN ('exact','normalized','near')),
     CONSTRAINT citation_quote_needs_span_ck
@@ -309,7 +309,7 @@ CREATE TABLE authored.citation_items (
 ```
 
 Invariants carried unchanged from target doc §8.3: a span's document must
-represent the cited edition (checked by `zotero_key` comparison until P3
+represent the cited edition (checked by `edition_key` comparison until P3
 provides the FK); markers are
 bijective with occurrences; quotation citations freeze only on `exact`/
 `normalized`; bibliography-only citations (no corpus span) are legitimate and
@@ -367,8 +367,8 @@ nothing downstream depends on which phase produced the verdict).
 **The precise tier rule** (review §4.6): `not_found` never enters the tables;
 `near` blocks freeze unless waived, and a waiver is a row with rule ID, revision,
 actor, reason and timestamp — never a flag in metadata. `work_verify` also
-reports, from day one: zero-identity citations (no `zotero_key`, no `edition`),
-unknown `intent` values, and a `zotero_key` no ingested document carries
+reports, from day one: zero-identity citations (no `edition_key`, no `edition`),
+unknown `intent` values, and a `edition_key` no ingested document carries
 (decisions 11 and 12).
 
 **Rights are out of scope** (decision 3). The corpus is the researcher's private
@@ -384,7 +384,7 @@ kept for verification.
 
 | Tool | Job | Superseded by |
 |---|---|---|
-| `work_verify [path]` | verify every front-matter citation; report rule IDs; unresolved claim refs, zero-identity entries, unknown intents and unknown Zotero keys are findings, not errors | `work_validate` |
+| `work_verify [path]` | verify every front-matter citation; report rule IDs; unresolved claim refs, zero-identity entries, unknown intents and unknown edition keys are findings, not errors | `work_validate` |
 | `work_index` | rebuild the mirror; drift via `front_matter_sha` | — (dropped with the mirror when the last pre-012 work flips, F3) |
 | `work_citations --document/--zotero/--claim` | the leverage query, works-flavoured | `work_trace` |
 | `work_render [path]` | the only free-text boundary: footnotes from rows, provisional refs labeled as such | `work_export` |
@@ -404,7 +404,7 @@ target doc §18's own discipline).
 **The citation draft (decision 6).** A `find_passages` hit is a citation draft,
 not a citation: its chunk offsets are a valid address into canonical text, but
 not the words a sentence rests on. Search stays a pure read. Each hit gains a
-`source` block — document title, `zotero_key`, `edition`, `parser_version`,
+`source` block — document title, `edition_key`, `edition`, `parser_version`,
 `has_canonical_text` — so the draft carries identity without a second lookup.
 `work_cite` accepts the hit's chunk window as a narrowing hint: the verify
 service locates the typed quote inside that window first (the from-offset hint
@@ -422,7 +422,7 @@ decides whether narrowing is required (§5).
 | 009 | `evidence_source_spans` | lands with 010, program week 2, after Phase 0 | one copy of anchoring + `UNIQUE (document_id, char_start, char_end)`; `verify_attempts` at first need |
 | 010 | `argument` (ledger) | program doc week 2 | anchors revised per §4: `source_span_id` replaces inline coordinates; typed quote and tier stay on the anchor |
 | 011 | `work_citations` bridge | **only if** the >3-works / >20-citations trigger fires before Phase 1 starts | explicitly temporary cache of files; dropped with `work_index` when the last pre-012 work flips (F3) |
-| 012 | `authored` + `bibliography` stub | Phase 1 (first freeze pending; F6 rehearsal first) | works / revisions / blocks / occurrences / items / source + entity links / waivers; `bibliography.editions` stub (decision 12); `citation_items` carries the `zotero_key` bridge CHECK and its own tier columns; claim links wait for Phase B |
+| 012 | `authored` + `bibliography` stub | Phase 1 (first freeze pending; F6 rehearsal first) | works / revisions / blocks / occurrences / items / source + entity links / waivers; `bibliography.editions` stub (decision 12); `citation_items` carries the `edition_key` bridge CHECK and its own tier columns; claim links wait for Phase B |
 | — | `bibliography.*` full | P3-1 as designed, S3 first | extends the stub (identifiers, contributors, `bibliography.work`), makes the document join a FK, backfills `edition_id`, tightens the CHECK |
 
 All additive; each revertible independently (guide I ground rule 3). The

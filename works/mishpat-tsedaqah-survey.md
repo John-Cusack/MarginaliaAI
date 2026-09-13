@@ -286,8 +286,7 @@ citations:
   document_id: 01a0795a-c259-7080-91ec-56163540e7af
   char_start: 3542
   char_end: 3632
-  quoted_text: "But let justice roll down like waters, \n\n \n\nand righteousness\
-    \ like an ever-flowing stream."
+  quoted_text: "But let justice roll down like waters, \n\n \n\nand righteousness like an ever-flowing stream."
   intent: quotation
   edition_key: ESV
   locator:
@@ -296,8 +295,7 @@ citations:
   document_id: 01a0795a-c259-7080-91ec-56163540e7af
   char_start: 866
   char_end: 949
-  quoted_text: "O qyou who turn justice to wormwood1 \n\n \n\nand cast down righteousness\
-    \ to the earth!"
+  quoted_text: "O qyou who turn justice to wormwood1 \n\n \n\nand cast down righteousness to the earth!"
   intent: quotation
   edition_key: ESV
   locator:
@@ -316,10 +314,8 @@ citations:
 - id: c34
   document_id: 01a0795a-fc45-7e30-813c-cfdbea586667
   char_start: 1259
-  char_end: 1460
-  quoted_text: "He has told you, O man, what is good; \n\n \n\nand fwhat does the\
-    \ Lord require of you \n\n \n\n\t\tbut to do justice, and to love kindness,2 \n\
-    \n \n\nand to gwalk humbly with your God? \n\n \n\nDestruction of the Wicked"
+  char_end: 1429
+  quoted_text: "He has told you, O man, what is good; \n\n \n\nand fwhat does the Lord require of you \n\n \n\n\t\tbut to do justice, and to love kindness,2 \n\n \n\nand to gwalk humbly with your God?"
   intent: quotation
   edition_key: ESV
   locator:
@@ -338,8 +334,7 @@ citations:
   document_id: 01a07957-97ed-79a2-8915-a1b0c37573fd
   char_start: 2740
   char_end: 2875
-  quoted_text: "learn to do good; \n\n \n\n\t\tlseek justice, \n\n \n\ncorrect oppression;\
-    \ \n\n \n\n\t\tmbring justice to the fatherless, \n\n \n\nplead the widow’s cause."
+  quoted_text: "learn to do good; \n\n \n\n\t\tlseek justice, \n\n \n\ncorrect oppression; \n\n \n\n\t\tmbring justice to the fatherless, \n\n \n\nplead the widow’s cause."
   intent: quotation
   edition_key: ESV
   locator:
@@ -348,9 +343,7 @@ citations:
   document_id: 01a07958-c7e0-7103-b1c6-660131580a56
   char_start: 2391
   char_end: 2567
-  quoted_text: "Do you think you are a king \n\n \n\nbecause you compete in cedar?\
-    \ \n\n \n\n\t\tDid not your father eat and drink \n\n \n\nand rdo justice and\
-    \ righteousness? \n\n \n\nsThen it was well with him."
+  quoted_text: "Do you think you are a king \n\n \n\nbecause you compete in cedar? \n\n \n\n\t\tDid not your father eat and drink \n\n \n\nand rdo justice and righteousness? \n\n \n\nsThen it was well with him."
   intent: quotation
   edition_key: ESV
   locator:
@@ -359,12 +352,7 @@ citations:
   document_id: 01a07942-0ad5-7bf1-ab5f-2e2163912455
   char_start: 700
   char_end: 1153
-  quoted_text: "כֹּ֚ה אָמַ֣ר יְהוָ֔ה עַל־שְׁלֹשָׁה֙ פִּשְׁעֵ֣י יִשְׂרָאֵ֔ל וְעַל־אַרְבָּעָ֖ה\
-    \ לֹ֣א אֲשִׁיבֶ֑נּוּ עַל־מִכְרָ֤ם בַּכֶּ֙סֶף֙ צַדִּ֔יק וְאֶבְי֖וֹן בַּעֲב֥וּר\
-    \ נַעֲלָֽיִם׃ \n\n \n\n7 \tהַשֹּׁאֲפִ֤ים עַל־עֲפַר־אֶ֙רֶץ֙ בְּרֹ֣אשׁ דַּלִּ֔ים\
-    \ וְדֶ֥רֶךְ עֲנָוִ֖ים יַטּ֑וּ וְאִ֣ישׁ וְאָבִ֗יו יֵֽלְכוּ֙ אֶל־הַֽנַּעֲרָ֔ה לְמַ֥עַן\
-    \ חַלֵּ֖ל אֶת־שֵׁ֥ם קָדְשִֽׁי׃ \n\n \n\n8 \tוְעַל־בְּגָדִ֤ים חֲבֻלִים֙ יַטּ֔וּ\
-    \ אֵ֖צֶל כָּל־מִזְבֵּ֑חַ וְיֵ֤ין עֲנוּשִׁים֙ יִשְׁתּ֔וּ בֵּ֖ית אֱלֹהֵיהֶֽם׃"
+  quoted_text: "כֹּ֚ה אָמַ֣ר יְהוָ֔ה עַל־שְׁלֹשָׁה֙ פִּשְׁעֵ֣י יִשְׂרָאֵ֔ל וְעַל־אַרְבָּעָ֖ה לֹ֣א אֲשִׁיבֶ֑נּוּ עַל־מִכְרָ֤ם בַּכֶּ֙סֶף֙ צַדִּ֔יק וְאֶבְי֖וֹן בַּעֲב֥וּר נַעֲלָֽיִם׃ \n\n \n\n7 \tהַשֹּׁאֲפִ֤ים עַל־עֲפַר־אֶ֙רֶץ֙ בְּרֹ֣אשׁ דַּלִּ֔ים וְדֶ֥רֶךְ עֲנָוִ֖ים יַטּ֑וּ וְאִ֣ישׁ וְאָבִ֗יו יֵֽלְכוּ֙ אֶל־הַֽנַּעֲרָ֔ה לְמַ֥עַן חַלֵּ֖ל אֶת־שֵׁ֥ם קָדְשִֽׁי׃ \n\n \n\n8 \tוְעַל־בְּגָדִ֤ים חֲבֻלִים֙ יַטּ֔וּ אֵ֖צֶל כָּל־מִזְבֵּ֑חַ וְיֵ֤ין עֲנוּשִׁים֙ יִשְׁתּ֔וּ בֵּ֖ית אֱלֹהֵיהֶֽם׃"
   intent: quotation
   edition_key: LHB
   locator:
@@ -373,10 +361,7 @@ citations:
   document_id: 01a07942-5469-78f0-bfa7-756c455684fa
   char_start: 5
   char_end: 239
-  quoted_text: "ה֧וֹי חֹֽשְׁבֵי־אָ֛וֶן וּפֹ֥עֲלֵי רָ֖ע עַל־מִשְׁכְּבוֹתָ֑ם בְּא֤וֹר\
-    \ הַבֹּ֙קֶר֙ יַעֲשׂ֔וּהָ כִּ֥י יֶשׁ־לְאֵ֖ל יָדָֽם׃ \n\n \n\n2 \tוְחָמְד֤וּ שָׂדוֹת֙\
-    \ וְגָזָ֔לוּ וּבָתִּ֖ים וְנָשָׂ֑אוּ וְעָֽשְׁקוּ֙ גֶּ֣בֶר וּבֵית֔וֹ וְאִ֖ישׁ וְנַחֲלָתֽוֹ׃\
-    \ פ"
+  quoted_text: "ה֧וֹי חֹֽשְׁבֵי־אָ֛וֶן וּפֹ֥עֲלֵי רָ֖ע עַל־מִשְׁכְּבוֹתָ֑ם בְּא֤וֹר הַבֹּ֙קֶר֙ יַעֲשׂ֔וּהָ כִּ֥י יֶשׁ־לְאֵ֖ל יָדָֽם׃ \n\n \n\n2 \tוְחָמְד֤וּ שָׂדוֹת֙ וְגָזָ֔לוּ וּבָתִּ֖ים וְנָשָׂ֑אוּ וְעָֽשְׁקוּ֙ גֶּ֣בֶר וּבֵית֔וֹ וְאִ֖ישׁ וְנַחֲלָתֽוֹ׃ פ"
   intent: quotation
   edition_key: LHB
   locator:
@@ -451,9 +436,7 @@ citations:
   document_id: 01a07956-0bf2-7732-b460-3f4454f35990
   char_start: 57
   char_end: 226
-  quoted_text: "Give the king your rjustice, O God, \n\n \n\nand your righteousness\
-    \ to the royal son! \n\n \n\n\t2 \tMay he sjudge your people with righteousness,\
-    \ \n\n \n\nand your poor with justice!"
+  quoted_text: "Give the king your rjustice, O God, \n\n \n\nand your righteousness to the royal son! \n\n \n\n\t2\xa0\tMay he sjudge your people with righteousness, \n\n \n\nand your poor with justice!"
   intent: quotation
   edition_key: ESV
   locator:
@@ -518,6 +501,1289 @@ citations:
   edition_key: LHB
   locator:
     verse: Neh 5:7
+- id: c54
+  document_id: 01a039d7-f3ba-7412-9867-e2fa6ea3b6d5
+  char_start: 6326805
+  char_end: 6326907
+  quoted_text: "I שַׁעַר: probably a primary noun which is not to be linked with → II *שׁער; SamP. šār; Samaritan תרע;"
+  intent: quotation
+  edition_key: HALOT
+  locator:
+    verse: HALOT s.v. שַׁעַר (head)
+- id: c55
+  document_id: 01a039d7-f3ba-7412-9867-e2fa6ea3b6d5
+  char_start: 6332709
+  char_end: 6332956
+  quoted_text: "—c) the gate as the place of censure and judgement (cf. Koehler *Mensche* 147ff; de Vaux *Inst.* 1: 235 = Lebensordnungen 1: 245f; Reicke-Rost *Hw.* 2010) Is 29:21 Am 5:10, 12, 15 Zech 8:16 Jb 5:4 31:21 Pr 22:22 24:7 31:23, 31 Ru 4:1.10f Lam 5:14."
+  intent: quotation
+  edition_key: HALOT
+  locator:
+    verse: HALOT s.v. שַׁעַר (sense 4c)
+- id: c56
+  document_id: 01a039d7-f3ba-7412-9867-e2fa6ea3b6d5
+  char_start: 6332164
+  char_end: 6332468
+  quoted_text: "בָּאֵי שַׁעַר those who enter the gate Gn 23:10, 18, יֹצְאֵי שַׁ׳ those who go in and out at the city gate Gn 34:24, on which see Westermann BK 1/2: 458 (with bibliography): on both occasions the word indicates those residing in the place who make their entrance through the gate to conduct negotiations;"
+  intent: quotation
+  edition_key: HALOT
+  locator:
+    verse: HALOT s.v. שַׁעַר (sense 4b)
+- id: c57
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 5478694
+  char_end: 5478756
+  quoted_text: "מִשְׁפָּט S4941 TWOT2443c GK5477422 n.m. Gn 40:13 **judgment**"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: מִשְׁפָּט
+    article: LBDB.2184.4
+- id: c58
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 5479044
+  char_end: 5479148
+  quoted_text: "1. *judgment:* **a.** *act of deciding a case:* מ׳ belongeth to God Dt 1:17, is from him Pr 16:33; 29:26"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: מִשְׁפָּט
+    article: LBDB.2184.4
+- id: c59
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 5481110
+  char_end: 5481200
+  quoted_text: "2. attribute of the שֹׁפֵט, *justice, right**, rectitude:* **a.** of God, אלהי מ׳ Is 30:18"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: מִשְׁפָּט
+    article: LBDB.2184.4
+- id: c60
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 5481872
+  char_end: 5481942
+  quoted_text: "3. *ordinance* promulgated by שֹׁפֵט: 1 S 8:9, 11; 10:25 (law of king)"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: מִשְׁפָּט
+    article: LBDB.2184.4
+- id: c61
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 5482377
+  char_end: 5482492
+  quoted_text: "4. *decision* of the שֹׁפֵט in a case of law (v. BrHex. 252 sq.): sg. of particular decision of a case Ex 21:31 (E)"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: מִשְׁפָּט
+    article: LBDB.2184.4
+- id: c62
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 5483018
+  char_end: 5483124
+  quoted_text: "5. one’s (legal) *right, privilege, due:* מ׳ הַכֹּהֲנִים Dt 18:3 *due of the priests*, מ׳ הַבְּכֹרָה 21:17"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: מִשְׁפָּט
+    article: LBDB.2184.4
+- id: c63
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 5483538
+  char_end: 5483581
+  quoted_text: "**b.** *custom, manner:* מ׳ הכהנים 1 S 2:13"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: מִשְׁפָּט
+    article: LBDB.2184.4
+- id: c64
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4342896
+  char_end: 4342976
+  quoted_text: "צְדָקָה S6666 TWOT1879b GK7407157 n.f. righteousness;—abs. צ׳ Gn 15:6 + 81 times"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c65
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4343134
+  char_end: 4343233
+  quoted_text: "1. *righteousness*, in government: **a.** of judge, ruler, king: || משׁפט Is 5:7; 9:6; Am 5:7; 6:12"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c66
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4343609
+  char_end: 4343654
+  quoted_text: "2. God’s attribute as sovereign ψ 36:7; 71:19"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c67
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4343815
+  char_end: 4343876
+  quoted_text: "3. *righteousness*, in a case or cause, בצדקתי החזקתי Jb 27:6"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c68
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4344102
+  char_end: 4344166
+  quoted_text: "4. *righteous**ness* = *truthfulness*, באמת ובצ׳ Is 48:1; Zc 8:8"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c69
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4344205
+  char_end: 4344265
+  quoted_text: "5. *righteousness*, as ethically right: Gn 30:33 (J) Dt 6:25"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c70
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4344746
+  char_end: 4344830
+  quoted_text: "6. *righteousness* as vindicated, *justification, salvation*, etc. (cf. צֶדֶק **6**)"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c71
+  document_id: 01a095e6-6f83-7310-a4b0-23fcb1126146
+  char_start: 4345515
+  char_end: 4345583
+  quoted_text: "7. pl. *righteous acts:* **a.** of God Ju 5:11(×2); 1 S 12:7; Mi 6:5"
+  intent: definition
+  edition_key: BDB
+  locator:
+    entry: צְדָקָה
+    article: LBDB.1668.2
+- id: c72
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 814289
+  char_end: 814356
+  quoted_text: "מִשְׁפָּט (425 ×): cs. מִשְׁפַּט, sf. מִשְׁפָּטוֹ; pl. מִשְׁפָּטִים"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: M.1063
+- id: c73
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 814429
+  char_end: 814533
+  quoted_text: "decision by arbitration > legal decision > legal case > justice, right > what is in conformity to a case"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: M.1063
+- id: c74
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 814535
+  char_end: 814634
+  quoted_text: "1. **decision by arbitration, legal decision**: a) Y. gives his mišpāṭ Zp 2:3; šāʾal mišpāṭ Is 58:2"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: M.1063
+- id: c75
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 814950
+  char_end: 815014
+  quoted_text: "2. **legal case, lawsuit**: ʿāśâ mišpāṭô win one’s case Ez 39:21"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: M.1063
+- id: c76
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 815193
+  char_end: 815264
+  quoted_text: "3. a) **legal claim**: mišpaṭ hammelek 1 S 8:9, mišpaṭ habbānôt Ex 21:9"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: M.1063
+- id: c77
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 815470
+  char_end: 815559
+  quoted_text: "4. **conformity**: building-plan 1 K 6:38; mode of life, habits: mišpaṭ hannaʿar Ju 13:12"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: M.1063
+- id: c78
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 815753
+  char_end: 815801
+  quoted_text: "5. **justice**, oft. linked w. synonyms Is 1:21."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: M.1063
+- id: c79
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113639
+  char_end: 1113696
+  quoted_text: "צְדָקָה (157 ×): cs. צִדְקַת, sf. צִדְקָתִי; pl. צְדָקוֹת"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c80
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113729
+  char_end: 1113824
+  quoted_text: "1. righteousness = **blameless behavior, honesty** Gn 30:33; biṣdāqâ in honesty Is 48:1; Je 4:2"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c81
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113826
+  char_end: 1113879
+  quoted_text: "2. **righteousne****ss** (of the whole being) Pr 15:9"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c82
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113881
+  char_end: 1113923
+  quoted_text: "3. **justice** (of a human judge) Gn 18:19"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c83
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113925
+  char_end: 1113988
+  quoted_text: "4. **justice** (characteristic of God the divine judge) Is 5:16"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c84
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113990
+  char_end: 1114064
+  quoted_text: "5. **righteousness** (as religious attitude =) **godliness** 2 S 22:21, 25"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c85
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1114066
+  char_end: 1114142
+  quoted_text: "6. **righteousness** (= behavior wh. God expects man to show to God) Gn 15:6"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c86
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1114144
+  char_end: 1114261
+  quoted_text: "7. (God’s) **justice**: a) wh. God expects for man’s conduct w. man Dt 33:21; b) **what is reliable**; truth Is 45:23"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c87
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1114263
+  char_end: 1114318
+  quoted_text: "c) what God gives = **salvation, deliverance** Is 46:12"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c88
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1114320
+  char_end: 1114395
+  quoted_text: "8. pl.: a) **legal claims** Je 51:10; b) God’s **acts of justice** 1 S 12:7"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c89
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1114397
+  char_end: 1114445
+  quoted_text: "c) just acts of men Is 33:15; godliness Ez 18:24"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c90
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1114447
+  char_end: 1114516
+  quoted_text: "9. var.: ṣedāqâ **legal claim** 2 S 19:29, **blamelessness** Is 5:23."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צְדָקָה
+    article: X.50
+- id: c91
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113182
+  char_end: 1113211
+  quoted_text: "צֶדֶק: sf. צִדְקוֹ, צִרְקָֽךָ"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צֶדֶק
+    article: X.49
+- id: c92
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113213
+  char_end: 1113266
+  quoted_text: "1. **(what is) right, normal**: just weights Dt 25:15"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צֶדֶק
+    article: X.49
+- id: c93
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113307
+  char_end: 1113373
+  quoted_text: "what is **right, just** = suitable Is 45:19, = trustworthy Ps 23:3"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צֶדֶק
+    article: X.49
+- id: c94
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113375
+  char_end: 1113442
+  quoted_text: "2. **(legal) ****rightness** Dt 16:20; ṣidqî my legal right Jb 6:29"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צֶדֶק
+    article: X.49
+- id: c95
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113444
+  char_end: 1113501
+  quoted_text: "3. **justice** Dt 1:16; adj. **just, righteous** Dt 16:18"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צֶדֶק
+    article: X.49
+- id: c96
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113526
+  char_end: 1113572
+  quoted_text: "4. justice done to s.one = **success** Is 41:2"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צֶדֶק
+    article: X.49
+- id: c97
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1113574
+  char_end: 1113637
+  quoted_text: "5. beṣedeq through success given by God = **by grace** Is 42:6."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צֶדֶק
+    article: X.49
+- id: c98
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1111416
+  char_end: 1111449
+  quoted_text: "צַדִּיק (205 ×): pl. צַדִּיקִ(י)ם"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צַדִּיק
+    article: X.46
+- id: c99
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1111451
+  char_end: 1111556
+  quoted_text: "1. a thing examined and found to be in order, right: wenōʾmar ṣaddîq we say, ‘it is (all) right’ Is 41:26"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צַדִּיק
+    article: X.46
+- id: c100
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1111558
+  char_end: 1111687
+  quoted_text: "2. (legally: a person whose conduct is examined and found to be unobjectionable): **not guilty, innocent, in the right** 2 K 10:9"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צַדִּיק
+    article: X.46
+- id: c101
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1111689
+  char_end: 1111748
+  quoted_text: "3. (morally in the right): **innocent, guiltless** 2 S 4:11"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צַדִּיק
+    article: X.46
+- id: c102
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1111790
+  char_end: 1111855
+  quoted_text: "4. therefore: **just, righteous** (character or conduct) 2 S 23:3"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צַדִּיק
+    article: X.46
+- id: c103
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1111857
+  char_end: 1111901
+  quoted_text: "5. (religiously) **righteous, godly** Gn 6:9"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צַדִּיק
+    article: X.46
+- id: c104
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1111903
+  char_end: 1111973
+  quoted_text: "6. said of God, **in the right** Ex 9:27; **righteous, just** Ps 7:10."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: צַדִּיק
+    article: X.46
+- id: c105
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1393768
+  char_end: 1393791
+  quoted_text: "שָׁפַט: **qal** (180 ×)"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c106
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394217
+  char_end: 1394281
+  quoted_text: "1. šāfaṭ bên … ûbên **decide, settle** (a dispute) betw. Gn 16:5"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c107
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394304
+  char_end: 1394345
+  quoted_text: "2. šāfaṭ dābār **settle** a case Ex 18:26"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c108
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394347
+  char_end: 1394433
+  quoted_text: "3. šāfaṭ ʾet (-yātôm) **help** (the orphan) **get justice**, give legal aid to Is 1:17"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c109
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394482
+  char_end: 1394546
+  quoted_text: "4. pt. šōfēṭ **judge** (in sense of arbitrator, legal counselor)"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c110
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394576
+  char_end: 1394599
+  quoted_text: "5. God is šōfēṭ Ps 7:12"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c111
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394601
+  char_end: 1394645
+  quoted_text: "6. **judge** (= administer justice) Lv 19:15"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c112
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394647
+  char_end: 1394681
+  quoted_text: "7. **judge** = **punish** 1 S 3:13"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c113
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1394772
+  char_end: 1394801
+  quoted_text: "8. šōfēṭ > **ruler** Mi 4:14."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: שָׁפַט
+    article: V.537
+- id: c114
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275469
+  char_end: 275534
+  quoted_text: "1. **bring justice** (= redress a wrong) to s.one w. acc. Ps 72:2"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.118
+- id: c115
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275555
+  char_end: 275617
+  quoted_text: "dān dîn help s.one obtain justice Je 5:28, dān mišpāṭ Je 21:12"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.118
+- id: c116
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275619
+  char_end: 275658
+  quoted_text: "2. dān ʿim **go to law ****w.** Ec 6:10"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.118
+- id: c117
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275660
+  char_end: 275750
+  quoted_text: "3. **pass sentence, execute justice**: w. acc., call s.one to account, subj. God Gn 15:14."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.118
+- id: c118
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275834
+  char_end: 275860
+  quoted_text: "1. **legal claim** Dt 17:8"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.119
+- id: c119
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275862
+  char_end: 275885
+  quoted_text: "2. **lawsuit** Jb 35:14"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.119
+- id: c120
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275887
+  char_end: 275919
+  quoted_text: "3. **verdict**, sentence Ps 76:9"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.119
+- id: c121
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275921
+  char_end: 275953
+  quoted_text: "kissēʾ dîn judgment-seat Pr 20:8"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.119
+- id: c122
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 275955
+  char_end: 275979
+  quoted_text: "4. **dispute** Pr 22:10."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: דִּין
+    article: D.119
+- id: c123
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1240362
+  char_end: 1240443
+  quoted_text: "1. **dispute, quarrel** (in public, w. words, complaints, assertions, reproaches)"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.182
+- id: c124
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1240652
+  char_end: 1240749
+  quoted_text: "2. rāb rîb (cs. followed by pers., or w. sf. of pers.) **condu****ct the case, lawsuit of** s.one"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.182
+- id: c125
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1240798
+  char_end: 1240825
+  quoted_text: "3. rāb + acc. = 2.: Is 1:17"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.182
+- id: c126
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1240827
+  char_end: 1240887
+  quoted_text: "4. rāb ʾel **put, lay a case, lawsuit** before s.one Je 2:29"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.182
+- id: c127
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1240889
+  char_end: 1240939
+  quoted_text: "5. rāb be **attack** s.one (w. reproaches) Dt 33:8"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.182
+- id: c128
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1240941
+  char_end: 1240986
+  quoted_text: "6. spec., God subj.: 1 S 24:16 (as 2.) & oft."
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.182
+- id: c129
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1240988
+  char_end: 1241069
+  quoted_text: "רִיב, רִב: sf. רִיבוֹ, רִיבָם; pl. cs. רִיבֵי: (legal) **dispute, case, lawsuit**"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.183
+- id: c130
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1241147
+  char_end: 1241227
+  quoted_text: "qārab rîb bring forth one’s case Is 41:21; rîb lô be has a case against Je 25:31"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.183
+- id: c131
+  document_id: 01a095b4-c9ba-71e0-9848-6833ab34cb47
+  char_start: 1241287
+  char_end: 1241329
+  quoted_text: "ʾîš rîbî my adversary (in a case) Jb 31:35"
+  intent: definition
+  edition_key: CHALOT
+  locator:
+    entry: רִיב
+    article: R.183
+- id: c132
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 4407395
+  char_end: 4407465
+  quoted_text: "The primary sense of šāpaṭ is to exercise the processes of government."
+  intent: support
+  edition_key: TWOT
+  locator:
+    entry: מִשְׁפָּט
+    article: TWOT.2443C
+- id: c133
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 4414196
+  char_end: 4414271
+  quoted_text: "The act of deciding a case of litigation brought before a civil magistrate."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: מִשְׁפָּט
+    article: TWOT.2443C
+- id: c134
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 4418734
+  char_end: 4418818
+  quoted_text: "One’s right under law, human or divine, is denominated mišpāṭ (Deut 18:3; Jer 32:7)."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: מִשְׁפָּט
+    article: TWOT.2443C
+- id: c135
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 4414924
+  char_end: 4414995
+  quoted_text: "A case of litigation (i.e. a specific cause brought to the magistrate)."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: מִשְׁפָּט
+    article: TWOT.2443C
+- id: c136
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 4418556
+  char_end: 4418629
+  quoted_text: "11. custom (II Kgs 17:33) or even 12. a fitting measure taken (I Kgs 5:8)"
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: מִשְׁפָּט
+    article: TWOT.2443C
+- id: c137
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 4417110
+  char_end: 4417194
+  quoted_text: "The attribute of justice in all correct personal civil administration is emphasized."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: מִשְׁפָּט
+    article: TWOT.2443C
+- id: c138
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 4413084
+  char_end: 4413186
+  quoted_text: "Though rendered “judgment” in most of the four hundred or so appearances of mišpāṭ in the Hebrew Bible"
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: מִשְׁפָּט
+    article: TWOT.2443C
+- id: c139
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 3506663
+  char_end: 3506735
+  quoted_text: "This root basically connotes conformity to an ethical or moral standard."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: צְדָקָה
+    article: TWOT.1879B
+- id: c140
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 3508044
+  char_end: 3508138
+  quoted_text: "The word describes three aspects of personal relationships: ethical, forensic, and theocratic."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: צְדָקָה
+    article: TWOT.1879B
+- id: c141
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 3511981
+  char_end: 3512072
+  quoted_text: "The forensic aspect of ṣedeq applies to the equality of all, rich and poor, before the law."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: צְדָקָה
+    article: TWOT.1879B
+- id: c142
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 3515496
+  char_end: 3515590
+  quoted_text: "God is righteous, under the covenant, when he delivers his people from trouble (Ps 31:1 [H 2])"
+  intent: support
+  edition_key: TWOT
+  locator:
+    entry: צְדָקָה
+    article: TWOT.1879B
+- id: c143
+  document_id: 01a095c1-2a94-77c3-86fc-488b536c4193
+  char_start: 3506564
+  char_end: 3506604
+  quoted_text: "צְדָקָה (ṣĕdāqâ) justice, righteousness."
+  intent: definition
+  edition_key: TWOT
+  locator:
+    entry: צְדָקָה
+    article: TWOT.1879B
+- id: c144
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7253897
+  char_end: 7254010
+  quoted_text: "מִשְׁפָּט (mišpāṭ), nom. judgment, decision by arbitration, legal specifications, legal case, legal claim (#5477)"
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c145
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7254134
+  char_end: 7254162
+  quoted_text: "This word occurs 425× in OT."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c146
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7255028
+  char_end: 7255088
+  quoted_text: "The laws given to the Israelites through Moses in Exod 21–23"
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c147
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7254589
+  char_end: 7254654
+  quoted_text: "מִשְׁפָּט occurs 84× in the Pent., most frequently in Deut (37×)."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c148
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7254655
+  char_end: 7254743
+  quoted_text: "There are 74 occurrences in the historical books, mostly in Kings (28×) and Chron (22×)."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c149
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7254744
+  char_end: 7254826
+  quoted_text: "In the Wisdom literature (47×), the word predominates in Job (23×) and Prov (19×)."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c150
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7254827
+  char_end: 7254944
+  quoted_text: "The word is most frequent in the prophetic writings (144×), occurring mostly in Isa (41×), Jer (32×), and Ezek (43×)."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c151
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7256706
+  char_end: 7256829
+  quoted_text: "Failure to maintain high standards of justice brings upon Israel dire punishment (Amos 5:7, 15; 6:12; Mic 3:1, 9; Hab 1:4)."
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c152
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 7257621
+  char_end: 7257709
+  quoted_text: "The word also refers to divine commands similar to the cultic/ceremonial use of תּוֹרָה."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.711
+- id: c153
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9543585
+  char_end: 9543621
+  quoted_text: "צָדַק (ṣādaq), q. be just, righteous"
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29
+- id: c154
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9562566
+  char_end: 9562671
+  quoted_text: "(d) The sense of innocent implied in several contexts already shades towards the forensic sense of צָדַק."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29.2
+- id: c155
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9558926
+  char_end: 9559041
+  quoted_text: "Noah is described as a “righteous man (אִישׁ צַדִּיק), blameless (תָּמִים) among the people of his time” (Gen 6:9)."
+  intent: definition
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29.2
+- id: c156
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9563665
+  char_end: 9563724
+  quoted_text: "This is the first time that this set pair appears in the OT"
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29.2
+- id: c157
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9563945
+  char_end: 9564055
+  quoted_text: "Since the pair forms a hendiadys, precise and distinct meanings for each of the partners should not be sought."
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29.2
+- id: c158
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9564056
+  char_end: 9564115
+  quoted_text: "Rather, together they represent the ideal of social justice"
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29.2
+- id: c159
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9563592
+  char_end: 9563663
+  quoted_text: "doing what was just and right (מִשְׁפָּט וּצְדָקָה) for all his people."
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29.2
+- id: c160
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 9575202
+  char_end: 9575325
+  quoted_text: "brings forensic interests into focus (God as righteous judge, combining the two notions, is clearest in the Ps; see below)."
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: צֶדֶק
+    article: TSADDE.29.2
+- id: c161
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 4719462
+  char_end: 4719503
+  quoted_text: "The substs. occur as follows: mišpāṭ 422x"
+  intent: definition
+  edition_key: TLOT
+  locator:
+    entry: שפט
+    article: SHIN.24
+- id: c162
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 4719785
+  char_end: 4719851
+  quoted_text: "3. (a) The “basic meaning” of the root špṭ has long been disputed:"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: שפט
+    article: SHIN.24
+- id: c163
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 4720361
+  char_end: 4720457
+  quoted_text: "O. Grether (*ZAW* 57 [1939]: 110–21) understands špṭ always as “deciding juristically, judging.”"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: שפט
+    article: SHIN.24
+- id: c164
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 4720690
+  char_end: 4720796
+  quoted_text: "indicate that špṭ is a “West Semitic term of dominion,” which encompasses “civil and legal administration”"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: שפט
+    article: SHIN.24
+- id: c165
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 4730956
+  char_end: 4730997
+  quoted_text: "mišpāṭ should be understood as a “sphere”"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: שפט
+    article: SHIN.24
+- id: c166
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3578022
+  char_end: 3578143
+  quoted_text: "for reciprocal faithfulness and loyalty that takes different forms of expression given the distinction in status, is old."
+  intent: definition
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c167
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3587032
+  char_end: 3587174
+  quoted_text: "→ ḥesed usually describes Yahweh’s covenant faithfulness, which corresponds occasionally to the ṣedāqâ of the human partner (e.g., 1 Kgs 3:6)."
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c168
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3568688
+  char_end: 3568765
+  quoted_text: "“ṣdq refers to the proper order, ṣdqh to correct behavior that aims at order."
+  intent: definition
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c169
+  document_id: 01a095b3-92e3-7b91-aa0f-9ebe92be8a98
+  char_start: 521685
+  char_end: 521788
+  quoted_text: "Here he levels his most uncompromising attack against the lavishness of the official monotheistic cult."
+  intent: background
+  edition_key: HERMENEIA
+  locator:
+    pericope: Amos 5:21-27
+- id: c170
+  document_id: 01a095b3-92e3-7b91-aa0f-9ebe92be8a98
+  char_start: 531960
+  char_end: 532059
+  quoted_text: "Amos likens his demand for ever-streaming justice and righteousness to a riverbed that never fails."
+  intent: background
+  edition_key: HERMENEIA
+  locator:
+    pericope: Amos 5:24
+- id: c171
+  document_id: 01a095b3-92e3-7b91-aa0f-9ebe92be8a98
+  char_start: 489575
+  char_end: 489643
+  quoted_text: "public legal hearings took place and where justice was administered."
+  intent: background
+  edition_key: HERMENEIA
+  locator:
+    pericope: Amos 5:10
+- id: c172
+  document_id: 01a095b3-92e3-7b91-aa0f-9ebe92be8a98
+  char_start: 489647
+  char_end: 489694
+  quoted_text: "The person in charge of dispensing this justice"
+  intent: background
+  edition_key: HERMENEIA
+  locator:
+    pericope: Amos 5:10
+- id: c173
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3610114
+  char_end: 3610256
+  quoted_text: "Paradoxically, abstinence from false cultic practices would be a decisive step for God’s renewed attention and for a new endowment with ṣedāqâ"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c174
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3610293
+  char_end: 3610423
+  quoted_text: "“Rather may [your] mišpāṭ pour forth …,” although the grammar knows no other example of an adversative use of the copulative impf."
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c175
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3592299
+  char_end: 3592406
+  quoted_text: "No reference to the concept of a punitive ṣedāqâ can be adduced-that would be a *contradict**io in adiecto*"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c176
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3609277
+  char_end: 3609412
+  quoted_text: "The details of the invalidation of the ṣedāqâ can be seen in the fact that less privileged ṣaddîq citizens have been cheated and robbed"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c177
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3571514
+  char_end: 3571592
+  quoted_text: "they are children of the sun-god who enter at his right and left in epiphanies"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c178
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3593371
+  char_end: 3593443
+  quoted_text: "The royal intercession in Psa 72 hopes for a gift of ṣedāqâ for the king"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c179
+  document_id: 01a095ba-2b31-7cf0-90c0-ab674e864c8b
+  char_start: 3603726
+  char_end: 3603863
+  quoted_text: "It equips him not only to establish his people for the ṣedeq sphere but mysteriously to effect the fertility of the mountains and valleys"
+  intent: support
+  edition_key: TLOT
+  locator:
+    entry: צדק
+    article: TSADE.2
+- id: c180
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 11881039
+  char_end: 11881211
+  quoted_text: "Judgment is to be carried out righteously (with צֶדֶק / צְדָקָה [#7405]: Lev 19:15; Deut 1:16; 16:18; Ps 7:11 [12]; 9:4, 8 [5, 9]; 50:6; 51:4 [6]; 72:4 [cf. vv. 1, 2, 3, 7]"
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: שפט
+    article: SHIN.292.2
+- id: c181
+  document_id: 01a0961f-66d0-7390-99b7-20ad677797f5
+  char_start: 11880835
+  char_end: 11880897
+  quoted_text: "lawsuit/contend [#8189]; Deut 19:17; 25:1, 2; 1 Sam 24:15 [16]"
+  intent: support
+  edition_key: NIDOTTE
+  locator:
+    entry: שפט
+    article: SHIN.292.2
+- id: c182
+  document_id: 01a039d7-f3ba-7412-9867-e2fa6ea3b6d5
+  char_start: 2631138
+  char_end: 2631234
+  quoted_text: "ruling > legal decision, judgement > case > law, right, claim > what is due to someone in a case"
+  intent: definition
+  edition_key: HALOT
+  locator:
+    entry: מִשְׁפָּט
+    article: MEM.1082
 ---
 
 # Lexicographic Survey: מִשְׁפָּט (mishpat, H4941) and צְדָקָה (tsedaqah, H6666)
@@ -532,13 +1798,13 @@ citations:
 
 | Category | Resource | ID/Abbreviation |
 |----------|----------|-----------------|
-| **Lexicons** | HALOT (Hebrew and Aramaic Lexicon of the OT) | Available via word study API |
-| | BDB (Brown-Driver-Briggs) | Available via word study API |
-| | CHALOT (Concise Hebrew and Aramaic Lexicon) | LLS:CNCSHAL (ingested: 9,659 chunks) |
-| **Theological Dictionaries** | NIDOTTE (New International Dictionary of OT Theology & Exegesis) | Available via word study API |
-| | TLOT (Theological Lexicon of the OT) | Available via word study API |
-| | TWOT (Theological Wordbook of the OT) | Available via word study API |
-| **Commentaries** | Hermeneia: Amos (Shalom Paul) | LLS:HERMAM |
+| **Lexicons** | HALOT (Hebrew and Aramaic Lexicon of the OT) | Ingested in corpus (LLS:46.30.12) + word-study lemma links; entries verified verbatim 2026-09-12 |
+| | BDB (Brown-Driver-Briggs) | Ingested in corpus (LLS:46.30.16); entries verified verbatim 2026-09-12 |
+| | CHALOT (Concise Hebrew and Aramaic Lexicon) | Ingested in corpus (LLS:CNCSHAL); entries verified verbatim 2026-09-12 |
+| **Theological Dictionaries** | NIDOTTE (New International Dictionary of OT Theology & Exegesis) | Ingested in corpus (LLS:NIDOTTE); entries verified verbatim 2026-09-12 |
+| | TLOT (Theological Lexicon of the OT) | Ingested in corpus (LLS:TLOT); entries verified verbatim 2026-09-12 |
+| | TWOT (Theological Wordbook of the OT) | Ingested in corpus (LLS:46.50.3); entries verified verbatim 2026-09-12 |
+| **Commentaries** | Hermeneia: Amos (Shalom Paul) | Ingested in corpus (LLS:HRMNEIA30AM); pericopes verified verbatim 2026-09-12 |
 | | Bible Knowledge Commentary | Available |
 | | Faithlife Study Bible | Available |
 | | Lexham Context Commentary: OT | Available |
@@ -663,127 +1929,131 @@ citations:
 
 Legal **dispute, case, lawsuit**. Key phrases: qāraḇ rîḇ = bring forth one's case (Is 41:21); rîḇ lô = he has a case against (Je 25:31); ʾîš rîḇî = my adversary in a case (Jb 31:35).
 
+#### שַׁעַר (shaʿar) — HALOT
+
+HALOT s.v. I שַׁעַר treats "gate" as a primary noun (not linked with II *שׁער) [^c54]. Legally relevant senses: those entering and exiting the gate are the residents who gather "to conduct negotiations" (Gn 23:10, 18; 34:24) [^c56]; and expressly "the gate as the place of censure and judgement" (Is 29:21; Am 5:10, 12, 15; Zech 8:16; Jb 5:4; 31:21; Pr 22:22; 24:7; 31:23, 31; Ru 4:1, 10f; Lam 5:14) [^c55]. (This headword was in the target list but had no entry; added 2026-09-12 from ingested HALOT LLS:46.30.12, verified verbatim.)
+
 ---
 
 ### 2.2 BDB Entries
 
 #### מִשְׁפָּט (mishpat) — BDB
 
-**Frequency**: 422×
+**Frequency**: 422× [^c57]
 
 **Categories**:
-1. **Judgment, act of deciding** — judicial verdicts, sentences
-2. **Justice, right, rectitude** — abstract principle of what is right
-3. **Ordinance, statute** — divine regulations
-4. **Decision in a case** — verdict in litigation
-5. **Legal right, privilege, due** — entitlement, claim
-6. **Custom, manner, fitting measure** — practice, propriety
+1. **Judgment, act of deciding** — judicial verdicts, sentences [^c58]
+2. **Justice, right, rectitude** — abstract principle of what is right [^c59]
+3. **Ordinance, statute** — divine regulations [^c60]
+4. **Decision in a case** — verdict in litigation [^c61]
+5. **Legal right, privilege, due** — entitlement, claim [^c62]
+6. **Custom, manner, fitting measure** — practice, propriety [^c63]
 
 #### צְדָקָה (tsedaqah) — BDB
 
-**Frequency**: 157×
+**Frequency**: 157× [^c64]
 
 **Categories**:
-1. **Righteousness in government** — parallel to mishpat (Is 5:7, Am 5:7, 6:12)
-2. **God's attribute as sovereign** — divine characteristic
-3. **Righteousness in a case/cause** — judicial context
-4. **Truthfulness** — reliability
-5. **Ethical righteousness** — moral conformity
-6. **Vindication, justification, salvation** — God's saving acts
-7. **Righteous acts** — deeds of righteousness
+1. **Righteousness in government** — parallel to mishpat (Is 5:7, Am 5:7, 6:12) [^c65]
+2. **God's attribute as sovereign** — divine characteristic [^c66]
+3. **Righteousness in a case/cause** — judicial context [^c67]
+4. **Truthfulness** — reliability [^c68]
+5. **Ethical righteousness** — moral conformity [^c69]
+6. **Vindication, justification, salvation** — God's saving acts [^c70]
+7. **Righteous acts** — deeds of righteousness [^c71]
 
 ---
 
-### 2.3 CHALOT Entries (from ingested database)
+### 2.3 CHALOT Entries
 
 #### מִשְׁפָּט (mishpat) — CHALOT
 
-**Frequency**: 425×
+**Frequency**: 425× [^c72]
 
-**Semantic development**: decision by arbitration > legal decision > legal case > justice, right > what is in conformity to a case.
+**Semantic development**: decision by arbitration > legal decision > legal case > justice, right > what is in conformity to a case. [^c73]
 
 **Categories**:
-1. **Decision by arbitration, legal decision** — Y. gives his mišpāṭ Zp 2:3; šāʾal mišpāṭ Is 58:2; mišpaṭ ṣedeq just decision Dt 16:18 = mišpaṭ ʾemet Ez 18:8; mišpāṭî the judgment concerning me, my sentence Is 49:4; legal decisions of Y. > **legal specification**: hammišpāṭîm, oft. linked w. synonyms Dt 4:8; mišpaṭ māwet decision demanding death penalty Dt 19:6; bôʾ bammišpāṭ come before the court Jb 9:32
-2. **Legal case, lawsuit** — ʿāśâ mišpāṭô win one's case Ez 39:21; nātan mišpāṭ lifnê lay one's case before 23:24; ʾōraḥ mišpāṭ course of law Is 40:14; baʿal mišpāṭ legal adversary 50:8
-3. **Legal claim** — mišpaṭ hammelek 1 S 8:9; (legal) claim concerning: mišpaṭ hayruššâ, haggeullâ, claim for possession & redemption Je 32:8; kemišpāṭ lô, as is befitting Ps 119:132
-4. **Conformity** — building-plan 1 K 6:38; mode of life, habits Ju 13:12; mišpāṭô his procedure 1 S 27:11; kemišpāṭām as is their custom 1 K 18:28; mišpaṭ hāʾîš appearance 2 K 1:7; mišpaṭ haggôyim religion 2 K 17:33
-5. **Justice** — oft. linked w. synonyms Is 1:21
+1. **Decision by arbitration, legal decision** — Y. gives his mišpāṭ Zp 2:3; šāʾal mišpāṭ Is 58:2; mišpaṭ ṣedeq just decision Dt 16:18 = mišpaṭ ʾemet Ez 18:8; mišpāṭî the judgment concerning me, my sentence Is 49:4; legal decisions of Y. > **legal specification**: hammišpāṭîm, oft. linked w. synonyms Dt 4:8; mišpaṭ māwet decision demanding death penalty Dt 19:6; bôʾ bammišpāṭ come before the court Jb 9:32 [^c74]
+2. **Legal case, lawsuit** — ʿāśâ mišpāṭô win one's case Ez 39:21; nātan mišpāṭ lifnê lay one's case before 23:24; ʾōraḥ mišpāṭ course of law Is 40:14; baʿal mišpāṭ legal adversary 50:8 [^c75]
+3. **Legal claim** — mišpaṭ hammelek 1 S 8:9; (legal) claim concerning: mišpaṭ hayruššâ, haggeullâ, claim for possession & redemption Je 32:8; kemišpāṭ lô, as is befitting Ps 119:132 [^c76]
+4. **Conformity** — building-plan 1 K 6:38; mode of life, habits Ju 13:12; mišpāṭô his procedure 1 S 27:11; kemišpāṭām as is their custom 1 K 18:28; mišpaṭ hāʾîš appearance 2 K 1:7; mišpaṭ haggôyim religion 2 K 17:33 [^c77]
+5. **Justice** — oft. linked w. synonyms Is 1:21 [^c78]
 
 #### צְדָקָה (tsedaqah) — CHALOT
 
-**Frequency**: 157×
+**Frequency**: 157× [^c79]
 
 **Categories**:
-1. Righteousness = **blameless behavior, honesty** Gn 30:33; biṣdāqâ in honesty Is 48:1; Je 4:2
-2. **Righteousness** of the whole being Pr 15:9
-3. **Justice** of a human judge Gn 18:19
-4. **Justice** characteristic of God the divine judge Is 5:16
-5. **Righteousness** as religious attitude = **godliness** 2 S 22:21, 25
-6. **Righteousness** = behavior God expects man to show to God Gn 15:6
-7. God's **justice**: (a) what God expects for man's conduct w. man Dt 33:21; (b) what is reliable; truth Is 45:23; (c) what God gives = **salvation, deliverance** Is 46:12
-8. Plural: (a) **legal claims** Je 51:10; (b) God's **acts of justice** 1 S 12:7; (c) just acts of men Is 33:15; godliness Ez 18:24
-9. Various: ṣedāqâ **legal claim** 2 S 19:29, **blamelessness** Is 5:23
+1. Righteousness = **blameless behavior, honesty** Gn 30:33; biṣdāqâ in honesty Is 48:1; Je 4:2 [^c80]
+2. **Righteousness** of the whole being Pr 15:9 [^c81]
+3. **Justice** of a human judge Gn 18:19 [^c82]
+4. **Justice** characteristic of God the divine judge Is 5:16 [^c83]
+5. **Righteousness** as religious attitude = **godliness** 2 S 22:21, 25 [^c84]
+6. **Righteousness** = behavior God expects man to show to God Gn 15:6 [^c85]
+7. God's **justice**: (a) what God expects for man's conduct w. man Dt 33:21; (b) what is reliable; truth Is 45:23; (c) what God gives = **salvation, deliverance** Is 46:12 [^c86] [^c87]
+8. Plural: (a) **legal claims** Je 51:10; (b) God's **acts of justice** 1 S 12:7; (c) just acts of men Is 33:15; godliness Ez 18:24 [^c88] [^c89]
+9. Various: ṣedāqâ **legal claim** 2 S 19:29, **blamelessness** Is 5:23 [^c90]
 
-#### צֶדֶק (tsedeq) — CHALOT
+#### צֶדֶק (tsedeq) — CHALOT [^c91]
 
 **Categories**:
-1. **(What is) right, normal** — just weights Dt 25:15; right/suitable Is 45:19; trustworthy Ps 23:3
-2. **(Legal) rightness** Dt 16:20; ṣidqî my legal right Jb 6:29
-3. **Justice** Dt 1:16; adj. just, righteous Dt 16:18
-4. Justice done to someone = **success** Is 41:2
-5. beṣedeq through success given by God = **by grace** Is 42:6
+1. **(What is) right, normal** — just weights Dt 25:15; right/suitable Is 45:19; trustworthy Ps 23:3 [^c92] [^c93]
+2. **(Legal) rightness** Dt 16:20; ṣidqî my legal right Jb 6:29 [^c94]
+3. **Justice** Dt 1:16; adj. just, righteous Dt 16:18 [^c95]
+4. Justice done to someone = **success** Is 41:2 [^c96]
+5. beṣedeq through success given by God = **by grace** Is 42:6 [^c97]
 
 #### צַדִּיק (tsaddiq) — CHALOT
 
-**Frequency**: 205×
+**Frequency**: 205× [^c98]
 
 **Categories**:
-1. Found to be in order, **right** Is 41:26
-2. Legally: **not guilty, innocent, in the right** 2 K 10:9
-3. Morally: **innocent, guiltless** 2 S 4:11
-4. **Just, righteous** in character or conduct 2 S 23:3
-5. Religiously **righteous, godly** Gn 6:9
-6. Said of God: **in the right** Ex 9:27; **righteous, just** Ps 7:10
+1. Found to be in order, **right** Is 41:26 [^c99]
+2. Legally: **not guilty, innocent, in the right** 2 K 10:9 [^c100]
+3. Morally: **innocent, guiltless** 2 S 4:11 [^c101]
+4. **Just, righteous** in character or conduct 2 S 23:3 [^c102]
+5. Religiously **righteous, godly** Gn 6:9 [^c103]
+6. Said of God: **in the right** Ex 9:27; **righteous, just** Ps 7:10 [^c104]
 
 #### שָׁפַט (shaphat) — CHALOT
 
-**Frequency**: 180× (qal)
+**Frequency**: 180× (qal) [^c105]
 
 **Categories**:
-1. šāfaṭ bên … ûbên **decide, settle** (a dispute) betw. Gn 16:5
-2. šāfaṭ dābār **settle** a case Ex 18:26
-3. šāfaṭ ʾet (-yātôm) **help** (the orphan) **get justice**, give legal aid to Is 1:17
-4. pt. šōfēṭ **judge** (arbitrator, legal counselor) Ju 2:16
-5. God is šōfēṭ Ps 7:12
-6. **Judge** = administer justice Lv 19:15
-7. **Judge** = **punish** 1 S 3:13
-8. šōfēṭ > **ruler** Mi 4:14
+1. šāfaṭ bên … ûbên **decide, settle** (a dispute) betw. Gn 16:5 [^c106]
+2. šāfaṭ dābār **settle** a case Ex 18:26 [^c107]
+3. šāfaṭ ʾet (-yātôm) **help** (the orphan) **get justice**, give legal aid to Is 1:17 [^c108]
+4. pt. šōfēṭ **judge** (arbitrator, legal counselor) Ju 2:16 [^c109]
+5. God is šōfēṭ Ps 7:12 [^c110]
+6. **Judge** = administer justice Lv 19:15 [^c111]
+7. **Judge** = **punish** 1 S 3:13 [^c112]
+8. šōfēṭ > **ruler** Mi 4:14 [^c113]
 
 #### דִּין (din, verb) — CHALOT
 
-1. **Bring justice** = redress a wrong Ps 72:2; dān dîn help someone obtain justice Je 5:28; dān mišpāṭ Je 21:12
-2. dān ʿim **go to law with** Ec 6:10
-3. **Pass sentence, execute justice** Gn 15:14
+1. **Bring justice** = redress a wrong Ps 72:2; dān dîn help someone obtain justice Je 5:28; dān mišpāṭ Je 21:12 [^c114] [^c115]
+2. dān ʿim **go to law with** Ec 6:10 [^c116]
+3. **Pass sentence, execute justice** Gn 15:14 [^c117]
 
 #### דִּין (din, noun) — CHALOT
 
-1. **Legal claim** Dt 17:8
-2. **Lawsuit** Jb 35:14
-3. **Verdict**, sentence Ps 76:9; kissēʾ dîn judgment-seat Pr 20:8
-4. **Dispute** Pr 22:10
+1. **Legal claim** Dt 17:8 [^c118]
+2. **Lawsuit** Jb 35:14 [^c119]
+3. **Verdict**, sentence Ps 76:9; kissēʾ dîn judgment-seat Pr 20:8 [^c120] [^c121]
+4. **Dispute** Pr 22:10 [^c122]
 
 #### רִיב (riv, verb) — CHALOT
 
-1. **Dispute, quarrel** publicly; **conduct a legal case/lawsuit** Gn 26:21
-2. rāḇ rîḇ = **conduct the case, lawsuit of** someone; **defend, plead the case of** 1 S 24:16
-3. rāḇ + acc. = same as 2: Is 1:17
-4. rāḇ ʾel **put, lay a case, lawsuit** before Je 2:29
-5. rāḇ bᵉ **attack** with reproaches Dt 33:8
-6. God as subject: 1 S 24:16
+1. **Dispute, quarrel** publicly; **conduct a legal case/lawsuit** Gn 26:21 [^c123]
+2. rāḇ rîḇ = **conduct the case, lawsuit of** someone; **defend, plead the case of** 1 S 24:16 [^c124]
+3. rāḇ + acc. = same as 2: Is 1:17 [^c125]
+4. rāḇ ʾel **put, lay a case, lawsuit** before Je 2:29 [^c126]
+5. rāḇ bᵉ **attack** with reproaches Dt 33:8 [^c127]
+6. God as subject: 1 S 24:16 [^c128]
 
 #### רִיב (riv, noun) — CHALOT
 
-Legal **dispute, case, lawsuit**: qāraḇ rîḇ bring forth one's case Is 41:21; rîḇ lô he has a case against Je 25:31; ʾîš rîḇî my adversary Jb 31:35.
+Legal **dispute, case, lawsuit**: qāraḇ rîḇ bring forth one's case Is 41:21; rîḇ lô he has a case against Je 25:31; ʾîš rîḇî my adversary Jb 31:35. [^c129] [^c130] [^c131]
 
 ## Phase 3: Theological Dictionary Entries
 
@@ -791,76 +2061,76 @@ Legal **dispute, case, lawsuit**: qāraḇ rîḇ bring forth one's case Is 41:2
 
 #### מִשְׁפָּט / שָׁפַט — TWOT
 
-**Frequency**: 421× (mishpat); 204× (shaphat total)
+**Frequency**: 421× (mishpat); 204× (shaphat total) [^c138]
 
 **Categories**:
-1. **Judgment/decision** — act of judging
-2. **Right/claim** — entitlement
-3. **Proper/fitting/custom** — what is appropriate
-4. **Case/lawsuit** — legal proceeding
-5. **Justice** — principle of fairness
+1. **Judgment/decision** — act of judging [^c133]
+2. **Right/claim** — entitlement [^c134]
+3. **Proper/fitting/custom** — what is appropriate [^c136]
+4. **Case/lawsuit** — legal proceeding [^c135]
+5. **Justice** — principle of fairness [^c137]
 
-**Key statement**: "The primary sense of šāpaṭ is to exercise the processes of **government**." Emphasizes administrative/governmental function rather than purely judicial.
+**Key statement**: "The primary sense of šāpaṭ is to exercise the processes of **government**." Emphasizes administrative/governmental function rather than purely judicial. [^c132]
 
 #### צְדָקָה / צֶ֫דֶק — TWOT
 
-**Frequency**: 157× (tsedaqah); 119× (tsedeq)
+**Frequency**: 157× (tsedaqah); 119× (tsedeq) [^c143]
 
-Root connotes **conformity to ethical/moral standard**. Often parallels mishpat.
+Root connotes **conformity to ethical/moral standard**. Often parallels mishpat. [^c139]
 
 **Categories**:
-1. **Forensic righteousness** — judicial/legal sphere
-2. **Ethical righteousness** — moral conformity
-3. **God's righteousness** — both judicial/forensic AND salvific/relational
+1. **Forensic righteousness** — judicial/legal sphere [^c141]
+2. **Ethical righteousness** — moral conformity [^c140]
+3. **God's righteousness** — both judicial/forensic AND salvific/relational [^c142]
 
-"Discussion of God's righteousness as both **judicial/forensic** and **salvific/relational**." Dual nature: legal standard + covenant relationship.
+"Discussion of God's righteousness as both **judicial/forensic** and **salvific/relational**." Dual nature: legal standard + covenant relationship. [^c140] [^c142]
 
 ### 3.2 NIDOTTE
 
-#### מִשְׁפָּט / שָׁפַט — NIDOTTE
+#### מִשְׁפָּט / שָׁפַט — NIDOTTE [^c144] [^c145]
 
 **Frequency**: 422×
 
 **Categories**:
-1. **Divine declaration/decision** — God's judgments
-2. **Law/case/judgment** — legal regulations and proceedings
-3. **Justice/rights** — fairness, entitlements
-4. **Requirement/practice/custom** — what is fitting or proper
+1. **Divine declaration/decision** — God's judgments [^c146]
+2. **Law/case/judgment** — legal regulations and proceedings [^c147] [^c148] [^c149] [^c150]
+3. **Justice/rights** — fairness, entitlements [^c151]
+4. **Requirement/practice/custom** — what is fitting or proper [^c152]
 
 Modern comprehensive treatment with theological focus. Covers full semantic range from divine to human spheres.
 
-#### צְדָקָה / צֶ֫דֶק — NIDOTTE
+#### צְדָקָה / צֶ֫דֶק — NIDOTTE [^c153]
 
 **Frequency**: 157×
 
 **Categories**:
-1. **Forensic righteousness** — legal/judicial
-2. **Ethical conduct** — moral behavior
-3. **God's righteousness** — divine attribute
-4. **Royal/messianic righteousness** — kingly virtue
-5. **Prophetic usage** — esp. in context of mishpat-tsedaqah word pair
+1. **Forensic righteousness** — legal/judicial [^c154]
+2. **Ethical conduct** — moral behavior [^c155]
+3. **God's righteousness** — divine attribute [^c160]
+4. **Royal/messianic righteousness** — kingly virtue [^c159]
+5. **Prophetic usage** — esp. in context of mishpat-tsedaqah word pair [^c156]
 
-Detailed analysis of the **mishpat-tsedaqah word pair**. Extensive treatment of prophetic texts where pair functions as unit.
+Detailed analysis of the **mishpat-tsedaqah word pair**. Extensive treatment of prophetic texts where pair functions as unit. [^c157] [^c158]
 
 ### 3.3 TLOT
 
 #### מִשְׁפָּט / שָׁפַט — TLOT
 
-**Frequency**: 422×
+**Frequency**: 422× [^c161]
 
-Detailed treatment of "basic meaning" dispute: **judicial function** vs. **governmental function**. Extended discussion of whether root primarily means "to judge" or "to govern/administer." Analyzes diachronic development and ANE comparative data. Major scholarly debate on core semantic value. Provides extensive bibliography.
+Detailed treatment of "basic meaning" dispute: **judicial function** vs. **governmental function**. Extended discussion of whether root primarily means "to judge" or "to govern/administer." Analyzes diachronic development and ANE comparative data. Major scholarly debate on core semantic value. Provides extensive bibliography. [^c162] [^c163] [^c164] [^c165]
 
 #### צְדָקָה / צֶ֫דֶק — TLOT
 
 **Frequency**: 157×
 
 **Categories**:
-1. **Loyalty, faithfulness** — covenant fidelity
-2. **Conformity to norms** — proper behavior according to standards
-3. **Proper behavior** — ethical conduct
-4. **Divine attributes** — God's character
+1. **Loyalty, faithfulness** — covenant fidelity [^c166]
+2. **Conformity to norms** — proper behavior according to standards [^c168]
+3. **Proper behavior** — ethical conduct [^c168]
+4. **Divine attributes** — God's character [^c167]
 
-Strong emphasis on **relational/covenantal** dimension. "Loyalty" and "faithfulness" language dominant.
+Strong emphasis on **relational/covenantal** dimension. "Loyalty" and "faithfulness" language dominant. [^c166] [^c167]
 
 ---
 
@@ -974,22 +2244,24 @@ Strong emphasis on **relational/covenantal** dimension. "Loyalty" and "faithfuln
 | prophetic-indictment | 7 | Isa 1:21, 5:7, 59:9, 59:14; Amos 5:7, 5:24, 6:12 |
 | royal | 7 | Isa 9:6, 32:1; Jer 22:3, 22:15, 23:5, 33:15; Ps 72:2 |
 | prophetic-hope | 6 | Isa 1:27, 9:6, 28:17, 32:1, 33:5, 56:1 |
-| hymnic | 6 | Jer 9:23; Ps 33:5, 36:6, 89:14, 97:2, 99:4 |
-| covenantal | 3 | Gen 18:19; Isa 56:1; Hos 2:19 |
+| hymnic | 6 | Jer 9:23; Ps 33:5, 36:6, 89:15 (Heb), 97:2, 99:4 |
+| covenantal | 3 | Gen 18:19; Isa 56:1; Hos 2:21 (Heb) |
 | legal-casuistic | 3 | Ezek 18:5, 33:14, 45:9 |
 | wisdom | 1 | Prov 21:3 |
 
-*Note: Some verses appear in two categories (e.g., Isa 9:6 = royal + prophetic-hope). Primary classification listed first.*
+*Note: Some verses appear in two categories (e.g., Isa 9:6 = royal + prophetic-hope). Primary classification listed first. Verse numbers follow Hebrew versification (LHB): Hos 2:21 (Heb) = 2:19 Eng; Ps 89:15 (Heb) = 89:14 Eng.*
 
 **By Construction:**
 
 | Construction | Count | % | Verses |
 |-------------|-------|---|--------|
-| עשׂה formula | 13 | 43% | Gen 18:19; Isa 56:1; Jer 9:23, 22:3, 22:15, 23:5, 33:15; Ezek 18:5, 33:14, 45:9; Ps 99:4; Prov 21:3 |
-| parallel cola | 5 | 17% | Isa 1:21, 59:9, 59:14; Amos 5:24; Ps 36:6 |
-| prepositional (בְּ/לְ) | 5 | 17% | Isa 1:27, 9:6, 32:1; Hos 2:19; Ps 72:2 |
-| object (other verbs) | 4 | 13% | Isa 5:7, 28:17, 33:5; Amos 5:7, 6:12 |
-| attribute/predicate | 3 | 10% | Ps 33:5, 89:14, 97:2 |
+| עשׂה formula | 12 | 40.0% | Gen 18:19; Isa 56:1; Jer 9:23, 22:3, 22:15, 23:5, 33:15; Ezek 18:5, 33:14, 45:9; Ps 99:4; Prov 21:3 |
+| parallel cola | 5 | 16.7% | Isa 1:21, 59:9, 59:14; Amos 5:24; Ps 36:6 |
+| prepositional (בְּ/לְ) | 5 | 16.7% | Isa 1:27, 9:6, 32:1; Hos 2:21 (Heb); Ps 72:2 |
+| object (other verbs) | 5 | 16.7% | Isa 5:7, 28:17, 33:5; Amos 5:7, 6:12 |
+| attribute/predicate | 3 | 10.0% | Ps 33:5, 89:15 (Heb), 97:2 |
+
+*Percentages rounded to one decimal.*
 
 **By Subject:**
 
@@ -1013,17 +2285,17 @@ Strong emphasis on **relational/covenantal** dimension. "Loyalty" and "faithfuln
 
 ### Syntactic Observations
 
-**1. The עשׂה formula dominates** (43% of occurrences), spanning every genre: narrative (Gen 18:19), prophetic oracle (Jer 22:3; 23:5; 33:15), priestly torah (Ezek 18:5; 33:14), and wisdom (Prov 21:3). The verb is always עשׂה (never a synonym); the word pair is consistently the direct object.
+**1. The עשׂה formula dominates** (40.0% of occurrences), spanning every genre: narrative (Gen 18:19), prophetic oracle (Jer 22:3; 23:5; 33:15), priestly torah (Ezek 18:5; 33:14), and wisdom (Prov 21:3). The verb is always עשׂה (never a synonym); the word pair is consistently the direct object.
 
-**2. Word order**: Standard order is מִשְׁפָּט then צְדָקָה. Reversed order (צְדָקָה/צֶדֶק first) occurs in Gen 18:19; Ps 33:5, 36:6, 89:14, 97:2; Prov 21:3 — correlating with hymnic and wisdom contexts where צדק- receives thematic priority.
+**2. Word order**: Standard order is מִשְׁפָּט then צְדָקָה. Reversed order (צְדָקָה/צֶדֶק first) occurs in Gen 18:19; Ps 33:5, 36:6, 89:15 (Heb), 97:2; Prov 21:3 — correlating with hymnic and wisdom contexts where צדק- receives thematic priority.
 
-**3. The צֶדֶק (masc.) variant** appears in 6 of 30 occurrences: Isa 1:21, 32:1; Hos 2:19; Ps 72:2, 89:14, 97:2. No clear contextual pattern; may reflect older poetic register.
+**3. The צֶדֶק (masc.) variant** appears in 6 of 30 occurrences: Isa 1:21, 32:1; Hos 2:21 (Heb); Ps 72:2, 89:15 (Heb), 97:2. No clear contextual pattern; may reflect older poetic register.
 
-**4. Prepositional construction and royal ideology**: The בְּ + מ׳ וּצ׳ construction (Isa 1:27, 9:6, 32:1; Hos 2:19; Ps 72:2) clusters in royal and covenantal contexts — justice-righteousness as the *means* or *manner* of legitimate rule, redemption, or covenant establishment.
+**4. Prepositional construction and royal ideology**: The בְּ + מ׳ וּצ׳ construction (Isa 1:27, 9:6, 32:1; Hos 2:21 [Heb]; Ps 72:2) clusters in royal and covenantal contexts — justice-righteousness as the *means* or *manner* of legitimate rule, redemption, or covenant establishment.
 
 **5. Prophetic inversion motif**: Three texts use הפך "to turn/overturn" with the word pair (Isa 5:7; Amos 5:7, 6:12), creating a distinctive indictment sub-genre. "Turning" justice into its opposite signals total social collapse. Isaiah 5:7 adds paronomasia (מִשְׁפָּט//מִשְׂפָּח, צְדָקָה//צְעָקָה).
 
-**6. Throne-foundation formula**: Pss 89:14 and 97:2 share the identical phrase צֶדֶק וּמִשְׁפָּט מְכוֹן כִּסְאֶךָ/כִּסְאוֹ — likely a liturgical fixed formula in the Jerusalem temple cult.
+**6. Throne-foundation formula**: Pss 89:15 (Heb) and 97:2 share the identical phrase צֶדֶק וּמִשְׁפָּט מְכוֹן כִּסְאֶךָ/כִּסְאוֹ — likely a liturgical fixed formula in the Jerusalem temple cult.
 
 ### Theological-Semantic Patterns
 
@@ -1031,7 +2303,7 @@ Strong emphasis on **relational/covenantal** dimension. "Loyalty" and "faithfuln
 
 **B. Royal Duty and Messianic Hope**: Jeremiah develops the pair as the defining criterion of legitimate kingship: Josiah "did justice and righteousness" (22:15), Jehoiakim does not, the future Branch "will do justice and righteousness" (23:5; 33:15). Past paradigm → present failure → future restoration.
 
-**C. Divine Character Mirrored in Human Obligation**: The pair functions bidirectionally — what God *is/does* (Jer 9:23; Ps 33:5; 89:14; 97:2) and what God *demands* (Jer 22:3; Amos 5:24; Ezek 18:5). Human justice reflects divine character.
+**C. Divine Character Mirrored in Human Obligation**: The pair functions bidirectionally — what God *is/does* (Jer 9:23; Ps 33:5; 89:15 [Heb]; 97:2) and what God *demands* (Jer 22:3; Amos 5:24; Ezek 18:5). Human justice reflects divine character.
 
 **D. HALOT Category Uniformity**: The overwhelming dominance of HALOT category 5 (abstract justice, 27/30 = 90%) shows that in this fixed word pair, מִשְׁפָּט has narrowed to its most abstract sense. Only when syntactic context specifically invokes judicial activity (Ps 72:2 יָדִין, Ps 36:6 pl. מִשְׁפָּטֶיךָ) or divine testing (Isa 28:17) does the concrete "judgment/verdict" sense surface.
 
@@ -1068,7 +2340,7 @@ Strong emphasis on **relational/covenantal** dimension. "Loyalty" and "faithfuln
 - כְּנַחַל (kᵉnaḥal) — prep + noun, common, sg, construct — "like a stream"
 - אֵיתָן (ʾêṯān) — adjective, sg, abs — "ever-flowing/perennial"
 
-**Hermeneia Commentary (Shalom Paul)**: Full treatment of Amos 5:21-24 as climax of the pericope. Paul discusses the prophetic critique of cultic worship divorced from moral conduct. The water/stream imagery emphasizes permanence and abundance of justice demanded.
+**Hermeneia Commentary (Shalom Paul)**: Full treatment of Amos 5:21-24 as climax of the pericope. Paul discusses the prophetic critique of cultic worship divorced from moral conduct. [^c169] The water/stream imagery emphasizes permanence and abundance of justice demanded. [^c170]
 
 ### 7.2 Amos 5:7
 
@@ -1193,13 +2465,13 @@ Strong emphasis on **relational/covenantal** dimension. "Loyalty" and "faithfuln
 
 **Key morphological observation**: Verse 1 uses the **plural** מִשְׁפָּטֶיךָ ("your judgments/decisions") — not the abstract singular "justice." The psalmist asks God to give the king His *specific authoritative rulings*, which the king then applies (v. 2). This is transfer of judicial competence, not bestowal of a social-justice disposition.
 
-**Alternation between צֶדֶק (masc.) and צְדָקָה (fem.)**: Koch (TLOT) specifically discusses Ps 72: "The royal intercession in Psa 72 hopes for a gift of *ṣedāqâ* for the king that will equip him to govern his people in *ṣedeq* and to bring the hills fertility in *ṣedāqâ* (vv 1-3)." The feminine form (*ṣedāqâ*) is the divine gift/action; the masculine (*ṣedeq*) is the resulting sphere in which governance occurs. Both are relational-covenantal, not rights-distributional.
+**Alternation between צֶדֶק (masc.) and צְדָקָה (fem.)**: Koch (TLOT) specifically discusses Ps 72: "The royal intercession in Psa 72 hopes for a gift of *ṣedāqâ* for the king that will equip him to govern his people in *ṣedeq* and to bring the hills fertility in *ṣedāqâ* (vv 1-3)." The feminine form (*ṣedāqâ*) is the divine gift/action; the masculine (*ṣedeq*) is the resulting sphere in which governance occurs. Both are relational-covenantal, not rights-distributional. [^c178]
 
-**Verse 4 — the three royal actions**: (a) יִשְׁפֹּט (may he judge/champion the afflicted), (b) יוֹשִׁיעַ Hifil (may he save the children of the needy), (c) וִידַכֵּא Piel (may he crush the oppressor). Weinfeld (*Social Justice*, pp. 20, 40, 48-49) argues that שׁפט here means "salvation, not judicial process." But NIDOTTE (Schultz) lists Ps 72:4 under passages where שָׁפַט co-occurs with דִּין and is exercised "with צֶדֶק/צְדָקָה" — the entire cluster is juridical vocabulary. The triad judge → save → crush describes the king's role as guarantor of court integrity: he adjudicates for the powerless, delivers them from unjust verdicts, and punishes those who pervert the system.
+**Verse 4 — the three royal actions**: (a) יִשְׁפֹּט (may he judge/champion the afflicted), (b) יוֹשִׁיעַ Hifil (may he save the children of the needy), (c) וִידַכֵּא Piel (may he crush the oppressor). Weinfeld (*Social Justice*, pp. 20, 40, 48-49) argues that שׁפט here means "salvation, not judicial process." But NIDOTTE (Schultz) lists Ps 72:4 under passages where שָׁפַט co-occurs with דִּין and is exercised "with צֶדֶק/צְדָקָה" — the entire cluster is juridical vocabulary. [^c180] [^c181] The triad judge → save → crush describes the king's role as guarantor of court integrity: he adjudicates for the powerless, delivers them from unjust verdicts, and punishes those who pervert the system.
 
 **Verses 12-14 — deliverance vocabulary**: The verbs shift from judicial (שׁפט, דין) to rescue (נצל Hifil "deliver," גאל "redeem") and compassion (חוס "have pity"). The threats are תּוֹךְ ("oppression/fraud") and חָמָס ("violence") — both are legal-process crimes, not poverty per se. The king redeems (*yigʾal*) their life from oppression — גאל is kinsman-redeemer vocabulary, evoking covenant obligation, not rights recognition.
 
-**Verses 3, 6-7, 16 — fertility and cosmic order**: The king's justice produces agricultural blessing: mountains bear שָׁלוֹם (v. 3), rain falls on mown grass (v. 6), the righteous flourish (v. 7), grain abounds on hilltops (v. 16). Koch (TLOT): the king's *ṣedāqâ* equips him "not only to establish his people for the *ṣedeq* sphere but mysteriously to effect the fertility of the mountains and valleys, and finally to awaken a reciprocal conduct in *šālôm* and *ṣedeq* (Psa 72:1-6)." This is ANE royal ideology — the just king maintains cosmic order — not a social-justice program.
+**Verses 3, 6-7, 16 — fertility and cosmic order**: The king's justice produces agricultural blessing: mountains bear שָׁלוֹם (v. 3), rain falls on mown grass (v. 6), the righteous flourish (v. 7), grain abounds on hilltops (v. 16). Koch (TLOT): the king's *ṣedāqâ* equips him "not only to establish his people for the *ṣedeq* sphere but mysteriously to effect the fertility of the mountains and valleys, and finally to awaken a reciprocal conduct in *šālôm* and *ṣedeq* (Psa 72:1-6)." This is ANE royal ideology — the just king maintains cosmic order — not a social-justice program. [^c179]
 
 **Weinfeld's ANE parallel**: Weinfeld (*Social Justice*, pp. 9, 27, 215) reads Ps 72:1-2 as describing a "character trait granted by God to the king," comparable to Akkadian *kittam u mīšaram*: "God thus is said to grant the king *justice and righteousness*, i.e., a sense of justice with which to justly judge the people and the poor. Likewise *kittum u mīšarum* means a sense of justice, i.e. a characteristic endowed by the gods." Critically, Weinfeld himself frames this as *royal endowment* (sovereign grace) — the gods bestow judicial capacity on the king — not as recognition of the people's inherent rights. The Akkadian *mīšarum* edicts were royal acts of debt cancellation and slave release, exercised at the king's prerogative, not demanded by subjects' rights.
 
@@ -1294,12 +2566,12 @@ Nicholas Wolterstorff's *Justice: Rights and Wrongs* (2008) argues that the Hebr
 
 **Lexicographic evidence**:
 
-- **HALOT** lists five semantic categories; "legal claim/entitlement" is category 3, embedded within a juridical framework — it means *what is due to someone in a legal case*, not abstract inherent rights. The semantic development is explicitly: "ruling > legal decision > case > law, right, claim > what is due to someone *in a case*" (emphasis on forensic context).
-- **BDB**: "legal right, privilege, due" — again within litigation/judicial proceedings.
-- **CHALOT**: "legal claim" — claim for possession, redemption, what is befitting (כְּמִשְׁפָּט לוֹ, Ps 119:132).
-- **NIDOTTE** (Enns): 425 occurrences. Categories: divine declaration/decision, law/case/judgment, justice/rights, requirement/practice/custom. Uses "rights" in the sense of legal entitlements within judicial proceedings, not pre-legal inherent rights.
-- **TLOT** (Liedke): Extensively debates the "basic meaning" — Hertzberg (judicial decision), Köhler (application of will), Grether/Schmidt/Richter (community restoration). Concludes that *špt* "restores disturbed community order through a third party." The "triangular relationship" model is juridical mediation, not rights distribution.
-- **TWOT**: Government processes, judicial decision. No inherent-rights language.
+- **HALOT** lists five semantic categories; "legal claim/entitlement" is category 3, embedded within a juridical framework — it means *what is due to someone in a legal case*, not abstract inherent rights. The semantic development is explicitly: "ruling > legal decision > case > law, right, claim > what is due to someone *in a case*" (emphasis on forensic context). [^c182]
+- **BDB**: "legal right, privilege, due" — again within litigation/judicial proceedings. [^c62]
+- **CHALOT**: "legal claim" — claim for possession, redemption, what is befitting (כְּמִשְׁפָּט לוֹ, Ps 119:132). [^c76]
+- **NIDOTTE** (Enns): 425 occurrences. Categories: divine declaration/decision, law/case/judgment, justice/rights, requirement/practice/custom. Uses "rights" in the sense of legal entitlements within judicial proceedings, not pre-legal inherent rights. [^c144] [^c145]
+- **TLOT** (Liedke): Extensively debates the "basic meaning" — Hertzberg (judicial decision), Köhler (application of will), Grether/Schmidt/Richter (community restoration). Concludes that *špt* "restores disturbed community order through a third party." The "triangular relationship" model is juridical mediation, not rights distribution. [^c162] [^c164]
+- **TWOT**: Government processes, judicial decision. No inherent-rights language. [^c132]
 
 **Assessment**: All six lexicons ground *mishpat*'s "entitlement" sense within juridical process — what is due to someone *as determined by legal proceedings*. None posit a pre-legal, inherent-rights concept. Wolterstorff's move from "legal entitlement" to "inherent human right" is a philosophical extrapolation absent from the lexicographic tradition.
 
@@ -1311,7 +2583,7 @@ Nicholas Wolterstorff's *Justice: Rights and Wrongs* (2008) argues that the Hebr
 
 - **HALOT**: Seven categories — honesty, justice (of judge/king), justness of divine judge, community loyalty, God's loyalty to community, entitlement/just cause, particular instances. The dominant categories are relational: "loyalty to community in conduct," "community loyalty," "faithfulness to norms." No abstract "state of affairs" language.
 - **BDB**: Righteousness in government, God's attribute, righteousness in a cause, truthfulness, ethical righteousness, vindication/salvation, righteous acts. Categories are behavioral and relational, not a static condition of "right order."
-- **TLOT** (Koch): Extensive treatment. Core meaning is relational/communal faithfulness, not a state of rights-satisfaction. Koch explicitly rejects "distributive justice" as a valid reading: "No reference to the concept of a punitive ṣedāqâ can be adduced — that would be a *contradictio in adiecto*" (citing von Rad, *Theol.* 1:377). Koch further argues that "a concept of distributive justice is often suspected … this assumption is not certain," and demonstrates that no OT text presents punishment of the evildoer *per se* as an outflow of divine *ṣedāqâ* (TLOT §IV.1.c).
+- **TLOT** (Koch): Extensive treatment. Core meaning is relational/communal faithfulness, not a state of rights-satisfaction. Koch explicitly rejects "distributive justice" as a valid reading: "No reference to the concept of a punitive ṣedāqâ can be adduced — that would be a *contradictio in adiecto*" (citing von Rad, *Theol.* 1:377). Koch further argues that "a concept of distributive justice is often suspected … this assumption is not certain," and demonstrates that no OT text presents punishment of the evildoer *per se* as an outflow of divine *ṣedāqâ* (TLOT §IV.1.c). [^c175]
 - **NIDOTTE** (Reimer): Forensic, ethical, theological, royal/messianic, prophetic word pair. Relational and covenantal categories throughout. No "primary justice" or "right ordering" framework.
 - **TWOT**: Forensic righteousness, ethical righteousness, God's righteousness (judicial + salvific). Dual nature: legal standard + covenant relationship.
 - **CHALOT**: Blameless behavior, honesty, righteousness, justice, godliness, salvation/deliverance, legal claims, acts of justice.
@@ -1325,9 +2597,9 @@ Nicholas Wolterstorff's *Justice: Rights and Wrongs* (2008) argues that the Hebr
 **Lexicographic evidence on the word pair**:
 
 - **TLOT** (Liedke on שׁפט): Catalogs the parallelism of *ṣedeq/ṣedāqâ* and *mišpāṭ* across Isaiah, Jeremiah, Amos, Psalms, Proverbs, and Ezekiel. The formula *ʿśh mišpāṭ ûṣedāqâ* ("do justice and righteousness") is a traditional expression for royal/governmental duty — the king's obligation to maintain judicial order and communal faithfulness. Cites the Akkadian parallel *dīnum(m)* as "substantially equivalent to *mišpāṭ*." The pair describes judicial administration + communal fidelity, not rights distribution.
-- **TLOT** (Koch on צדק): On Amos 5:21-24 specifically: "Paradoxically, abstinence from false cultic practices would be a decisive step for God's renewed attention and for a new endowment with *ṣedāqâ*." Koch notes that v. 24 "is usually freely translated: 'Rather may [your] *mišpāṭ* pour forth …,' although the grammar knows no other example of an adversative use of the copulative impf." The text describes restoration of judicial integrity and covenant faithfulness, not establishment of a rights regime.
+- **TLOT** (Koch on צדק): On Amos 5:21-24 specifically: "Paradoxically, abstinence from false cultic practices would be a decisive step for God's renewed attention and for a new endowment with *ṣedāqâ*." Koch notes that v. 24 "is usually freely translated: 'Rather may [your] *mišpāṭ* pour forth …,' although the grammar knows no other example of an adversative use of the copulative impf." The text describes restoration of judicial integrity and covenant faithfulness, not establishment of a rights regime. [^c173] [^c174]
 - **NIDOTTE** (Reimer on צדק): Discusses Weinfeld's analysis of the hendiadys. The word pair in prophetic literature criticizes perversion of judicial process and failure of covenant loyalty — not absence of economic redistribution.
-- **Hermeneia Amos** (Shalom Paul): On Amos 5:10-15, the gate (שַׁעַר) is the locus of legal proceedings. "They hate the one who reproves in the gate" describes corruption of the judicial system. On 5:24, the water/stream imagery emphasizes permanence and reliability of just legal process, not quantity of charitable distribution.
+- **Hermeneia Amos** (Shalom Paul): On Amos 5:10-15, the gate (שַׁעַר) is the locus of legal proceedings. [^c171] [^c172] "They hate the one who reproves in the gate" describes corruption of the judicial system. On 5:24, the water/stream imagery emphasizes permanence and reliability of just legal process, not quantity of charitable distribution. [^c170]
 - **NIDOTTE** (Schultz, Justice topical article): Prophets indict human judges for perverting justice (Mic 7:3; Zeph 3:3). The "close correlation between the vb. שָׁפַט and the establishment and maintenance of justice" is "broader than that of the court" but centers on the duty of kings to guarantee justice to the needy — not on inherent rights.
 
 **Assessment**: The prophetic word pair consistently describes (a) faithful judicial process and (b) covenant loyalty in communal life. The prophetic critique targets *perversion* of existing judicial institutions and *violation* of covenant obligations — not the absence of a rights-based social order. Wolterstorff's reading requires importing a philosophical framework (inherent rights, primary justice) that is foreign to the ANE covenant-and-court matrix in which these terms operate.
@@ -1340,7 +2612,7 @@ Nicholas Wolterstorff's *Justice: Rights and Wrongs* (2008) argues that the Hebr
 
 - **HALOT**: *mišpaṭ yātôm wᵉʾalmānā* (the claim of orphan and widow) — this is categorized under "legal claim" (category 3), meaning the orphan and widow have a *legal case* that must be heard and adjudicated fairly. The issue is access to judicial proceedings and fair judgment, not pre-legal entitlements.
 - **HALOT** on שָׁפַט: Category 3 — "help (the orphan) get justice, give legal aid." The verb describes providing judicial assistance, not distributing rights.
-- **TLOT** (Koch on צדק): In the prophets, the "details of the invalidation of the *ṣedāqâ* can be seen in the fact that less privileged *ṣaddîq* citizens have been cheated and robbed of their free existence in the assembly of the local community in the gate" (Amos 2:6; 5:11f.; Isa 5:23; 29:21). The wrong is exclusion from juridical process and economic fraud within that process — not violation of inherent rights.
+- **TLOT** (Koch on צדק): In the prophets, the "details of the invalidation of the *ṣedāqâ* can be seen in the fact that less privileged *ṣaddîq* citizens have been cheated and robbed of their free existence in the assembly of the local community in the gate" (Amos 2:6; 5:11f.; Isa 5:23; 29:21). The wrong is exclusion from juridical process and economic fraud within that process — not violation of inherent rights. [^c176]
 - **NIDOTTE** (Schultz): The duty of kings is "to guarantee justice to the needy" — *justice* here is judicial protection, ensuring the powerless receive a fair hearing. This is the ANE royal ideology of the just king as guarantor of court integrity (cf. the Akkadian *mīšarum* edicts, which were royal debt-relief acts, not rights declarations).
 
 **Assessment**: Biblical care for the vulnerable operates within a juridical and covenantal framework: the powerful must not pervert the legal process against the weak, and covenant obligations require communal provision. This is not a "rights" framework in Wolterstorff's philosophical sense. The distinction matters: in the biblical texts, the widow's *mishpat* is her *legal case* that must be heard; in Wolterstorff's framework, the widow has *inherent rights* that exist prior to and independent of any legal system.
@@ -1351,7 +2623,7 @@ Nicholas Wolterstorff's *Justice: Rights and Wrongs* (2008) argues that the Hebr
 
 **Evidence from survey sources**:
 
-- **TLOT** (Koch on צדק §I.4): The pair *ṣedeq/ṣedāqâ* + *mišpāṭ* may translate Akkadian *kittam u mēšaram*. But Koch notes that *kittu(m)* and *mēšaru(m)* are "children of the sun-god" (divine cosmic order), not a rights framework. The ANE parallels describe royal obligation to maintain cosmic/social order — the king enacts *mīšarum* edicts (debt cancellation, slave release) as acts of sovereign grace, not recognition of inherent rights.
+- **TLOT** (Koch on צדק §I.4): The pair *ṣedeq/ṣedāqâ* + *mišpāṭ* may translate Akkadian *kittam u mēšaram*. But Koch notes that *kittu(m)* and *mēšaru(m)* are "children of the sun-god" (divine cosmic order), not a rights framework. The ANE parallels describe royal obligation to maintain cosmic/social order — the king enacts *mīšarum* edicts (debt cancellation, slave release) as acts of sovereign grace, not recognition of inherent rights. [^c177]
 - **TLOT** (Liedke on שׁפט §1): The root *špt* in Akkadian, Ugaritic, Phoenician-Punic, and Aramaic cognates describes judicial/governmental function. References to Schmidt's *Königtum Gottes in Ugarit und Israel* and Marzal's Mari parallels. The ANE semantic field is sovereign administration, not rights theory.
 - **Weinfeld** (*Social Justice in Ancient Israel and in the Ancient Near East*): Weinfeld himself, whose work Wolterstorff draws upon, treats *mīšarum* edicts as acts of royal prerogative — the king restores order as sovereign, not as recognizer of pre-existing rights. The Akkadian parallel actually undermines rather than supports a rights-based reading.
 
@@ -1362,7 +2634,7 @@ Nicholas Wolterstorff's *Justice: Rights and Wrongs* (2008) argues that the Hebr
 | "Primary justice" | No | Absent from all 6 lexicons, NIDOTTE, TLOT |
 | "Inherent rights" | No | Absent from all sources |
 | "Rights" (pre-legal) | No | "Legal claim" (HALOT) = entitlement *within judicial process* |
-| "Distributive justice" | No | Explicitly rejected by Koch (TLOT): "*contradictio in adiecto*" |
+| "Distributive justice" | No | Explicitly rejected by Koch (TLOT): "*contradictio in adiecto*" [^c175] |
 | "Social justice" (modern sense) | No | Absent from all lexicons and theological dictionaries |
 | "Right order of things" | No | Closest: "community loyalty" (HALOT) = relational, not structural |
 
@@ -1408,7 +2680,7 @@ Similarly, the root צ-ד-ק yields both צֶדֶק and צְדָקָה, but thes
 
 **Definition**: "This fallacy occurs when a late use of a word is read back into earlier literature" (Carson, §2). Carson's memorable example: reading "dynamite" back into δύναμις in Romans 1:16. Silva calls this "reverse etymologizing" — referring to English derivatives of a Greek or Hebrew word as if they illuminate the ancient meaning.
 
-**Application**: The English word "justice" (from Latin *iustitia*, shaped by Aristotle's *dikaiosyne* and centuries of Western legal philosophy) carries connotations of distributive fairness, procedural equality, and individual rights that are post-biblical developments. When Wolterstorff translates *mishpat* as "justice" and then reads the Aristotelian-Rawlsian category of "distributive justice" back into the Hebrew, he commits semantic anachronism. The HALOT gloss "justice" for *mishpat* category 5 means *the proper functioning of the judicial system*, not the philosophical concept of distributive fairness. Koch (TLOT, צדק article) explicitly identifies this error, calling "distributive justice" as applied to OT *tsedaqah* a *contradictio in adiecto*: "no OT text presents punishment per se as an outflow of divine *ṣedāqâ*."
+**Application**: The English word "justice" (from Latin *iustitia*, shaped by Aristotle's *dikaiosyne* and centuries of Western legal philosophy) carries connotations of distributive fairness, procedural equality, and individual rights that are post-biblical developments. When Wolterstorff translates *mishpat* as "justice" and then reads the Aristotelian-Rawlsian category of "distributive justice" back into the Hebrew, he commits semantic anachronism. The HALOT gloss "justice" for *mishpat* category 5 means *the proper functioning of the judicial system*, not the philosophical concept of distributive fairness. Koch (TLOT, צדק article) explicitly identifies this error, calling "distributive justice" as applied to OT *tsedaqah* a *contradictio in adiecto*: "no OT text presents punishment per se as an outflow of divine *ṣedāqâ*." [^c175]
 
 The same applies to "rights." When HALOT glosses *mishpat* category 3 as "legal claim, entitlement," the referent is the claim of a party *within the covenant-and-court system* — e.g., the widow's right to have her case heard (Dt 10:18; Jer 5:28). This is juridical entitlement (procedural access), not the Lockean "inherent natural right" that Wolterstorff imports.
 
@@ -1437,7 +2709,7 @@ As Silva argues, following Barr: "We learn much more about the doctrine of sin b
 
 **Application**: Wolterstorff and Mott consistently foreground the "care for vulnerable" passages (Dt 10:18; Isa 1:17; Jer 22:3; Ps 72:1-4; 82:3-4) while passing over the far more numerous occurrences where *mishpat* means "judicial decision" (1 Kgs 3:28), "custom/ordinance" (Jdg 13:12), "God's statutes" (Ps 119:7, 13, 20, 30, 39, 43, 52, 62, 75, 84, 102, 106, 108, 120, 121, 132, 137, 149, 156, 160, 164, 175), or "manner/measure" (2 Kgs 1:7). Of 425 occurrences of *mishpat*, the "what is due to someone" sense (HALOT cat. 3) accounts for a small fraction. Building an entire theological framework on this minority usage while ignoring the dominant judicial-procedural sense is precisely the selective-evidence fallacy Carson identifies.
 
-Similarly, the *mishpat-tsedaqah* word pair appears in 30 co-occurrences (Phase 6). Of these, 13 (43%) use the עשׂה ("do/establish") formula — "do justice and righteousness" — which is a fixed hendiadys for proper judicial administration, not an injunction to satisfy pre-legal rights claims. The remaining occurrences overwhelmingly appear in prophetic indictment (11 verses) or royal commissioning (5 verses) contexts — both of which concern the proper functioning of the court/governance system, not economic redistribution.
+Similarly, the *mishpat-tsedaqah* word pair appears in 30 co-occurrences (Phase 6). Of these, 12 (40%) use the עשׂה ("do/establish") formula — "do justice and righteousness" — which is a fixed hendiadys for proper judicial administration, not an injunction to satisfy pre-legal rights claims. The remaining occurrences overwhelmingly appear in prophetic indictment (11 verses) or royal commissioning (5 verses) contexts — both of which concern the proper functioning of the court/governance system, not economic redistribution.
 
 ---
 
@@ -1615,4 +2887,4 @@ Paul's climactic treatment: the contrast between cultic worship and judicial rig
 
 ---
 
-*Data extracted from Logos Bible Software via MCP API (March 2026). Sources: HALOT, BDB, CHALOT (ingested from LLS:CNCSHAL), TWOT, NIDOTTE, TLOT, Hermeneia Amos, ESV, LHB/LHI.*
+*Sources: HALOT, BDB, CHALOT, TWOT, NIDOTTE, TLOT, Hermeneia Amos — all ingested in the corpus DB with entries verified verbatim (ingests 2026-09-12) — plus ESV, LHB/LHI.*

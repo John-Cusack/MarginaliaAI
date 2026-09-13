@@ -149,9 +149,9 @@ CREATE TABLE core.work_citations (
   verify_status  text NOT NULL,           -- exact | normalized | near | not_found
   parser_version text,
 
-  -- Identity. zotero_key is the bridge until P3-1; bib_record_id is added by
+  -- Identity. edition_key is the bridge until P3-1; bib_record_id is added by
   -- P3's migration (bibliographic_records is keyed on document_id).
-  zotero_key    text,
+  edition_key    text,
   locator       jsonb NOT NULL DEFAULT '{}',
 
   PRIMARY KEY (work_path, citation_id),
@@ -175,7 +175,7 @@ Design notes, each earning its place:
   storable now. After 009, a view joins `ref → argument.claims.ref` and
   unresolved refs are a lint finding, not a constraint violation — a typo in a
   ref should not require a migration to discover.
-- **`zotero_key` duplicated, deliberately.** It is stored on the work (what the
+- **`edition_key` duplicated, deliberately.** It is stored on the work (what the
   author intends) and derivable from the document (`documents.metadata` by
   ingest convention — vision §5). A mismatch between the two is exactly the kind
   of silent error this architecture exists to surface, so `work_verify` checks it.
@@ -191,10 +191,10 @@ becomes a correctness problem ("which edition's p. 214?" — vision §5).
 
 Bridge, three steps, no file rewrites:
 
-1. **Now:** front-matter carries `zotero_key` (+ free-text `edition`, `locator`).
+1. **Now:** front-matter carries `edition_key` (+ free-text `edition`, `locator`).
    Display strings, when needed, are built from `documents.metadata` and labeled
    provisional.
-2. **Ingest convention:** plugins record `metadata.zotero_key` per source
+2. **Ingest convention:** plugins record `metadata.edition_key` per source
    document (one line per pack; the seed-corpus Zotero authority already exists).
 3. **When P3-1 lands:** `bibliographic_records.citekey`/`doi` become the identity;
    `work_index` populates `bib_record_id`; display moves to the Tier-1 inline
@@ -215,7 +215,7 @@ compositions over existing pieces:
 
 1. **`work_verify [path]`** — parse front-matter; run `verify_quote` per citation;
    check every claim ref against `argument.claims` (all unresolved before 009 —
-   reported as such, not as errors); check `zotero_key` agreement with the
+   reported as such, not as errors); check `edition_key` agreement with the
    document's metadata. Exit nonzero on anything blocking review. This is the
    tool that makes the README's contract enforceable instead of aspirational.
 2. **`work_index`** — rebuild `core.works_index` / `core.work_citations` from
@@ -251,7 +251,7 @@ citations:
     char_end: 3546
     quoted_text: "…"            # the TDNT deror entry, as scanned
     role: asserts
-    zotero_key: TDNT_1964
+    edition_key: TDNT_1964
     locator: {volume: II, page: 64}
   - id: c2
     document_id: <bhs-doc-uuid>
@@ -259,7 +259,7 @@ citations:
     char_end: 40255
     quoted_text: "וְקִדַּשְׁתֶּם אֵת שְׁנַת הַחֲמִשִּׁים שָׁנָה"
     role: supports
-    zotero_key: BHS_1997
+    edition_key: BHS_1997
     locator: {verses: "Lev 25:10"}
 ```
 
@@ -274,7 +274,7 @@ What this buys, concretely, per question someone will actually ask:
 - *"What does JUB-004 rest on?"* — the claim's `argument.anchors` and this work's
   citations are rows over the same address space; overlap join renders the
   evidence bundle for the script, the dossier, and the paper from one store.
-- *"Which edition of TDNT?"* — `zotero_key` resolves to the Zotero record now; to
+- *"Which edition of TDNT?"* — `edition_key` resolves to the Zotero record now; to
   `bibliographic_records` when P3 lands; the work file never changes.
 
 This is the §10 property — descent from a published sentence to characters —
