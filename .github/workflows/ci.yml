@@ -10,6 +10,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The job only reads the repo. The repo's default token is already read-only,
+# but that is a settings toggle; saying it here keeps it true if the toggle
+# moves. CodeRabbit runs zizmor over workflow changes, and an implicit token
+# scope, persisted checkout credentials and tag-pinned actions are what it
+# flags. Actions are pinned to the commit their major tag pointed at; the
+# trailing comment is the release that commit is.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: unit tests and lint
@@ -17,10 +26,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -30,8 +41,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      # `github` output turns each violation into a line annotation on the
+      # check run. CodeRabbit reads failed checks back into its review, and an
+      # annotation names the file and line where a log line would only say it.
       - name: Lint
-        run: uv run ruff check packages/ tests/
+        run: uv run ruff check --output-format=github packages/ tests/
 
       - name: Unit tests
         run: uv run pytest tests/unit -q

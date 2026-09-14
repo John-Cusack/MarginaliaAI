@@ -1,0 +1,47 @@
+name: CodeRabbit config
+
+# CodeRabbit reviews a PR with the `.coderabbit.yaml` on that PR's own branch,
+# so a bad edit takes effect on the very PR that makes it. This checks the file
+# against the schema CodeRabbit publishes, which catches wrong types and enum
+# values — `profile: followup`, which a published 2026 setup guide recommends,
+# is not a profile. It does not catch a misspelled key: the schema allows unknown
+# properties almost everywhere, so a typo'd key is simply never read.
+#
+# Path-filtered and separate from CI because it fetches the schema from
+# coderabbit.ai; an outage there should not fail an unrelated change.
+on:
+  push:
+    paths:
+      - .coderabbit.yaml
+      - .github/workflows/coderabbit-config.yml
+  pull_request:
+    paths:
+      - .coderabbit.yaml
+      - .github/workflows/coderabbit-config.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate .coderabbit.yaml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+
+      - name: Validate against the published schema
+        run: >-
+          uvx check-jsonschema@0.38.0
+          --schemafile https://coderabbit.ai/integrations/schema.v2.json
+          .coderabbit.yaml
