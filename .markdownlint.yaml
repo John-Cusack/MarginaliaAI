@@ -1,0 +1,26 @@
+# Read by CodeRabbit's markdownlint run, and by any editor running markdownlint.
+#
+# The first block restates the rules CodeRabbit disables when a repo has no
+# markdownlint config. A config file may replace those defaults rather than add
+# to them, so they are listed here to keep them off either way.
+MD004: false # unordered list style
+MD007: false # unordered list indentation
+MD010: false # hard tabs
+MD012: false # multiple blank lines
+MD013: false # line length
+MD025: false # multiple top-level headings
+MD026: false # trailing punctuation in heading
+MD032: false # blank lines around lists
+MD033: false # inline HTML
+MD034: false # bare URLs
+MD036: false # emphasis used as a heading
+MD060: false # table column style
+
+# CHANGELOG.md puts each unreleased entry as a `###` straight under the `#`
+# title, so every new entry would trip heading-increment.
+MD001: false
+
+# Each release repeats `### Fixed` / `### Added` under its own `## X.Y.Z`
+# heading. Duplicate headings are only confusing within one parent section.
+MD024:
+  siblings_only: true
