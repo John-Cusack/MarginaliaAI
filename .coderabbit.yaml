@@ -200,8 +200,8 @@ reviews:
         e.g. "Keep the author a PDF names, when it names one". No
         conventional-commit prefix (feat:, fix:), no ticket id, no trailing
         period, at most 72 characters.
-    # CodeRabbit's pricing lists custom checks under its Team plan; whether the
-    # free public-repo tier runs them is unconfirmed until a PR shows it. Both
+    # Custom checks need CodeRabbit's Team plan or above. This repo runs on
+    # Advanced, as the run configuration CodeRabbit posted on #23 shows. Both
     # start as warnings. Move one to `error`, together with
     # `request_changes_workflow`, once it has proven accurate.
     custom_checks:
