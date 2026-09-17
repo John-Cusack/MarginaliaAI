@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "get_document"
@@ -46,7 +48,7 @@ async def handler(
         doc_uuid = UUID(document_id)
         doc = await doc_repo.get(doc_uuid)
         if not doc:
-            return {"error": {"code": "not_found", "message": f"Document not found: {document_id}", "details": None}}
+            return envelope("not_found", f"Document not found: {document_id}", None)
 
         passages = await passage_repo.get_by_document(doc_uuid)
         passages_sorted = sorted(passages, key=lambda p: p.position)
@@ -71,7 +73,7 @@ async def handler(
 
         return result
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("get_document_error", error=str(e))
-        return {"error": {"code": "get_document_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

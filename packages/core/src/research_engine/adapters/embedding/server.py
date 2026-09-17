@@ -76,14 +76,20 @@ def create_app(
         from fastapi import FastAPI, HTTPException
     except ImportError as exc:  # pragma: no cover - surfaced through the CLI
         raise ImportError(
-            "FastAPI is required to run the embed server. Install with: "
-            'uv pip install "research-engine[embed-server]"'
+            "FastAPI is required to run the embed server. Install "
+            "research-engine[embed-server]."
         ) from exc
 
     from contextlib import asynccontextmanager
 
-    from research_engine.adapters.embedding.local_bge import LocalBGEEmbedding
-    from research_engine.adapters.reranker.local_bge import LocalBGEReranker
+    try:
+        from research_engine.adapters.embedding.local_bge import LocalBGEEmbedding
+        from research_engine.adapters.reranker.local_bge import LocalBGEReranker
+    except ImportError as exc:
+        raise ImportError(
+            "Local inference is required to run the embed server. Install "
+            "research-engine[embed-server]."
+        ) from exc
 
     backend = LocalBGEEmbedding(model, dim)
     reranker = LocalBGEReranker(rerank_model) if rerank_model else None

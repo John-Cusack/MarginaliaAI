@@ -9,6 +9,7 @@ import structlog
 
 from research_engine.domain.common import NodeKind
 from research_engine.domain.edges import EdgeDraft
+from research_engine.mcp.errors import envelope, failed
 
 logger = structlog.get_logger()
 
@@ -106,7 +107,7 @@ async def handler(
             "created_at": edge.created_at.isoformat(),
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("upsert_edge_error", error=str(e))
-        return {"error": {"code": "upsert_edge_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

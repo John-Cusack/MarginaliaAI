@@ -7,16 +7,17 @@ from typing import Any
 
 import pytest
 
-from research_engine.domain.source_search import (
+from research_engine.mcp.tools import search_sources
+from research_engine.plugins.registry import PluginRegistry
+from research_engine_sdk import (
     Availability,
     IngestAction,
+    PluginManifest,
     SourceMatch,
     SourceQuery,
     SourceSearchProvider,
+    parse_manifest,
 )
-from research_engine.mcp.tools import search_sources
-from research_engine.plugins.manifest import PluginManifest, parse_manifest
-from research_engine.plugins.registry import PluginRegistry
 
 # ---------- Fixtures ----------
 
@@ -68,6 +69,10 @@ class StubContainer:
     def registry(self) -> PluginRegistry:
         return self.plugin_registry
 
+    @property
+    def ingestion_service(self) -> Any | None:
+        return self.ingestion
+
 
 # ---------- Protocol conformance ----------
 
@@ -100,16 +105,20 @@ class TestRegistry:
 
 class TestManifest:
     def test_source_search_field_default_empty(self) -> None:
-        m = PluginManifest(name="x", version="0.0.1", author="t", description="t")
+        m = PluginManifest(
+            schema_version=2,
+            plugin_id="x",
+            requires={"core_api": ">=0.6,<0.7"},
+        )
         assert m.provides.source_search == []
 
     def test_parses_source_search(self, tmp_path) -> None:
-        p = tmp_path / "pack.yaml"
+        p = tmp_path / "plugin.yaml"
         p.write_text("""\
-name: x
-version: 0.0.1
-author: t
-description: t
+schema_version: 2
+plugin_id: x
+requires:
+  core_api: \">=0.6,<0.7\"
 provides:
   source_search:
     - id: foo

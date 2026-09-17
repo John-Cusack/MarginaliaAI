@@ -49,9 +49,15 @@ The second chapter concerns the binding and its repair.
 
 
 def _container(engine: AsyncEngine) -> SimpleNamespace:
+    nodes = PGDocumentNodeRepo(engine)
+    texts = PGDocumentTextRepo(engine)
     return SimpleNamespace(
-        document_nodes=PGDocumentNodeRepo(engine),
-        document_texts=PGDocumentTextRepo(engine),
+        document_nodes=nodes,
+        document_texts=texts,
+        # The tools read the stable aliases; both names address the same repo,
+        # exactly as on the real Container.
+        document_nodes_repo=nodes,
+        document_texts_repo=texts,
         passage_repo=PGPassageRepo(engine),
     )
 

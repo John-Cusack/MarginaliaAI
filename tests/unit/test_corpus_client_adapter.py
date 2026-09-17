@@ -19,7 +19,7 @@ from research_engine.domain.passages import (
     SearchQuery,
     SearchResult,
 )
-from research_engine.plugins.sdk.clients import CorpusClient
+from research_engine_sdk import CorpusClient
 
 # ---------- Helpers ----------
 

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from research_engine.domain.errors import PermissionDenied
-from research_engine.plugins.manifest import NetworkPerm, PluginPermissions
+from research_engine_sdk import (
+    NetworkPermission as NetworkPerm,
+)
+from research_engine_sdk import (
+    PermissionDenied,
+    PluginPermissions,
+)
 
 
 def check_network(permissions: PluginPermissions, url: str, plugin_name: str) -> None:
@@ -69,6 +74,9 @@ class DeniedIngestionClient:
         self._plugin = plugin_name
 
     async def ingest_paths(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def ingest_document(self, *args, **kwargs):
         raise PermissionDenied(self._plugin, "ingest")
 
     async def ingest_drafts(self, *args, **kwargs):

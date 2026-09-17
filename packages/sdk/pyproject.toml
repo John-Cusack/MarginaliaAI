@@ -1,16 +1,45 @@
 [project]
 name = "research-engine-sdk"
-version = "0.1.0"
-description = "Plugin SDK for Corpus Engine"
+dynamic = ["version"]
+description = "Standalone contracts for Research Engine plugins"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MarginaliaAI" }]
+keywords = ["corpus", "mcp", "plugins", "research", "sdk"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Text Processing :: Indexing",
+]
 dependencies = [
+    "packaging>=23",
     "pydantic>=2.5,<3",
+    "pyyaml>=6,<7",
 ]
 
+[project.urls]
+Homepage = "https://github.com/John-Cusack/MarginaliaAI"
+Source = "https://github.com/John-Cusack/MarginaliaAI"
+Issues = "https://github.com/John-Cusack/MarginaliaAI/issues"
+Changelog = "https://github.com/John-Cusack/MarginaliaAI/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/John-Cusack/MarginaliaAI/tree/main/docs"
+
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/research_engine_sdk/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/research_engine_sdk"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/research_engine_sdk", "README.md", "LICENSE", "pyproject.toml"]

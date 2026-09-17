@@ -4,8 +4,46 @@ from __future__ import annotations
 
 import pytest
 
-from research_engine.domain.errors import PluginConflict, UnknownType
+from research_engine.domain.errors import PluginConflict, PluginLoadError, UnknownType
 from research_engine.plugins.registry import PluginRegistry
+
+
+def test_decorator_metadata_wins_over_manifest_blurb():
+    """Precedence WI-4 decided: the decorator is richer, the manifest fills gaps."""
+    from research_engine_sdk import tool
+
+    @tool(
+        id="x",
+        description="rich decorator description",
+        input_schema={"type": "object", "properties": {"q": {"type": "string"}}},
+    )
+    async def handler(**kwargs):
+        return {}
+
+    r = PluginRegistry()
+    r.register_mcp_tool(
+        "x", handler, "p",
+        description="one-line blurb", input_schema={"type": "object"},
+    )
+    spec = r.get_mcp_tool_specs()["x"]
+    assert spec.description == "rich decorator description"
+    assert spec.input_schema["properties"] == {"q": {"type": "string"}}
+
+
+def test_manifest_fills_gap_for_bare_entrypoint():
+    async def handler(**kwargs):
+        return {}
+
+    r = PluginRegistry()
+    r.register_mcp_tool(
+        "x", handler, "p",
+        description="manifest blurb", input_schema={"type": "object"},
+    )
+    spec = r.get_mcp_tool_specs()["x"]
+    assert spec.description == "manifest blurb"
+    assert spec.input_schema == {"type": "object"}
+
+
 
 
 class TestPluginRegistry:
@@ -132,3 +170,57 @@ class TestPluginRegistry:
 
     def test_no_extraction_schemas(self):
         assert PluginRegistry().get_extraction_schemas() == []
+
+
+def test_discarded_stage_leaves_every_live_contribution_unchanged() -> None:
+    registry = PluginRegistry()
+    registry.register_core_types()
+    stage = registry.create_stage()
+    stage.register_document_type("letter", {}, "history")
+    stage.register_vocabulary("calendar", {"months": []}, "history")
+    stage.register_extraction_schema("claims", 1, {"record_types": []}, "history")
+    stage.register_mcp_tool(
+        "history.fail",
+        lambda: None,
+        "history",
+        input_schema={"type": "object"},
+    )
+
+    stage.discard()
+
+    assert registry.list_document_types() == {}
+    assert registry.get_vocabularies() == {}
+    assert registry.get_extraction_schemas() == []
+    assert registry.get_mcp_tools() == {}
+
+
+def test_committed_stage_publishes_complete_snapshot() -> None:
+    registry = PluginRegistry()
+    registry.register_core_types()
+    stage = registry.create_stage()
+    stage.register_document_type("letter", {}, "history")
+    stage.register_mcp_tool(
+        "history.run",
+        lambda: None,
+        "history",
+        input_schema={"type": "object"},
+    )
+
+    stage.commit()
+
+    assert set(registry.list_document_types()) == {"letter"}
+    assert set(registry.get_mcp_tools()) == {"history.run"}
+
+
+def test_stale_stage_cannot_overwrite_another_commit() -> None:
+    registry = PluginRegistry()
+    first = registry.create_stage()
+    second = registry.create_stage()
+    first.register_document_type("letter", {}, "history")
+    second.register_document_type("article", {}, "journal")
+
+    first.commit()
+
+    with pytest.raises(PluginLoadError, match="changed while contributions were staged"):
+        second.commit()
+    assert set(registry.list_document_types()) == {"letter"}

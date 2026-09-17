@@ -25,6 +25,7 @@ from typing import Any
 from uuid import UUID
 
 from history.tools import _holdings
+from research_engine_sdk import EventFilter
 
 #: Suffix core appends when it resolves a declared field type into structured
 #: form. Kept as a literal rather than imported: this is a pack, and reaching
@@ -209,7 +210,6 @@ async def _cadence(
     notes: list[str],
 ) -> list[dict[str, Any]]:
     """Stretches longer than this correspondence's own rhythm."""
-    from research_engine.domain.events import EventFilter
 
     # MCP hands these over as strings; `EventFilter.actor_entity_ids` is typed
     # `list[UUID]` and rejects anything else outright, so the whole tool raised

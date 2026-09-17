@@ -33,6 +33,7 @@ class FakeTexts:
     def __init__(self, raw: dict) -> None:
         self.raw = raw
         self.norm = {k: normalize(v) for k, v in raw.items()}
+        self.find_raw_calls: list = []
 
     async def lengths(self, document_id):
         if document_id not in self.raw:
@@ -40,6 +41,7 @@ class FakeTexts:
         return len(self.raw[document_id]), len(self.norm[document_id])
 
     async def find_raw(self, document_id, needle):
+        self.find_raw_calls.append((document_id, needle))
         at = self.raw.get(document_id, "").find(needle)
         return at if at >= 0 and needle else None
 
@@ -137,6 +139,17 @@ class TestTiers:
 
         assert result.tier is Tier.NORMALIZED
 
+    @pytest.mark.asyncio
+    async def test_em_dash_reports_normalized_never_exact(self):
+        """A hyphen typed for the source's em dash is typography, not wording."""
+        raw = {DOC: "He paused \u2014 and then continued."}
+        result = await _verifier(raw).verify("He paused - and then continued.")
+
+        assert result.tier is Tier.NORMALIZED
+        assert result.tier is not Tier.EXACT
+        assert result.verified
+        assert result.location.source_text == "He paused \u2014 and then continued."
+
 
 class TestChunkStraddling:
     @pytest.mark.asyncio
@@ -165,6 +178,7 @@ class TestHonestAbsence:
 
         assert result.tier is Tier.NO_CANONICAL_TEXT
         assert not result.verified
+        assert result.documents_checked == 0
         assert "not the same as" in result.detail
 
     @pytest.mark.asyncio
@@ -195,6 +209,8 @@ class TestNearMiss:
         assert 0.5 <= result.matched_fraction < 1.0
         assert "moon" in result.divergence.quote_continues
         assert result.divergence.matched_characters > 0
+        # The source's continuation at the divergence, not the quote's own tail.
+        assert result.divergence.source_continues == "Amos 5:24 makes it a flood."
 
     @pytest.mark.asyncio
     async def test_a_trivial_overlap_is_not_dressed_up_as_a_near_miss(self):
@@ -205,6 +221,49 @@ class TestNearMiss:
         )
 
         assert result.tier is Tier.NOT_FOUND
+
+
+class TestWindow:
+    """The window hint: a caller quoting a hit already knows where it sits."""
+
+    @pytest.mark.asyncio
+    async def test_a_quote_from_a_hit_resolves_inside_its_window(self):
+        texts = FakeTexts({DOC: SOURCE})
+        verifier = QuoteVerifier(texts, FakePassages({DOC: SOURCE}), FakeDocuments())
+        quote = SOURCE[20:100]
+
+        result = await verifier.verify(quote, DOC, window=(20, 100))
+
+        assert result.tier is Tier.EXACT
+        assert (result.location.char_start, result.location.char_end) == (20, 100)
+        # The whole-document search never ran.
+        assert texts.find_raw_calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_whitespace_differing_copy_returns_normalized(self):
+        texts = FakeTexts({DOC: SOURCE})
+        verifier = QuoteVerifier(texts, FakePassages({DOC: SOURCE}), FakeDocuments())
+        quote = SOURCE[0:40].replace(" ", "  ")
+
+        result = await verifier.verify(quote, DOC, window=(0, 80))
+
+        assert result.tier is Tier.NORMALIZED
+        assert result.verified
+
+    @pytest.mark.asyncio
+    async def test_a_quote_absent_from_the_window_falls_through(self):
+        # Long tail so the slack around the window cannot reach the quote.
+        raw = SOURCE + " Padding." * 500
+        texts = FakeTexts({DOC: raw})
+        verifier = QuoteVerifier(texts, FakePassages({DOC: raw}), FakeDocuments())
+        quote = SOURCE[100:140]
+
+        result = await verifier.verify(quote, DOC, window=(3000, 3100))
+
+        assert result.tier is Tier.EXACT
+        assert raw[result.location.char_start : result.location.char_end] == quote
+        # The window missed, so the whole-document path ran after all.
+        assert texts.find_raw_calls != []
 
 
 class TestWindowing:
@@ -224,3 +283,138 @@ class TestWindowing:
         assert result.tier is Tier.NORMALIZED
         start, end = result.location.char_start, result.location.char_end
         assert raw[start:end] == "the buried sentence follows"
+
+
+class FakeNodes:
+    """A structure tree over one document, answering `find_by_span`.
+
+    Mirrors `PGDocumentNodeRepo`: the *deepest* node enclosing the span, and
+    enclosing rather than overlapping, so a span crossing two siblings resolves
+    to their parent.
+    """
+
+    def __init__(self, document_id, spans: list[tuple[str, int, int]]) -> None:
+        self.document_id = document_id
+        self.nodes = [
+            SimpleNamespace(
+                id=uuid.uuid4(), node_type="document", title="Whole",
+                path="r", char_start=0, char_end=10_000, depth=0,
+            )
+        ] + [
+            SimpleNamespace(
+                id=uuid.uuid4(), node_type="verse", title=title,
+                path=f"r.n{i}", char_start=start, char_end=end, depth=1,
+            )
+            for i, (title, start, end) in enumerate(spans)
+        ]
+        self.calls: list = []
+
+    async def find_by_span(self, document_id, char_start, char_end):
+        self.calls.append((document_id, char_start, char_end))
+        if document_id != self.document_id:
+            return None
+        enclosing = [
+            n for n in self.nodes
+            if n.char_start <= char_start and char_end <= n.char_end
+        ]
+        return max(enclosing, key=lambda n: n.depth) if enclosing else None
+
+
+class TestContainingNode:
+    """What to cite, as opposed to which chunk it was retrieved from.
+
+    A passage locator describes the chunker's window — for a versified text,
+    several verses — so two quotations from the same verse can report different
+    ranges purely because a chunk boundary fell between them. The structural
+    node is the answer that does not move when the chunker changes.
+    """
+
+    def _verifier_with_nodes(self, spans):
+        raw = {DOC: SOURCE}
+        nodes = FakeNodes(DOC, spans)
+        verifier = QuoteVerifier(
+            FakeTexts(raw), FakePassages(raw), FakeDocuments(), nodes
+        )
+        return verifier, nodes
+
+    @pytest.mark.asyncio
+    async def test_a_quote_inside_one_node_reports_that_node(self):
+        at = SOURCE.index("He requires")
+        verifier, _ = self._verifier_with_nodes(
+            [("Verse 1", 0, at), ("Verse 2", at, len(SOURCE))]
+        )
+        result = await verifier.verify("He requires")
+
+        assert result.tier is Tier.EXACT
+        assert result.location.node is not None
+        assert result.location.node.title == "Verse 2"
+        assert result.location.node.node_type == "verse"
+
+    @pytest.mark.asyncio
+    async def test_two_quotes_from_one_node_agree_across_a_chunk_boundary(self):
+        """The defect this field exists to fix.
+
+        `FakePassages` tiles at 60 characters, so these two quotations from the
+        same node fall in different chunks and their passage locators disagree.
+        The node must not.
+        """
+        at = SOURCE.index("He requires")
+        verifier, _ = self._verifier_with_nodes(
+            [("Verse 1", 0, at), ("Verse 2", at, len(SOURCE))]
+        )
+        head = await verifier.verify("He requires")
+        tail = await verifier.verify("makes it a flood")
+
+        assert head.location.locators != tail.location.locators
+        assert head.location.node.title == tail.location.node.title == "Verse 2"
+
+    @pytest.mark.asyncio
+    async def test_a_quote_crossing_two_nodes_resolves_to_their_parent(self):
+        """Naming either verse would be wrong, so it names neither."""
+        at = SOURCE.index("He requires")
+        verifier, _ = self._verifier_with_nodes(
+            [("Verse 1", 0, at), ("Verse 2", at, len(SOURCE))]
+        )
+        result = await verifier.verify("two words. He requires")
+
+        assert result.tier is Tier.EXACT
+        assert result.location.node.node_type == "document"
+
+    @pytest.mark.asyncio
+    async def test_without_a_node_repository_the_field_is_simply_absent(self):
+        """Every caller predating this constructs with three arguments."""
+        result = await _verifier().verify("a phrase the translations render")
+
+        assert result.tier is Tier.EXACT
+        assert result.location.node is None
+
+    @pytest.mark.asyncio
+    async def test_a_structure_lookup_failure_does_not_fail_the_verification(self):
+        """The tier and span are true whether or not the tree can be read."""
+
+        class BrokenNodes:
+            async def find_by_span(self, *_args):
+                raise RuntimeError("ltree exploded")
+
+        raw = {DOC: SOURCE}
+        verifier = QuoteVerifier(
+            FakeTexts(raw), FakePassages(raw), FakeDocuments(), BrokenNodes()
+        )
+        result = await verifier.verify("a phrase the translations render")
+
+        assert result.tier is Tier.EXACT
+        assert result.location.node is None
+
+    @pytest.mark.asyncio
+    async def test_a_near_miss_also_reports_where_it_landed(self):
+        """Near misses resolve through the same path, so they get it too."""
+        at = SOURCE.index("He requires")
+        verifier, _ = self._verifier_with_nodes(
+            [("Verse 1", 0, at), ("Verse 2", at, len(SOURCE))]
+        )
+        result = await verifier.verify(
+            "a phrase the translations render badly and never well"
+        )
+
+        assert result.tier is Tier.NEAR
+        assert result.location.node is not None

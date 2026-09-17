@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from research_engine_sdk import EventFilter
+
 
 async def tool_handler(
     event: Any,
@@ -25,7 +27,11 @@ async def tool_handler(
         filters["date_range_start"] = date_range.get("start")
         filters["date_range_end"] = date_range.get("end")
 
-    events, buckets = await event.query(filters, k=10000, group_by=time_bin)
+    events, buckets = await event.query(
+        EventFilter.model_validate(filters),
+        k=10000,
+        group_by=time_bin,
+    )
 
     # Separate by direction
     a_to_b: dict[str, int] = defaultdict(int)

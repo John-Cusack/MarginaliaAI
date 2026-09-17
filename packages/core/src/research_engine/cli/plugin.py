@@ -1,135 +1,320 @@
-"""CLI plugin management commands."""
+"""Manage installed plugin distributions and explicit approvals."""
 
 from __future__ import annotations
 
 import asyncio
+import json
+import sys
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-plugin_app = typer.Typer()
-console = Console()
+from research_engine.domain.provenance import PluginActivationState
+from research_engine.plugins.activation import (
+    PluginActivationManager,
+    PluginNotInstalledError,
+    PluginStatus,
+)
 
+plugin_app = typer.Typer(no_args_is_help=True)
+console = Console()
 _RESTART_NOTICE = "[yellow]Restart the MCP server for this change to take effect.[/yellow]"
 
 
-@plugin_app.command("install")
-def install(
-    source: str = typer.Argument(..., help="Git URL, or path to a directory holding pack.yaml."),
-    ref: str = typer.Option("main", "--ref", help="Git ref (tag, branch, or SHA)."),
-    link: bool = typer.Option(
-        False,
-        "--link",
-        help="Symlink a local pack instead of copying it, so edits take effect on restart.",
-    ),
-):
-    """Install a pack from a git URL or a local directory."""
-    asyncio.run(_install(source, ref, link))
+def _installation_help(plugin_id: str) -> str:
+    distribution = f"research-engine-plugin-{plugin_id}"
+    return (
+        f"Plugin '{plugin_id}' is not installed in this Python environment.\n"
+        "Install it with:\n"
+        f"  python -m pip install {distribution}\n"
+        "For pipx:\n"
+        f"  pipx inject research-engine {distribution}"
+    )
 
 
-async def _install(url: str, ref: str, link: bool = False):
+def _confirm(action: str, *, yes: bool) -> None:
+    if yes:
+        return
+    if not sys.stdin.isatty():
+        console.print(f"[red]{action} refused in non-interactive mode; pass --yes.[/red]")
+        raise typer.Exit(code=2)
+    if not typer.confirm(f"{action}?"):
+        raise typer.Abort()
+
+
+def _print_review(status: PluginStatus) -> None:
+    plugin = status.discovered
+    if plugin is None:
+        console.print(_installation_help(status.plugin_id))
+        return
+    manifest = plugin.manifest
+    console.print(f"[bold]{plugin.plugin_id}[/bold]")
+    console.print(
+        f"Distribution: {plugin.distribution_name}=={plugin.distribution_version}"
+    )
+    console.print(f"Entry point: {plugin.entry_point_name} = {plugin.module_name}")
+    console.print(f"Manifest SHA-256: {plugin.manifest_sha256}")
+    if plugin.project_urls:
+        console.print("Project URLs:")
+        for label, url in sorted(plugin.project_urls.items()):
+            console.print(f"  {label}: {url}")
+    console.print("Permissions:")
+    console.print_json(json.dumps(manifest.permissions.model_dump(mode="json")))
+    console.print("Contributions:")
+    console.print_json(json.dumps(manifest.provides.model_dump(mode="json")))
+    if manifest.provides.database is None:
+        console.print("Database migration: none")
+    else:
+        console.print(
+            "Database migration: "
+            f"revision {manifest.provides.database.current_revision}; "
+            f"upgrade {manifest.provides.database.upgrade_entry}; "
+            f"status {manifest.provides.database.status_entry}"
+        )
+
+
+async def _open():
     from research_engine.composition import build_container
     from research_engine.config import load_settings
-    from research_engine.domain.errors import PluginError
-    from research_engine.plugins.installer import PluginInstaller
 
     settings = load_settings()
     container = await build_container(settings)
-    try:
-        installer = PluginInstaller(settings.resolved_plugins_dir, container.installed_plugins)
-        with console.status("Installing plugin...") as status:
-
-            def _update_status(msg: str) -> None:
-                status.update(msg)
-
-            plugin = await installer.install(
-                url, ref, console_callback=_update_status, link=link
-            )
-        console.print(f"[green]Installed {plugin.id}@{plugin.version}[/green]")
-        console.print(_RESTART_NOTICE)
-    except PluginError as e:
-        console.print(f"[red]Installation failed:[/red] {e}")
-        raise typer.Exit(code=1) from None
-    finally:
-        await container.close()
-
-
-@plugin_app.command("uninstall")
-def uninstall(name: str = typer.Argument(..., help="Plugin name.")):
-    """Uninstall a plugin."""
-    asyncio.run(_uninstall(name))
-
-
-async def _uninstall(name: str):
-    from research_engine.composition import build_container
-    from research_engine.config import load_settings
-    from research_engine.plugins.installer import PluginInstaller
-
-    settings = load_settings()
-    container = await build_container(settings)
-    try:
-        installer = PluginInstaller(settings.resolved_plugins_dir, container.installed_plugins)
-        await installer.uninstall(name)
-        console.print(f"[green]Uninstalled {name}[/green]")
-        console.print(_RESTART_NOTICE)
-    finally:
-        await container.close()
+    return settings, container, PluginActivationManager(container.plugin_activations)
 
 
 @plugin_app.command("list")
-def list_plugins():
-    """List installed plugins."""
+def list_plugins() -> None:
+    """List available distributions and persisted activation state."""
+
     asyncio.run(_list())
 
 
-async def _list():
-    from research_engine.composition import build_container
-    from research_engine.config import load_settings
-
-    settings = load_settings()
-    container = await build_container(settings)
+async def _list() -> None:
+    _settings, container, manager = await _open()
     try:
-        plugins = await container.installed_plugins.list_all()
-        if not plugins:
-            console.print("No plugins installed.")
+        statuses = await manager.inventory(persist=True)
+        if not statuses:
+            console.print("No plugin distributions or activation records found.")
             return
-
-        table = Table(title="Installed Plugins")
-        table.add_column("Name")
+        table = Table(title="Plugins")
+        table.add_column("Plugin")
+        table.add_column("State")
+        table.add_column("Distribution")
         table.add_column("Version")
-        table.add_column("Enabled")
-        table.add_column("Source")
-
-        for p in plugins:
-            table.add_row(p.id, p.version, "Yes" if p.enabled else "No", p.source_url)
+        table.add_column("Detail")
+        for status in statuses:
+            plugin = status.discovered
+            activation = status.activation
+            table.add_row(
+                status.plugin_id,
+                status.state.value,
+                plugin.distribution_name
+                if plugin is not None
+                else (activation.distribution_name if activation else ""),
+                plugin.distribution_version
+                if plugin is not None
+                else (activation.distribution_version if activation else ""),
+                status.reason or "",
+            )
         console.print(table)
     finally:
         await container.close()
 
 
+@plugin_app.command("audit")
+def audit(plugin_id: str = typer.Argument(..., help="Plugin id.")) -> None:
+    """Show static distribution metadata, contributions, and approval state."""
+
+    asyncio.run(_audit(plugin_id))
+
+
+async def _audit(plugin_id: str) -> None:
+    _settings, container, manager = await _open()
+    try:
+        try:
+            status = await manager.audit(plugin_id)
+        except PluginNotInstalledError:
+            console.print(_installation_help(plugin_id))
+            raise typer.Exit(code=1) from None
+        console.print(f"State: {status.state.value}")
+        if status.reason:
+            console.print(f"Reason: {status.reason}")
+        _print_review(status)
+        if status.activation is not None:
+            console.print("Approved snapshot:")
+            console.print_json(
+                json.dumps(status.activation.model_dump(mode="json"))
+            )
+    finally:
+        await container.close()
+
+
 @plugin_app.command("enable")
-def enable(name: str = typer.Argument(...)):
-    """Enable a plugin."""
-    asyncio.run(_toggle(name, True))
+def enable(
+    plugin_id: str = typer.Argument(..., help="Plugin id."),
+    yes: bool = typer.Option(False, "--yes", help="Approve without an interactive prompt."),
+) -> None:
+    """Approve the exact installed artifact and enable it."""
+
+    asyncio.run(_enable(plugin_id, yes=yes, upgrade=False))
+
+
+@plugin_app.command("approve-upgrade")
+def approve_upgrade(
+    plugin_id: str = typer.Argument(..., help="Plugin id."),
+    yes: bool = typer.Option(False, "--yes", help="Approve without an interactive prompt."),
+) -> None:
+    """Approve an installed version or manifest that differs from the prior approval."""
+
+    asyncio.run(_enable(plugin_id, yes=yes, upgrade=True))
+
+
+async def _enable(plugin_id: str, *, yes: bool, upgrade: bool) -> None:
+    _settings, container, manager = await _open()
+    try:
+        try:
+            status = await manager.audit(plugin_id)
+        except PluginNotInstalledError:
+            console.print(_installation_help(plugin_id))
+            raise typer.Exit(code=1) from None
+        if status.discovered is None:
+            console.print(_installation_help(plugin_id))
+            raise typer.Exit(code=1)
+        if upgrade and status.state is not PluginActivationState.pending_approval:
+            console.print(f"Plugin '{plugin_id}' has no pending upgrade to approve.")
+            raise typer.Exit(code=1)
+        if not upgrade and status.state is PluginActivationState.pending_approval:
+            console.print(
+                f"Plugin '{plugin_id}' changed since approval; use approve-upgrade."
+            )
+            raise typer.Exit(code=1)
+        _print_review(status)
+        action = (
+            f"Approve upgrade and enable plugin '{plugin_id}'"
+            if upgrade
+            else f"Approve and enable plugin '{plugin_id}'"
+        )
+        _confirm(action, yes=yes)
+        activation = await manager.approve(
+            plugin_id,
+            non_interactive=yes,
+        )
+        console.print(
+            f"[green]Enabled {activation.plugin_id} from "
+            f"{activation.distribution_name}=={activation.distribution_version}[/green]"
+        )
+        console.print(_RESTART_NOTICE)
+    finally:
+        await container.close()
 
 
 @plugin_app.command("disable")
-def disable(name: str = typer.Argument(...)):
-    """Disable a plugin."""
-    asyncio.run(_toggle(name, False))
+def disable(plugin_id: str = typer.Argument(..., help="Plugin id.")) -> None:
+    """Disable an approved plugin without uninstalling its distribution."""
+
+    asyncio.run(_disable(plugin_id))
 
 
-async def _toggle(name: str, enabled: bool):
-    from research_engine.composition import build_container
-    from research_engine.config import load_settings
-
-    settings = load_settings()
-    container = await build_container(settings)
+async def _disable(plugin_id: str) -> None:
+    _settings, container, manager = await _open()
     try:
-        await container.installed_plugins.set_enabled(name, enabled)
-        state = "enabled" if enabled else "disabled"
-        console.print(f"[green]Plugin {name} {state}[/green]")
+        try:
+            await manager.disable(plugin_id)
+        except PluginNotInstalledError:
+            console.print(_installation_help(plugin_id))
+            raise typer.Exit(code=1) from None
+        console.print(f"[green]Disabled {plugin_id}[/green]")
         console.print(_RESTART_NOTICE)
+    finally:
+        await container.close()
+
+
+@plugin_app.command("migrate")
+def migrate(
+    plugin_id: str = typer.Argument(..., help="Plugin id."),
+    yes: bool = typer.Option(False, "--yes", help="Run without an interactive prompt."),
+) -> None:
+    """Run the approved plugin's explicitly declared database upgrade."""
+
+    asyncio.run(_migrate(plugin_id, yes=yes))
+
+
+async def _migrate(plugin_id: str, *, yes: bool) -> None:
+    settings, container, manager = await _open()
+    try:
+        status = await manager.audit(plugin_id)
+        _print_review(status)
+        _confirm(f"Run database migration for plugin '{plugin_id}'", yes=yes)
+        result = await manager.migrate(
+            plugin_id,
+            database_url=settings.db_url,
+            data_root=settings.data_dir / "plugin-data",
+        )
+        console.print_json(json.dumps(result, default=str))
+    except PluginNotInstalledError:
+        console.print(_installation_help(plugin_id))
+        raise typer.Exit(code=1) from None
+    finally:
+        await container.close()
+
+
+@plugin_app.command("doctor")
+def doctor(plugin_id: str | None = typer.Argument(None, help="Optional plugin id.")) -> None:
+    """Report invalid, missing, pending, and legacy plugin state."""
+
+    asyncio.run(_doctor(plugin_id))
+
+
+async def _doctor(plugin_id: str | None) -> None:
+    settings, container, manager = await _open()
+    try:
+        statuses = await manager.inventory(persist=True)
+        selected = [
+            status
+            for status in statuses
+            if plugin_id is None or status.plugin_id == plugin_id
+        ]
+        if plugin_id is not None and not selected:
+            console.print(_installation_help(plugin_id))
+            raise typer.Exit(code=1)
+        for status in selected:
+            message = f"{status.plugin_id}: {status.state.value}"
+            if status.reason:
+                message += f" — {status.reason}"
+            console.print(message)
+        legacy_dir = settings.resolved_plugins_dir
+        if legacy_dir.is_dir():
+            for path in sorted(legacy_dir.iterdir(), key=lambda item: item.name):
+                console.print(
+                    f"Legacy directory preserved (never loaded or deleted): {path}"
+                )
+    finally:
+        await container.close()
+
+
+@plugin_app.command("forget")
+def forget(
+    plugin_id: str = typer.Argument(..., help="Plugin id."),
+    yes: bool = typer.Option(False, "--yes", help="Remove audit state without prompting."),
+) -> None:
+    """Remove activation/audit state only; never uninstall the distribution."""
+
+    asyncio.run(_forget(plugin_id, yes=yes))
+
+
+async def _forget(plugin_id: str, *, yes: bool) -> None:
+    _settings, container, manager = await _open()
+    try:
+        _confirm(f"Forget activation state for plugin '{plugin_id}'", yes=yes)
+        try:
+            await manager.forget(plugin_id)
+        except PluginNotInstalledError:
+            console.print(_installation_help(plugin_id))
+            raise typer.Exit(code=1) from None
+        console.print(
+            f"[green]Forgot activation state for {plugin_id}.[/green] "
+            "The Python distribution and plugin data were not changed."
+        )
     finally:
         await container.close()

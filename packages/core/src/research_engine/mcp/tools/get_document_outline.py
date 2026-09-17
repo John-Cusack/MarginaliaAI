@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "get_document_outline"
@@ -48,7 +50,7 @@ async def handler(
     """Return the document's node tree, depth-limited."""
     try:
         doc_id = UUID(document_id)
-        nodes = await container.document_nodes.get_outline(doc_id, max_depth=max_depth)
+        nodes = await container.document_nodes_repo.get_outline(doc_id, max_depth=max_depth)
 
         if not nodes:
             # Absence is not emptiness: a document ingested before structure
@@ -84,13 +86,7 @@ async def handler(
             ],
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("get_document_outline_error", error=str(e))
-        return {
-            "error": {
-                "code": "get_document_outline_failed",
-                "message": str(e),
-                "details": None,
-            }
-        }
+        return failed(TOOL_NAME, e)

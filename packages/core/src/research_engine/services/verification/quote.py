@@ -57,6 +57,13 @@ MAX_CANDIDATES = 10
 #: Characters of context shown either side of where a near miss diverges.
 DIVERGENCE_CONTEXT = 80
 
+_EXACT_DETAIL = "The source contains this quotation character for character."
+_NORMALIZED_DETAIL = (
+    "The source contains this quotation apart from typography "
+    "— whitespace, quote marks, dashes or hyphenation. Compare "
+    "`source_text` before quoting it verbatim."
+)
+
 
 class Tier(StrEnum):
     """How closely the source matched, from the caller's point of view."""
@@ -66,6 +73,25 @@ class Tier(StrEnum):
     NEAR = "near"
     NOT_FOUND = "not_found"
     NO_CANONICAL_TEXT = "no_canonical_text"
+
+
+class QuoteNode(BaseModel):
+    """The innermost recorded structure containing a quotation.
+
+    A passage is a retrieval chunk — its bounds are the chunker's, so its
+    locator describes ~500 tokens rather than the sentence someone is citing.
+    A node is the author's own division, so this is the field a footnote
+    should quote: for a versified text it names one verse, for a book the
+    section. `None` when the document has no structure recorded, which is
+    different from the quotation being unplaceable.
+    """
+
+    id: UUID
+    node_type: str
+    title: str | None = None
+    path: str
+    char_start: int
+    char_end: int
 
 
 class QuoteLocation(BaseModel):
@@ -81,8 +107,14 @@ class QuoteLocation(BaseModel):
     source_text: str
     passage_ids: list[UUID] = Field(default_factory=list)
     #: Locators of the covering passages — page numbers where the ingest
-    #: recorded them. Empty when the source carried none.
+    #: recorded them. Empty when the source carried none. These describe the
+    #: *chunk*, not the quotation: a quote inside a chunk spanning six verses
+    #: gets all six, and which chunk sorts first depends on where the chunker
+    #: put its boundaries. Prefer `node` when it is set.
     locators: list[dict[str, Any]] = Field(default_factory=list)
+    #: The narrowest structural unit enclosing the quotation — the verse or
+    #: section to cite, as opposed to the chunk it was retrieved in.
+    node: QuoteNode | None = None
 
     @property
     def straddles_passages(self) -> bool:
@@ -123,6 +155,7 @@ class QuoteVerifier:
         document_texts: Any,
         passages: Any,
         documents: Any,
+        document_nodes: Any = None,
         *,
         near_threshold: float = DEFAULT_NEAR_THRESHOLD,
         max_candidates: int = MAX_CANDIDATES,
@@ -130,11 +163,19 @@ class QuoteVerifier:
         self._texts = document_texts
         self._passages = passages
         self._documents = documents
+        #: Optional so a caller with no structure to consult — and every test
+        #: predating this — still constructs. Absent, `node` stays None and
+        #: the passage locators are all a hit reports, as before.
+        self._nodes = document_nodes
         self._near_threshold = near_threshold
         self._max_candidates = max_candidates
 
     async def verify(
-        self, quote: str, document_id: UUID | None = None
+        self,
+        quote: str,
+        document_id: UUID | None = None,
+        *,
+        window: tuple[int, int] | None = None,
     ) -> QuoteVerification:
         quote = quote.strip()
         if not quote:
@@ -150,7 +191,8 @@ class QuoteVerifier:
         match_form = normalize_for_matching(quote)
 
         if document_id is not None:
-            if await self._texts.lengths(document_id) is None:
+            sizes = await self._texts.lengths(document_id)
+            if sizes is None:
                 return QuoteVerification(
                     tier=Tier.NO_CANONICAL_TEXT,
                     quote=quote,
@@ -162,6 +204,19 @@ class QuoteVerifier:
                         f"the document to make it verifiable."
                     ),
                 )
+            if window is not None:
+                # A caller quoting a hit already knows roughly where it sits.
+                # Check that neighbourhood first; on a miss fall through to the
+                # whole-document path unchanged.
+                located = await self._locate_in_window(
+                    document_id, quote, match_form, window, sizes[0]
+                )
+                if located is not None:
+                    tier, span = located
+                    return await self._resolve(
+                        tier, quote, document_id, span, 1,
+                        detail=_EXACT_DETAIL if tier is Tier.EXACT else _NORMALIZED_DETAIL,
+                    )
             candidates: Sequence[UUID] = [document_id]
         else:
             candidates = await self._texts.find_documents_containing(
@@ -174,17 +229,13 @@ class QuoteVerifier:
             if found is not None:
                 return await self._resolve(
                     Tier.EXACT, quote, candidate, found, len(candidates),
-                    detail="The source contains this quotation character for character.",
+                    detail=_EXACT_DETAIL,
                 )
             found = await self._locate_normalized(candidate, stored_form, match_form)
             if found is not None and normalized_hit is None:
                 normalized_hit = await self._resolve(
                     Tier.NORMALIZED, quote, candidate, found, len(candidates),
-                    detail=(
-                        "The source contains this quotation apart from typography "
-                        "— whitespace, quote marks, dashes or hyphenation. Compare "
-                        "`source_text` before quoting it verbatim."
-                    ),
+                    detail=_NORMALIZED_DETAIL,
                 )
         if normalized_hit is not None:
             return normalized_hit
@@ -192,6 +243,36 @@ class QuoteVerifier:
         return await self._near_miss(quote, stored_form, match_form, document_id)
 
     # --- locating -----------------------------------------------------------
+
+    async def _locate_in_window(
+        self,
+        document_id: UUID,
+        quote: str,
+        match_form: str,
+        window: tuple[int, int],
+        raw_len: int,
+    ) -> tuple[Tier, Span] | None:
+        """Try the caller's neighbourhood before the whole document.
+
+        `window` is where the caller believes the quote sits — the span from
+        a search hit. `slack` covers a quote longer than its span plus room
+        for the estimate to be off. Offsets are rebased by `lo` before
+        returning, so the span addresses the document, not the window.
+        """
+        start, end = window
+        slack = len(quote) + 256
+        lo = max(0, start - slack)
+        hi = min(raw_len, end + slack)
+        window_text = await self._texts.get_span(document_id, lo, hi)
+        if not window_text:
+            return None
+        at = window_text.find(quote)
+        if at >= 0:
+            return Tier.EXACT, Span(lo + at, lo + at + len(quote))
+        found = _find_folded(window_text, match_form)
+        if found is not None:
+            return Tier.NORMALIZED, Span(lo + found.start, lo + found.end)
+        return None
 
     async def _locate_exact(self, document_id: UUID, quote: str) -> Span | None:
         at = await self._texts.find_raw(document_id, quote)
@@ -260,6 +341,7 @@ class QuoteVerifier:
         source_text = await self._texts.get_span(document_id, span.start, span.end)
         covering = await self._passages.covering_span(document_id, span.start, span.end)
         document = await self._documents.get(document_id)
+        node = await self._containing_node(document_id, span)
         return QuoteVerification(
             tier=tier,
             quote=quote,
@@ -273,7 +355,43 @@ class QuoteVerifier:
                 source_text=source_text or "",
                 passage_ids=[p.id for p in covering],
                 locators=[p.locator for p in covering if p.locator],
+                node=node,
             ),
+        )
+
+    async def _containing_node(
+        self, document_id: UUID, span: Span
+    ) -> QuoteNode | None:
+        """The narrowest structural unit enclosing the matched span.
+
+        Enclosing, not overlapping: a quotation running across a verse boundary
+        is contained by nothing narrower than the two verses' parent, and saying
+        so is right where naming either verse would be wrong.
+
+        A lookup failure is not a verification failure. The tier, the span and
+        the source text are all still true, so a structure query that errors is
+        logged and dropped rather than turned into a "quote not found".
+        """
+        if self._nodes is None:
+            return None
+        try:
+            found = await self._nodes.find_by_span(document_id, span.start, span.end)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "quote_node_lookup_failed",
+                document_id=str(document_id),
+                error=str(exc),
+            )
+            return None
+        if found is None:
+            return None
+        return QuoteNode(
+            id=found.id,
+            node_type=found.node_type,
+            title=found.title,
+            path=found.path,
+            char_start=found.char_start,
+            char_end=found.char_end,
         )
 
     # --- near misses --------------------------------------------------------

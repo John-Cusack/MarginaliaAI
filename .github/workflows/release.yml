@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run pytest packages/sdk/tests -q
+      - run: uv build --package research-engine-sdk --out-dir dist/sdk
+      - run: uvx --from twine twine check --strict dist/sdk/*
+      - run: >-
+          uv run --isolated --no-project
+          --with dist/sdk/research_engine_sdk-0.6.0-py3-none-any.whl
+          python -c 'import research_engine_sdk as s; [getattr(s, n) for n in s.__all__]'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-distributions
+          path: dist/sdk/
+
+  publish-sdk:
+    needs: build-sdk
+    runs-on: ubuntu-latest
+    environment: pypi-sdk
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-distributions
+          path: dist/sdk
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/sdk/
+
+  build-core:
+    needs: publish-sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run ruff check packages/ tests/
+      - run: uv run pytest tests/unit -q
+      - run: uv build --package research-engine --out-dir dist/core
+      - run: uvx --from twine twine check --strict dist/core/*
+      - name: Smoke lightweight base artifact
+        run: |
+          uv venv --seed /tmp/re-base
+          uv pip install --python /tmp/re-base/bin/python research-engine-sdk==0.6.0 dist/core/research_engine-0.6.0-py3-none-any.whl
+          /tmp/re-base/bin/python -c 'from importlib.util import find_spec; assert find_spec("torch") is None; assert find_spec("docling") is None; assert find_spec("sentence_transformers") is None'
+          /tmp/re-base/bin/research-engine --help
+          /tmp/re-base/bin/research-engine config --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-distributions
+          path: dist/core/
+
+  publish-core:
+    needs: build-core
+    runs-on: ubuntu-latest
+    environment: pypi-core
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-distributions
+          path: dist/core
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/core/
+
+  build-history:
+    needs: publish-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --group dev
+      - run: uv run pytest packages/plugins/history/tests -q
+      - run: uv build --package research-engine-plugin-history --out-dir dist/history
+      - run: uvx --from twine twine check --strict dist/history/*
+      - name: Smoke production SDK/core/history artifacts
+        run: |
+          uv venv --seed /tmp/re-history
+          uv pip install --python /tmp/re-history/bin/python research-engine-sdk==0.6.0 research-engine==0.6.0 dist/history/research_engine_plugin_history-0.2.0-py3-none-any.whl
+          /tmp/re-history/bin/python -c 'from research_engine.plugins.discovery import discover_plugins; p=discover_plugins(); assert [x.plugin_id for x in p] == ["history"]'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: history-distributions
+          path: dist/history/
+
+  publish-history:
+    needs: build-history
+    runs-on: ubuntu-latest
+    environment: pypi-history
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: history-distributions
+          path: dist/history
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/history/

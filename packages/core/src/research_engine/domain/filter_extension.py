@@ -11,7 +11,7 @@ import sqlalchemy as sa
 class FilterExtension(Protocol):
     """A pluggable filter that narrows passage candidates via a SQL subquery.
 
-    Plugins implement this protocol and register instances in pack.yaml
+    Plugins implement this protocol and register instances in plugin.yaml
     under ``provides.filter_extensions``.  Core composes these into the
     filter-pushdown stage of hybrid search.
     """

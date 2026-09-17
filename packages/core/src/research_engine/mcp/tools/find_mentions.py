@@ -7,6 +7,8 @@ from uuid import UUID
 
 import structlog
 
+from research_engine.mcp.errors import envelope, failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "find_mentions"
@@ -80,7 +82,7 @@ async def handler(
             "total": len(mentions),
         }
     except ValueError as e:
-        return {"error": {"code": "invalid_input", "message": str(e), "details": None}}
+        return envelope("invalid_input", str(e), None)
     except Exception as e:
         logger.error("find_mentions_error", error=str(e))
-        return {"error": {"code": "find_mentions_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

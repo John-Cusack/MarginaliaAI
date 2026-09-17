@@ -6,9 +6,10 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from research_engine.domain.common import FusionMode
+from research_engine_sdk import PassageDraft as PassageDraft
 
 
 class Passage(BaseModel):
@@ -32,47 +33,6 @@ class Passage(BaseModel):
     created_at: datetime
 
 
-class PassageDraft(BaseModel):
-    """Data needed to create a passage record.
-
-    ``char_start`` / ``char_end`` are the passage's span in the document's
-    canonical text, and are required: they are the address every other feature
-    hangs off — pin-cites, quote verification, annotations, re-chunking. The
-    contract every chunker must satisfy is::
-
-        draft.text == canonical_text[draft.char_start:draft.char_end]
-
-    ``locator`` stays for type-specific extras (page, verse, timecode) that are
-    meaningful to a reader but not usable as an address.
-    """
-
-    position: int
-    char_start: int
-    char_end: int
-    locator: dict[str, Any] = Field(default_factory=dict)
-    text: str
-    token_count: int | None = None
-    chunker: str
-    chunker_version: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    #: Resolved after the document tree is written, since node ids do not
-    #: exist while a chunker is running.
-    node_id: UUID | None = None
-
-    @model_validator(mode="after")
-    def _span_is_well_formed(self) -> PassageDraft:
-        if self.char_start < 0:
-            raise ValueError(f"char_start must be non-negative, got {self.char_start}")
-        if self.char_end < self.char_start:
-            raise ValueError(
-                f"char_end ({self.char_end}) precedes char_start ({self.char_start})"
-            )
-        if self.char_end - self.char_start != len(self.text):
-            raise ValueError(
-                f"span width {self.char_end - self.char_start} does not match "
-                f"text length {len(self.text)} — the span and the text disagree"
-            )
-        return self
 
 
 class PassageWindow(BaseModel):
@@ -104,6 +64,26 @@ class PassageWindow(BaseModel):
     approx_tokens: int
 
 
+class HitSource(BaseModel):
+    """What a hit is cited from — the citation draft for a search result.
+
+    A hit without offsets (`has_offsets` false) or without canonical text is
+    not a citation draft: there is nothing to verify a quotation against.
+    """
+
+    document_title: str | None = None
+    #: The bibliographic join, once a pack writes it at ingest. None until then.
+    edition_key: str | None = None
+    #: `documents.metadata.edition`, when a pack wrote one.
+    edition: str | None = None
+    #: `document_texts.parser_version`. None when there is no canonical text.
+    parser_version: str | None = None
+    has_canonical_text: bool = False
+    #: The passage row carries `char_start`/`char_end`. Rows from older
+    #: chunkers can lack them, and a hit without offsets cannot be cited.
+    has_offsets: bool = False
+
+
 class PassageHit(BaseModel):
     """A passage returned by search with scores."""
 
@@ -111,6 +91,7 @@ class PassageHit(BaseModel):
     document_id: UUID
     score: float
     score_breakdown: ScoreBreakdown | None = None
+    source: HitSource | None = None
     #: The chunk that actually matched — what was embedded, ranked and reranked.
     #: Quote this. Read ``window``.
     text: str

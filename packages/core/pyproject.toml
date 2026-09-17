@@ -1,10 +1,24 @@
 [project]
 name = "research-engine"
-version = "0.5.0"
-description = "Corpus Engine — turn a personal library into a research superpower"
+dynamic = ["version"]
+description = "Build a searchable, citable research corpus and expose it over MCP"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MarginaliaAI" }]
+keywords = ["citations", "corpus", "information-retrieval", "mcp", "research"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Text Processing :: Indexing",
+]
 dependencies = [
+    "research-engine-sdk>=0.6,<0.7",
     "pydantic>=2.5,<3",
     "pydantic-settings>=2.1,<3",
     "sqlalchemy[asyncio]>=2.0,<3",
@@ -12,28 +26,46 @@ dependencies = [
     "pgvector>=0.3,<1",
     "alembic>=1.13,<2",
     "anthropic>=0.40,<1",
-    "openai>=1.10,<2",
     "httpx>=0.27,<1",
     "typer>=0.12,<1",
     "rich>=13,<14",
     "jinja2>=3.1,<4",
     "mcp>=1.0,<2",
     "pyyaml>=6,<7",
+    "structlog>=24.1,<25",
+    "uuid-utils>=0.9,<1",
+    "packaging>=23",
+]
+
+[project.optional-dependencies]
+openai = [
+    "openai>=1.10,<2",
+]
+local-inference = [
     "sentence-transformers>=3.0,<4",
-    "tiktoken>=0.7,<1",
+]
+documents = [
     "pymupdf>=1.24,<2",
     "ebooklib>=0.18,<1",
     "beautifulsoup4>=4.12,<5",
     "lxml>=5.1,<6",
-    "structlog>=24.1,<25",
-    "uuid-utils>=0.9,<1",
-    "docling>=2.70,<3",
-    "packaging>=23.0",
 ]
-
-[project.optional-dependencies]
-# Only needed on the machine running `research-engine embed-server`.
+document-ai = [
+    "docling>=2.70,<3",
+]
 embed-server = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "sentence-transformers>=3.0,<4",
+]
+full = [
+    "openai>=1.10,<2",
+    "sentence-transformers>=3.0,<4",
+    "pymupdf>=1.24,<2",
+    "ebooklib>=0.18,<1",
+    "beautifulsoup4>=4.12,<5",
+    "lxml>=5.1,<6",
+    "docling>=2.70,<3",
     "fastapi>=0.110",
     "uvicorn>=0.27",
 ]
@@ -49,9 +81,27 @@ dev = [
 [project.scripts]
 research-engine = "research_engine.cli.main:app"
 
+[project.urls]
+Homepage = "https://github.com/John-Cusack/MarginaliaAI"
+Source = "https://github.com/John-Cusack/MarginaliaAI"
+Issues = "https://github.com/John-Cusack/MarginaliaAI/issues"
+Changelog = "https://github.com/John-Cusack/MarginaliaAI/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/John-Cusack/MarginaliaAI/tree/main/docs"
+
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/research_engine/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/research_engine"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/research_engine",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]

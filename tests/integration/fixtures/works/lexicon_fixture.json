@@ -1,0 +1,52 @@
+{
+  "description": "Short lexicon entry exercising every verify_quote tier: a curly-quoted sentence, an em dash, and a hyphenated line break. Passages split mid-sentence at passage_split.",
+  "passage_split": 130,
+  "passages": [
+    {
+      "char_start": 0,
+      "char_end": 130
+    },
+    {
+      "char_start": 130,
+      "char_end": 197
+    }
+  ],
+  "spans": {
+    "exact_sentence": {
+      "char_start": 34,
+      "char_end": 62,
+      "text": "The prophets pair two words."
+    },
+    "curly_sentence": {
+      "char_start": 63,
+      "char_end": 117,
+      "text": "He requires “justice and righteousness” of every ruler"
+    },
+    "curly_inner": {
+      "char_start": 75,
+      "char_end": 102,
+      "text": "“justice and righteousness”"
+    },
+    "em_dash": {
+      "char_start": 118,
+      "char_end": 128,
+      "text": "— a phrase"
+    },
+    "hyphen_break": {
+      "char_start": 153,
+      "char_end": 163,
+      "text": "un-\nevenly"
+    },
+    "straddling": {
+      "char_start": 103,
+      "char_end": 152,
+      "text": "of every ruler — a phrase the translations render"
+    }
+  },
+  "probes": {
+    "exact": "The prophets pair two words.",
+    "normalized_typed": "He requires \"justice and righteousness\" of every ruler - a phrase the translations render unevenly",
+    "near": "He requires \"justice and righteousness\" of every king, and the moon besides",
+    "not_found": "A marginal gloss on the ninth hour never entered here."
+  }
+}

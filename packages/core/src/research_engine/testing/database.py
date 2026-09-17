@@ -74,11 +74,13 @@ async def ensure_test_database(url: str) -> bool:
     except Exception:  # noqa: BLE001 - unreachable server means "skip", not "fail"
         return False
 
-    # Build the schema with Alembic, not `metadata.create_all`. The SQLAlchemy
-    # metadata is not a faithful description of the real schema — it declares
-    # GIN indexes on `json` columns, which Postgres rejects outright and which
-    # migration 001 never created. Migrating means the test database is built
-    # exactly the way the real one was.
+    # Build the schema with Alembic, not `metadata.create_all`. The original
+    # reason no longer holds — `schema.py` declared GIN indexes on `json`
+    # columns that Postgres rejects outright, and it is now faithful in both
+    # directions (`test_schema_truthfulness` asserts declared-minus-actual *and*
+    # actual-minus-declared). The choice stands on the better reason: migrating
+    # builds the test database exactly the way the real one was built, so a
+    # defect in a migration shows up here rather than being stepped around.
     try:
         await asyncio.to_thread(_run_migrations, url)
     except Exception as exc:  # noqa: BLE001 - report, never swallow silently
@@ -146,28 +148,37 @@ class CorpusFootprint:
     def embeddings(self) -> int:
         return self.counts.get("passage_embeddings", 0)
 
+    #: Schemas the guard covers. `core` from the start; each migration that
+    #: adds a schema extends this list, so the guard keeps its meaning.
+    SCHEMAS = ("core", "evidence", "argument", "authored", "bibliography")
+
     @classmethod
     async def measure(cls, engine: AsyncEngine) -> CorpusFootprint:
         async with engine.connect() as conn:
-            names = [
-                row[0]
-                for row in (
-                    await conn.execute(
-                        sa.text(
-                            "SELECT table_name FROM information_schema.tables "
-                            "WHERE table_schema = 'core' AND table_type = 'BASE TABLE' "
-                            "AND table_name <> 'alembic_version' ORDER BY table_name"
-                        )
-                    )
-                ).all()
-            ]
+            tables = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT table_schema, table_name FROM information_schema.tables "
+                        "WHERE table_schema = ANY(:schemas) "
+                        "AND table_type = 'BASE TABLE' "
+                        "AND table_name <> 'alembic_version' "
+                        "ORDER BY table_schema, table_name"
+                    ),
+                    {"schemas": list(cls.SCHEMAS)},
+                )
+            ).all()
             counts = {}
-            for name in names:
-                counts[name] = (
+            for schema, name in tables:
+                counts[f"{schema}.{name}"] = (
                     await conn.execute(
-                        sa.text(f'SELECT count(*) FROM core."{name}"')  # noqa: S608
+                        sa.text(f'SELECT count(*) FROM "{schema}"."{name}"')  # noqa: S608
                     )
                 ).scalar_one()
+        # Bare names stay readable for the core tables every caller asks about;
+        # names collide across schemas for nothing here.
+        for key in list(counts):
+            if key.startswith("core."):
+                counts.setdefault(key.removeprefix("core."), counts[key])
         return cls(counts)
 
     def assert_unchanged(self, other: CorpusFootprint) -> None:

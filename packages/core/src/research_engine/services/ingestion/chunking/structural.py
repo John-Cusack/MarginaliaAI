@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from research_engine.domain.errors import ChunkingError
-from research_engine.domain.passages import PassageDraft
-from research_engine.services.ingestion.chunking.fixed_window import trim_span
 from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
-from research_engine.services.text.tokens import approx_tokens, chars_per_token
+from research_engine_sdk import PassageDraft
+from research_engine_sdk.chunking import approx_tokens, chars_per_token, trim_span
 
 
 class StructuralChunker:

@@ -6,6 +6,8 @@ from typing import Any
 
 import structlog
 
+from research_engine.mcp.errors import failed
+
 logger = structlog.get_logger()
 
 TOOL_NAME = "timeline_compare"
@@ -80,4 +82,4 @@ async def handler(
         }
     except Exception as e:
         logger.error("timeline_compare_error", error=str(e))
-        return {"error": {"code": "timeline_compare_failed", "message": str(e), "details": None}}
+        return failed(TOOL_NAME, e)

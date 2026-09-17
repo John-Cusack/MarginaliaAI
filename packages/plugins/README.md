@@ -1,34 +1,48 @@
-# First-party packs
+# First-party plugin distributions
 
-Packs that ship with the engine live here, one directory each, with a
-`pack.yaml` at its root. They use the same plugin SDK as a pack from any
-other source and get no privileges from being in this tree — the loader
-resolves them through `~/.research-engine/plugins` like everything else,
-and the permission gating in `plugins/permissions.py` applies unchanged.
+Each directory here is an independently buildable Python distribution. An
+installed plugin advertises exactly one top-level package through the
+`research_engine.plugins` entry-point group and keeps its schema-v2
+`plugin.yaml` inside that package.
 
-Being in-tree buys one thing: a pack and the SDK change it depends on move
-in the same commit, reviewed together. `11-implementation-architecture.md`
-calls this monorepo-resident, and says factoring a pack out into its own
-repo is straightforward once its interface has stabilized. The packs that
-have already gone that way — logos, academic-journal, kindle,
-yourcloudlibrary — each wrap a third-party system that breaks on its own
-schedule and so needs its own release cadence. A pack with no external
-dependency has nothing to gain from the split.
+First-party placement grants no runtime privileges. Discovery reads wheel
+metadata and `plugin.yaml` without importing plugin code. An operator must
+review and approve the exact distribution version, manifest hash,
+contributions, permissions, and database declaration before core imports it.
+Enabled plugins execute in-process and must be trusted.
 
-## Installing one
+## Development install
 
-    research-engine plugin install packages/plugins/history --link
+```bash
+python -m pip install -e packages/plugins/history
+research-engine plugin list
+research-engine plugin audit history
+research-engine plugin enable history
+```
 
-`--link` symlinks the working tree, so edits take effect on the next
-server start with no reinstall. Drop it to copy instead, which is what you
-want when installing a pack you are not editing.
+Core never installs, copies, links, or removes plugin code. Use pip, uv, or
+pipx for package lifecycle:
 
-Either way the engine records where the pack came from and, when that
-directory is a git checkout, which commit it was at.
+```bash
+python -m pip install --upgrade research-engine-plugin-history
+research-engine plugin approve-upgrade history
+research-engine plugin disable history
+python -m pip uninstall research-engine-plugin-history
+```
 
-## Removing one
+Removing a distribution retains its activation audit row and corpus data.
+`plugin list` reports it as `missing`; `plugin forget history --yes` removes
+only the activation row. Legacy executable directories under
+`~/.research-engine/plugins` are reported by `plugin doctor`, never loaded or
+deleted.
 
-    research-engine plugin uninstall history
+## Edition keys on ingested documents
 
-For a linked pack this removes the link only. The working tree is left
-alone.
+A pack that knows its material's edition key writes it into the document
+draft's `metadata["edition_key"]` at ingest. Nothing in core enforces this;
+`work_verify` reports a citation's key against the cited document's, so a
+pack that skips it makes every citation of its documents warn
+`AUTH_EDITION_KEY_UNKNOWN`. The column is `json`, so the key reads back with
+`metadata->>'edition_key`. The key is a plain string naming the edition —
+it never touched Zotero's servers, and no account is involved; packs whose
+authors keep a Zotero library typically use its keys here.
