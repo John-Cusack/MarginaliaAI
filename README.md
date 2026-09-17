@@ -109,10 +109,10 @@ clones Git repositories, copies plugin code, or executes manifest setup
 commands.
 
 ```bash
-# Install into the same environment as research-engine.
-python -m pip install research-engine-plugin-history
+# Install into the same environment as marginalia-ai.
+python -m pip install marginalia-ai-plugin-history
 # pipx users inject into the core environment.
-pipx inject research-engine research-engine-plugin-history
+pipx inject marginalia-ai marginalia-ai-plugin-history
 
 # Inspect the static manifest before any plugin code is imported.
 research-engine plugin list
@@ -120,12 +120,12 @@ research-engine plugin audit history
 research-engine plugin enable history
 
 # Upgrades require approval of the new version and manifest hash.
-python -m pip install --upgrade research-engine-plugin-history
+python -m pip install --upgrade marginalia-ai-plugin-history
 research-engine plugin approve-upgrade history
 
 # Disable, then let the environment's package manager uninstall.
 research-engine plugin disable history
-python -m pip uninstall research-engine-plugin-history
+python -m pip uninstall marginalia-ai-plugin-history
 research-engine plugin list        # reports the retained audit row as missing
 research-engine plugin forget history
 ```
@@ -151,8 +151,8 @@ through `pyproject.toml`.
 
 ```toml
 [project]
-name = "research-engine-plugin-mypack"
-dependencies = ["research-engine-sdk>=0.6,<0.7"]
+name = "marginalia-ai-plugin-mypack"
+dependencies = ["marginalia-ai-sdk>=0.6,<0.7"]
 
 [project.entry-points."research_engine.plugins"]
 mypack = "mypack"

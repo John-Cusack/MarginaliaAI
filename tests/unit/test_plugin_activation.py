@@ -44,7 +44,7 @@ def test_approved_activation_records_exact_artifact() -> None:
     approved_at = datetime.now(UTC)
     activation = PluginActivation(
         plugin_id="history",
-        distribution_name="research-engine-plugin-history",
+        distribution_name="marginalia-ai-plugin-history",
         distribution_version="0.2.0",
         entry_point_name="history",
         manifest_sha256="a" * 64,

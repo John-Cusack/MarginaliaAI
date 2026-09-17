@@ -1,7 +1,7 @@
 # YourCloudLibrary plugin implementation guide
 
 **Repository:** `John-Cusack/marginalia-plugin-yourcloudlibrary`  
-**Target release:** `research-engine-plugin-yourcloudlibrary 0.3.0`  
+**Target release:** `marginalia-ai-plugin-yourcloudlibrary 0.3.0`  
 **Prerequisite:** production core/SDK `0.6.0`  
 **Current source state:** substantial uncommitted `0.2.0` catalog/source-provider work;
 `pyproject.toml` still says `0.1.0`
@@ -35,10 +35,10 @@ never point them at the only research corpus.
 
 Update `pyproject.toml`:
 
-- name/version `research-engine-plugin-yourcloudlibrary`, `0.3.0`;
-- dependency `research-engine-sdk>=0.6,<0.7`;
+- name/version `marginalia-ai-plugin-yourcloudlibrary`, `0.3.0`;
+- dependency `marginalia-ai-sdk>=0.6,<0.7`;
 - remove core from normal/integration dependency declarations that exist only for SDK imports;
-- integration CI may install exact `research-engine==0.6.0` explicitly;
+- integration CI may install exact `marginalia-ai==0.6.0` explicitly;
 - add complete README/license/authors/classifiers/keywords/URLs;
 - add `research-engine-ycl-login = "ycl.cli.login:..."` console script with a synchronous
   zero-argument wrapper returning an exit code;
@@ -195,7 +195,7 @@ Clean wheel smoke installs base without core source checkout, then exact core:
 ```bash
 python -m venv /tmp/ycl-release-smoke
 /tmp/ycl-release-smoke/bin/python -m pip install --upgrade pip
-/tmp/ycl-release-smoke/bin/python -m pip install research-engine==0.6.0 dist/*.whl
+/tmp/ycl-release-smoke/bin/python -m pip install marginalia-ai==0.6.0 dist/*.whl
 /tmp/ycl-release-smoke/bin/research-engine plugin list
 ```
 

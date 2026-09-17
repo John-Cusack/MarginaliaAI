@@ -114,7 +114,7 @@ def _migration_plugin(tmp_path: Path, monkeypatch) -> DiscoveredPlugin:
         plugin_id="migration-fixture",
         module_name="migration_fixture",
         entry_point_name="migration-fixture",
-        distribution_name="research-engine-plugin-migration-fixture",
+        distribution_name="marginalia-ai-plugin-migration-fixture",
         distribution_version="1.0.0",
         project_urls={},
         direct_url=None,

@@ -31,7 +31,7 @@ def _fixture_distribution(
     resource_present: bool = True,
 ):
     module_name = module_name or plugin_id.replace("-", "_")
-    distribution_name = distribution_name or f"research-engine-plugin-{plugin_id}"
+    distribution_name = distribution_name or f"marginalia-ai-plugin-{plugin_id}"
     site = tmp_path / f"site-{module_name}"
     package = site / module_name
     package.mkdir(parents=True)
@@ -110,7 +110,7 @@ def test_discovery_reads_manifest_without_importing_package(tmp_path) -> None:
     [plugin] = discover_plugins([entry_point])
 
     assert plugin.plugin_id == "sample"
-    assert plugin.distribution_name == "research-engine-plugin-sample"
+    assert plugin.distribution_name == "marginalia-ai-plugin-sample"
     assert plugin.project_urls["Source"] == "https://example.test/source"
     assert len(plugin.manifest_sha256) == 64
     assert "sample" not in sys.modules
@@ -155,13 +155,13 @@ def test_duplicate_plugin_ids_reject_both_distributions(tmp_path) -> None:
         tmp_path,
         plugin_id="duplicate",
         module_name="duplicate_one",
-        distribution_name="research-engine-plugin-duplicate-one",
+        distribution_name="marginalia-ai-plugin-duplicate-one",
     )
     second, _ = _fixture_distribution(
         tmp_path,
         plugin_id="duplicate",
         module_name="duplicate_two",
-        distribution_name="research-engine-plugin-duplicate-two",
+        distribution_name="marginalia-ai-plugin-duplicate-two",
     )
 
     report = scan_plugins([first, second])

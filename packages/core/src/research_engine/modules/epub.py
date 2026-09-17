@@ -72,7 +72,7 @@ class EPUBModule:
         except ImportError as exc:
             raise RuntimeError(
                 "EPUB parsing support is not installed. Install "
-                "research-engine[documents]."
+                "marginalia-ai[documents]."
             ) from exc
 
         # ebooklib defaults to ignore_ncx=True, which discards the EPUB2 table

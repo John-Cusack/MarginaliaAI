@@ -1,12 +1,12 @@
 [project]
-name = "research-engine-workspace"
+name = "marginalia-ai-workspace"
 version = "0.2.0"
 description = "Corpus Engine workspace root"
 requires-python = ">=3.11"
 dependencies = [
-    "research-engine[full]",
-    "research-engine-sdk",
-    "research-engine-plugin-history",
+    "marginalia-ai[full]",
+    "marginalia-ai-sdk",
+    "marginalia-ai-plugin-history",
 ]
 
 [tool.uv]
@@ -16,7 +16,7 @@ package = false
 dev = [
     "easyocr>=1.7",
     # Exercises the embed-server in tests. On the GPU host itself it comes from
-    # the research-engine `embed-server` extra.
+    # the marginalia-ai `embed-server` extra.
     "fastapi>=0.110",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -27,6 +27,6 @@ dev = [
 members = ["packages/core", "packages/sdk", "packages/plugins/history"]
 
 [tool.uv.sources]
-research-engine = { workspace = true }
-research-engine-sdk = { workspace = true }
-research-engine-plugin-history = { workspace = true }
+marginalia-ai = { workspace = true }
+marginalia-ai-sdk = { workspace = true }
+marginalia-ai-plugin-history = { workspace = true }

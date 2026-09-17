@@ -33,7 +33,7 @@ def test_boundary_dtos_validate_consumer_visible_fields(tmp_path: Path) -> None:
     context = PluginContext(
         plugin_id="sample",
         data_dir=tmp_path,
-        distribution_name="research-engine-plugin-sample",
+        distribution_name="marginalia-ai-plugin-sample",
         distribution_version="1.2.3",
     )
     assert context.data_dir == tmp_path

@@ -37,7 +37,7 @@ class DocumentAIUnavailableModule:
     async def parse(self, source_path: Path):
         raise ConfigurationError(
             f"Parsing {source_path.suffix.lower() or 'this format'} requires "
-            "Docling. Install research-engine[document-ai]."
+            "Docling. Install marginalia-ai[document-ai]."
         )
 
     def default_chunker(self) -> str:

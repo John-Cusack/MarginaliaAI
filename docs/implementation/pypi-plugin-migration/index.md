@@ -10,9 +10,9 @@ Do not reopen these choices inside an implementation ticket:
 
 | Concern | Decision |
 |---|---|
-| Core distribution | `research-engine` |
-| SDK distribution | `research-engine-sdk` |
-| Plugin distributions | `research-engine-plugin-{history,logos,academic-journal,kindle,yourcloudlibrary}` |
+| Core distribution | `marginalia-ai` |
+| SDK distribution | `marginalia-ai-sdk` |
+| Plugin distributions | `marginalia-ai-plugin-{history,logos,academic-journal,kindle,yourcloudlibrary}` |
 | Plugin discovery | `importlib.metadata` entry points in `research_engine.plugins` |
 | Manifest | Static `<import_package>/plugin.yaml`, schema v2 |
 | Installation | pip/uv/pipx; core never invokes package managers or Git |
@@ -43,7 +43,7 @@ recovery before packaging changes.
 
 ```mermaid
 graph TD
-    SDK[research-engine-sdk 0.6.0] --> Core[research-engine 0.6.0]
+    SDK[marginalia-ai-sdk 0.6.0] --> Core[marginalia-ai 0.6.0]
     SDK --> History[history 0.2.0]
     SDK --> Kindle[kindle 0.4.0]
     SDK --> YCL[yourcloudlibrary 0.3.0]
@@ -80,9 +80,9 @@ time.
 The core guide must produce and publish:
 
 ```text
-research-engine-sdk==0.6.0
-research-engine==0.6.0
-research-engine-plugin-history==0.2.0
+marginalia-ai-sdk==0.6.0
+marginalia-ai==0.6.0
+marginalia-ai-plugin-history==0.2.0
 ```
 
 It must also publish the SDK contract documentation for:
@@ -115,7 +115,7 @@ Then, in a clean environment outside the checkout:
 ```bash
 python -m venv /tmp/re-plugin-smoke
 /tmp/re-plugin-smoke/bin/python -m pip install --upgrade pip
-/tmp/re-plugin-smoke/bin/python -m pip install research-engine==0.6.0
+/tmp/re-plugin-smoke/bin/python -m pip install marginalia-ai==0.6.0
 /tmp/re-plugin-smoke/bin/python -m pip install dist/*.whl
 /tmp/re-plugin-smoke/bin/research-engine plugin list
 ```
@@ -168,12 +168,12 @@ Use a fresh virtual environment and a copy of a real database—not the only pro
 python -m venv /tmp/re-system-smoke
 /tmp/re-system-smoke/bin/python -m pip install --upgrade pip
 /tmp/re-system-smoke/bin/python -m pip install \
-  research-engine==0.6.0 \
-  research-engine-plugin-history==0.2.0 \
-  research-engine-plugin-logos==0.2.0 \
-  research-engine-plugin-academic-journal==0.2.0 \
-  research-engine-plugin-kindle==0.4.0 \
-  research-engine-plugin-yourcloudlibrary==0.3.0
+  marginalia-ai==0.6.0 \
+  marginalia-ai-plugin-history==0.2.0 \
+  marginalia-ai-plugin-logos==0.2.0 \
+  marginalia-ai-plugin-academic-journal==0.2.0 \
+  marginalia-ai-plugin-kindle==0.4.0 \
+  marginalia-ai-plugin-yourcloudlibrary==0.3.0
 ```
 
 Set `RE_DB_URL` to the disposable database, then:

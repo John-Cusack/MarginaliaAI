@@ -103,7 +103,7 @@ def test_loader_injects_distribution_context(tmp_path) -> None:
     discovery = SimpleNamespace(
         manifest=manifest,
         plugin_id="sample",
-        distribution_name="research-engine-plugin-sample",
+        distribution_name="marginalia-ai-plugin-sample",
         distribution_version="1.2.3",
     )
     loader._loaded["sample"] = LoadedPlugin(discovery)

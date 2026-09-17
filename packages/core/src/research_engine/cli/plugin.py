@@ -30,13 +30,13 @@ _RESTART_NOTICE = "[yellow]Restart the MCP server for this change to take effect
 
 
 def _installation_help(plugin_id: str) -> str:
-    distribution = f"research-engine-plugin-{plugin_id}"
+    distribution = f"marginalia-ai-plugin-{plugin_id}"
     return (
         f"Plugin '{plugin_id}' is not installed in this Python environment.\n"
         "Install it with:\n"
         f"  python -m pip install {distribution}\n"
         "For pipx:\n"
-        f"  pipx inject research-engine {distribution}"
+        f"  pipx inject marginalia-ai {distribution}"
     )
 
 

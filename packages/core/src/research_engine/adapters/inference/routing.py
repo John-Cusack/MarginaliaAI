@@ -180,7 +180,7 @@ def build_inference(settings: Settings) -> InferenceBackends:
         except ImportError as exc:
             raise ConfigurationError(
                 "Local embedding support is not installed. Install "
-                "research-engine[local-inference] or set "
+                "marginalia-ai[local-inference] or set "
                 "RE_EMBEDDING_PROVIDER=remote_api."
             ) from exc
         if "e" not in _local_cache:
@@ -232,7 +232,7 @@ def build_inference(settings: Settings) -> InferenceBackends:
         except ImportError as exc:
             raise ConfigurationError(
                 "Local reranking support is not installed. Install "
-                "research-engine[local-inference], set "
+                "marginalia-ai[local-inference], set "
                 "RE_RERANKER_PROVIDER=remote_api, or disable reranking."
             ) from exc
         reranker = LocalBGEReranker(settings.reranker_model)

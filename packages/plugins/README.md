@@ -24,10 +24,10 @@ Core never installs, copies, links, or removes plugin code. Use pip, uv, or
 pipx for package lifecycle:
 
 ```bash
-python -m pip install --upgrade research-engine-plugin-history
+python -m pip install --upgrade marginalia-ai-plugin-history
 research-engine plugin approve-upgrade history
 research-engine plugin disable history
-python -m pip uninstall research-engine-plugin-history
+python -m pip uninstall marginalia-ai-plugin-history
 ```
 
 Removing a distribution retains its activation audit row and corpus data.

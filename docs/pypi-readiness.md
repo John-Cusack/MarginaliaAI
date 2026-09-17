@@ -24,8 +24,8 @@ has substantial unversioned changes after the `0.5.0` changelog section, includi
 `018`, so publishing the current tree as `0.5.0` would reuse an identity that no longer
 accurately describes it.
 
-**Recommended names:** keep the configured names `research-engine` and
-`research-engine-sdk`. Both PyPI JSON endpoints returned 404 during this review, but that is
+**Recommended names:** the MarginaliaAI family names `marginalia-ai` and
+`marginalia-ai-sdk`. Both PyPI JSON endpoints returned 404 during this review, but that is
 only a point-in-time availability check. A pending Trusted Publisher does not reserve a
 name; only the first successful upload does.
 
@@ -46,8 +46,8 @@ name; only the first successful upload does.
 
 | Check | Result | Meaning |
 |---|---|---|
-| `uv build --package research-engine` | Built wheel and sdist successfully | Core build configuration is valid. |
-| `uv build --package research-engine-sdk` | Built wheel and sdist successfully | SDK build configuration is syntactically valid. |
+| `uv build --package marginalia-ai` | Built wheel and sdist successfully | Core build configuration is valid. |
+| `uv build --package marginalia-ai-sdk` | Built wheel and sdist successfully | SDK build configuration is syntactically valid. |
 | Core wheel size | 485,811 bytes | Project code itself is small and suitable for a universal wheel. |
 | SDK wheel size | 1,733 bytes | This is a warning sign, confirmed by the import failure below. |
 | `twine check` on all four artifacts | Passed, but warned that `long_description` and its content type are missing | PyPI would accept the files, but their project pages would have no useful README. |
@@ -56,7 +56,7 @@ name; only the first successful upload does.
 | Core wheel resources | `alembic.ini` and migration `018_anchor_editions.py` are present | Migration data is being included correctly. |
 | Isolated core wheel install | Installed 156 packages and `research-engine --help` succeeded on Python 3.13 | The wheel is executable outside the checkout, but the default dependency set is excessive. |
 | Isolated SDK wheel install | `from research_engine_sdk import tool` raised `ImportError` | The SDK must not be published in its current form. |
-| PyPI JSON lookup | `research-engine` and `research-engine-sdk` both returned 404 | Names appeared unclaimed at review time; this is not a reservation. |
+| PyPI JSON lookup | `marginalia-ai` and `marginalia-ai-sdk` both returned 404 | Names appeared unclaimed at review time; this is not a reservation. |
 | Existing CI | Lint and unit/pack tests on Python 3.11, Ubuntu only | Good development baseline; insufficient release-artifact and compatibility coverage. |
 
 The isolated core install downloaded the local inference stack, including Torch, Triton,
@@ -70,15 +70,15 @@ This is a monorepo, but it does not contain one publishable project.
 
 | Repository component | PyPI treatment | Public contract |
 |---|---|---|
-| `packages/core` | Publish as `research-engine` | End-user CLI, MCP server, core services, migrations. |
-| `packages/sdk` | Publish as `research-engine-sdk` only after the SDK repair | Small, standalone plugin-author API with no dependency on core. |
-| Root `research-engine-workspace` | Never publish | `uv` development workspace only; `[tool.uv] package = false` already expresses this. |
+| `packages/core` | Publish as `marginalia-ai` | End-user CLI, MCP server, core services, migrations. |
+| `packages/sdk` | Publish as `marginalia-ai-sdk` only after the SDK repair | Small, standalone plugin-author API with no dependency on core. |
+| Root `marginalia-ai-workspace` | Never publish | `uv` development workspace only; `[tool.uv] package = false` already expresses this. |
 | `packages/plugins/history` | Do not imply that it is in the core wheel | Keep repository-only for now, or release it separately after defining a remote install path. |
 | `scripts/`, `tools/`, corpus setup material, screenshots, and `works/` | Do not include in the core wheel | Development/operations/corpus-specific assets, not general package runtime. |
 
 The distribution name, import name, and command remain intentionally different forms:
 
-- install: `pip install research-engine`
+- install: `pip install marginalia-ai`
 - import: `import research_engine`
 - run: `research-engine ...`
 
@@ -171,7 +171,7 @@ Implement a clean dependency direction:
   `from research_engine_sdk import ...`.
 - Define SDK compatibility explicitly. Since both projects release from one repository, the
   simplest policy through `0.x` is matching minor releases, for example core `0.6.x`
-  depending on `research-engine-sdk>=0.6,<0.7`.
+  depending on `marginalia-ai-sdk>=0.6,<0.7`.
 - Add `py.typed` only if the shipped annotations are intentionally supported and checked.
   Do not claim `Typing :: Typed` merely because annotations exist.
 
@@ -184,16 +184,16 @@ for name in research_engine_sdk.__all__:
     assert getattr(research_engine_sdk, name) is not None
 ```
 
-Run that in a clean environment where `research-engine` is not installed. Then install core
+Run that in a clean environment where `marginalia-ai` is not installed. Then install core
 against the same SDK wheel and run one real first-party pack contract scenario.
 
-If the SDK repair is intentionally deferred, do **not** publish `research-engine-sdk`, remove
+If the SDK repair is intentionally deferred, do **not** publish `marginalia-ai-sdk`, remove
 claims that it is available, and mark third-party pack authoring unsupported for that core
 release.
 
 ### P0.3 — Split heavyweight optional dependencies
 
-`pip install research-engine` currently resolves the complete local ML and document parsing
+`pip install marginalia-ai` currently resolves the complete local ML and document parsing
 stack. The review's clean install pulled 156 packages, including several hundred-megabyte
 GPU runtime wheels, just to display CLI help. This makes installation slow, platform-sensitive,
 and surprising for users who use remote inference or do not ingest PDFs.
@@ -202,19 +202,19 @@ Recommended extras:
 
 | Install | Purpose |
 |---|---|
-| `research-engine` | CLI, database, MCP, configuration, remote inference clients, and lightweight formats. |
-| `research-engine[local-inference]` | `sentence-transformers` and its local model runtime. |
-| `research-engine[documents]` | Docling/PDF/EPUB/HTML parsing dependencies. |
-| `research-engine[embed-server]` | FastAPI and Uvicorn; document that local inference is also required. |
-| `research-engine[full]` | All supported optional features for users who want the current batteries-included behavior. |
-| `research-engine[dev]` | Contributor test/lint dependencies, if retaining a public dev extra is useful. |
+| `marginalia-ai` | CLI, database, MCP, configuration, remote inference clients, and lightweight formats. |
+| `marginalia-ai[local-inference]` | `sentence-transformers` and its local model runtime. |
+| `marginalia-ai[documents]` | Docling/PDF/EPUB/HTML parsing dependencies. |
+| `marginalia-ai[embed-server]` | FastAPI and Uvicorn; document that local inference is also required. |
+| `marginalia-ai[full]` | All supported optional features for users who want the current batteries-included behavior. |
+| `marginalia-ai[dev]` | Contributor test/lint dependencies, if retaining a public dev extra is useful. |
 
 Exact grouping should follow import boundaries, not only package size. Refactor eager imports
 so base CLI startup does not import an unavailable optional backend. A missing extra must
 produce one actionable error, for example:
 
 ```text
-Local embedding support is not installed. Install research-engine[local-inference]
+Local embedding support is not installed. Install marginalia-ai[local-inference]
 or set RE_EMBEDDING_PROVIDER=remote_api.
 ```
 
@@ -249,7 +249,7 @@ Recommended core metadata shape:
 
 ```toml
 [project]
-name = "research-engine"
+name = "marginalia-ai"
 dynamic = ["version"]
 description = "Build a searchable, citable research corpus and expose it over MCP"
 readme = "README.md"
@@ -325,7 +325,7 @@ Before public release:
 - Make the public documentation match implemented permissions. Do not claim filesystem or
   network isolation beyond the actual gated clients.
 
-This is a public distribution blocker because `pip install research-engine` exposes the plugin
+This is a public distribution blocker because `pip install marginalia-ai` exposes the plugin
 installer to users who did not inspect this repository's architecture notes.
 
 ### P0.6 — Remove checkout-only runtime instructions and false shipping claims
@@ -440,7 +440,7 @@ The order matters because downstream work depends on the public contract chosen 
 
 ### Phase A — public contract
 
-- [ ] Keep or deliberately rename `research-engine` before any upload; default: keep it.
+- [ ] Distribution names are the MarginaliaAI family (`marginalia-ai`, `marginalia-ai-sdk`, `marginalia-ai-plugin-*`).
 - [ ] Define initial supported OS/Python matrix.
 - [ ] Decide whether SDK `0.6.x` releases in lockstep with core; default: yes.
 - [ ] Define base install and optional extras.
@@ -551,8 +551,8 @@ dependency resolution works.
 
 ```bash
 rm -rf dist/core dist/sdk
-uv build --package research-engine-sdk --out-dir dist/sdk
-uv build --package research-engine --out-dir dist/core
+uv build --package marginalia-ai-sdk --out-dir dist/sdk
+uv build --package marginalia-ai --out-dir dist/core
 uvx --from twine twine check --strict dist/sdk/* dist/core/*
 ```
 
@@ -581,10 +581,10 @@ publish artifacts rebuilt after those checks; publish those exact files.
 
 Publish only when all statements below are true:
 
-- `pip install research-engine` has a documented, reasonably sized base install.
+- `pip install marginalia-ai` has a documented, reasonably sized base install.
 - A user with no checkout can provision/configure the database, migrate it, start the service,
   and understand every external prerequisite.
-- `research-engine-sdk` either works standalone and is tested, or is explicitly excluded from
+- `marginalia-ai-sdk` either works standalone and is tested, or is explicitly excluded from
   the release and documentation.
 - Every runtime instruction names an installed command or stable public document.
 - Package pages contain a useful README, source/support links, and the Apache license file.

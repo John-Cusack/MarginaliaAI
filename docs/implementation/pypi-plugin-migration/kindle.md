@@ -1,8 +1,8 @@
 # Kindle plugin implementation guide
 
 **Repository:** `John-Cusack/marginalia-plugin-kindle`  
-**Target release:** `research-engine-plugin-kindle 0.4.0`  
-**Prerequisite:** production `research-engine-sdk==0.6.0` and `research-engine==0.6.0`  
+**Target release:** `marginalia-ai-plugin-kindle 0.4.0`  
+**Prerequisite:** production `marginalia-ai-sdk==0.6.0` and `marginalia-ai==0.6.0`  
 **Current source state:** clean `main`, current version/tag `0.3.1`
 
 ## 0. Baseline
@@ -21,8 +21,8 @@ do not scrape or ingest merely to establish baseline.
 
 Update `pyproject.toml`:
 
-- name/version: `research-engine-plugin-kindle`, `0.4.0`;
-- dependency: `research-engine-sdk>=0.6,<0.7`;
+- name/version: `marginalia-ai-plugin-kindle`, `0.4.0`;
+- dependency: `marginalia-ai-sdk>=0.6,<0.7`;
 - retain Playwright, pytesseract, and Pillow as runtime dependencies;
 - remove EasyOCR from base dependencies;
 - add `gpu-ocr = ["easyocr>=1.7"]`;
@@ -71,7 +71,7 @@ No runtime file may import `research_engine.*` when this phase is complete.
 Gate:
 
 ```bash
-python -m pip install research-engine-sdk==0.6.0
+python -m pip install marginalia-ai-sdk==0.6.0
 grep-equivalent repository check: no runtime match for "research_engine."
 uv run pytest tests/unit -q
 ```
@@ -120,7 +120,7 @@ destination.
 `kindle/scraper/ocr.py` already lazy-imports EasyOCR. Complete the boundary:
 
 - if EasyOCR is absent and a Kryptonite/canvas page requires it, return one actionable error
-  naming `research-engine-plugin-kindle[gpu-ocr]`;
+  naming `marginalia-ai-plugin-kindle[gpu-ocr]`;
 - allow CPU EasyOCR only when explicitly configured; default GPU behavior must report missing
   CUDA clearly rather than crash;
 - keep DOM extraction as the normal path;
@@ -199,7 +199,7 @@ Clean artifact smoke:
 ```bash
 python -m venv /tmp/kindle-release-smoke
 /tmp/kindle-release-smoke/bin/python -m pip install --upgrade pip
-/tmp/kindle-release-smoke/bin/python -m pip install research-engine==0.6.0 dist/*.whl
+/tmp/kindle-release-smoke/bin/python -m pip install marginalia-ai==0.6.0 dist/*.whl
 /tmp/kindle-release-smoke/bin/python -c 'from importlib.util import find_spec; assert find_spec("torch") is None'
 /tmp/kindle-release-smoke/bin/research-engine plugin list
 ```

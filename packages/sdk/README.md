@@ -1,6 +1,6 @@
 # Research Engine SDK
 
-`research-engine-sdk` is the standalone, typed contract for building plugins for
+`marginalia-ai-sdk` is the standalone, typed contract for building plugins for
 [Research Engine](https://github.com/John-Cusack/MarginaliaAI). It contains static manifest
 models, boundary DTOs, scoped client protocols, decorators, chunking helpers, and portable
 contract tests. It does not install or import the Research Engine core.
@@ -8,7 +8,7 @@ contract tests. It does not install or import the Research Engine core.
 ## Install
 
 ```bash
-python -m pip install "research-engine-sdk>=0.6,<0.7"
+python -m pip install "marginalia-ai-sdk>=0.6,<0.7"
 ```
 
 A plugin declares a static `plugin.yaml` inside its top-level import package and advertises
@@ -45,7 +45,7 @@ Plugin code executes in the core process after explicit operator approval. Scope
 the supported API boundary, not a security sandbox; install and enable only trusted plugins.
 
 API compatibility follows the core minor release through `0.x`. A plugin supporting core
-`0.6.x` should depend on `research-engine-sdk>=0.6,<0.7`.
+`0.6.x` should depend on `marginalia-ai-sdk>=0.6,<0.7`.
 
 See the [architecture](https://github.com/John-Cusack/MarginaliaAI/blob/main/docs/design/pypi-plugin-distribution-architecture.md),
 [changelog](https://github.com/John-Cusack/MarginaliaAI/blob/main/CHANGELOG.md), and

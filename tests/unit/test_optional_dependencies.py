@@ -46,7 +46,7 @@ async def test_docling_absence_registers_actionable_module(
         for module in dispatcher.modules
         if isinstance(module, DocumentAIUnavailableModule)
     )
-    with pytest.raises(ConfigurationError, match=r"research-engine\[document-ai\]"):
+    with pytest.raises(ConfigurationError, match=r"marginalia-ai\[document-ai\]"):
         await unavailable.parse(tmp_path / "paper.docx")
 
 
@@ -78,7 +78,7 @@ def test_missing_local_inference_extra_is_actionable(monkeypatch) -> None:
 
     with pytest.raises(
         ConfigurationError,
-        match=r"research-engine\[local-inference\]",
+        match=r"marginalia-ai\[local-inference\]",
     ):
         build_inference(
             Settings(

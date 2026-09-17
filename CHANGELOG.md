@@ -2,10 +2,29 @@
 
 ## 0.6.0 — 2026-09-17
 
+### Distribution names are the MarginaliaAI family
+
+Before the first public release, every distribution moved to the
+`marginalia-ai` family: core publishes as `marginalia-ai`, the standalone
+contract as `marginalia-ai-sdk`, and plugins as `marginalia-ai-plugin-<id>`
+(the in-tree pack is `marginalia-ai-plugin-history`). Nothing had been
+published under the old `research-engine-*` names, so there is no alias.
+
+Only distribution names changed. The `research-engine` command, the
+`research_engine` / `research_engine_sdk` / `history` import packages, the
+`research_engine.plugins` entry-point group, plugin ids, and the
+`~/.research-engine` data directory are unchanged, so configuration and MCP
+setups keep working.
+
+If you have an editable install of the old names, uninstall them
+(`uv pip uninstall research-engine research-engine-sdk
+research-engine-plugin-history`). Leaving both installed makes plugin
+discovery report a duplicate plugin id and load neither claimant.
+
 ### Core and standalone SDK
 
 - Replaced the conditional SDK shim with the standalone, typed
-  `research-engine-sdk 0.6.0` contract: manifest v2, DTOs, scoped clients,
+  `marginalia-ai-sdk 0.6.0` contract: manifest v2, DTOs, scoped clients,
   decorators, errors, chunking helpers, and plugin contract utilities.
 - Replaced Git/copy/runtime-pip plugin installation with no-import Python
   entry-point discovery, exact artifact approval, atomic staged registration,
@@ -16,7 +35,7 @@
   server into explicit extras. The base artifact no longer requires Torch,
   sentence-transformers, Docling, or OpenAI.
 
-### research-engine-plugin-history 0.2.0
+### marginalia-ai-plugin-history 0.2.0
 
 - Packaged history as the reference plugin distribution with a schema-v2
   `history/plugin.yaml`, SDK-only runtime imports, packaged extraction schemas,

@@ -148,7 +148,7 @@ class TEIXMLModule:
         except ImportError as exc:
             raise RuntimeError(
                 "TEI XML parsing support is not installed. Install "
-                "research-engine[documents]."
+                "marginalia-ai[documents]."
             ) from exc
 
         tree = etree.parse(str(source_path))  # noqa: S320

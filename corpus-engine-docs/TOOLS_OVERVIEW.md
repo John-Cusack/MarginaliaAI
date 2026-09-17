@@ -2,7 +2,7 @@
 
 ## What This System Is
 
-The Corpus Engine (project name: MarginaliaAI / `research-engine`) is a personal library research engine. It ingests documents from multiple sources, chunks and embeds them, and makes them deeply queryable, extractable, and cross-linkable through an MCP tool interface. It is designed for academic and theological research.
+The Corpus Engine (project name: MarginaliaAI / `marginalia-ai`) is a personal library research engine. It ingests documents from multiple sources, chunks and embeds them, and makes them deeply queryable, extractable, and cross-linkable through an MCP tool interface. It is designed for academic and theological research.
 
 The system has three layers:
 

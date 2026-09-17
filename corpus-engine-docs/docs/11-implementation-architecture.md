@@ -236,8 +236,8 @@ Violations fail CI.
 
 ### 2.2 Why SDK is a separate package
 
-`packages/sdk` is published to PyPI as `research-engine-sdk`. Plugin
-authors depend only on the SDK, not on `research-engine` core. This
+`packages/sdk` is published to PyPI as `marginalia-ai-sdk`. Plugin
+authors depend only on the SDK, not on `marginalia-ai` core. This
 ensures:
 
 - Plugin authors see a minimal, stable surface.

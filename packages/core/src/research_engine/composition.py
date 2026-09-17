@@ -263,7 +263,7 @@ async def build_container(settings: Settings) -> Container:
 
             raise ConfigurationError(
                 "OpenAI-compatible LLM support is not installed. Install "
-                "research-engine[openai] or set RE_LLM_PROVIDER=anthropic."
+                "marginalia-ai[openai] or set RE_LLM_PROVIDER=anthropic."
             ) from exc
 
         llm = OpenAICompatibleLLMAdapter(

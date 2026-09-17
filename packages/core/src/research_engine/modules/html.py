@@ -70,7 +70,7 @@ class HTMLModule:
         except ImportError as exc:
             raise RuntimeError(
                 "HTML parsing support is not installed. Install "
-                "research-engine[documents]."
+                "marginalia-ai[documents]."
             ) from exc
 
         raw = source_path.read_text(encoding="utf-8", errors="replace")

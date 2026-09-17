@@ -1,7 +1,7 @@
 # PyPI distribution and plugin architecture
 
 **Status:** Proposed architecture  
-**Scope:** `research-engine`, `research-engine-sdk`, the in-tree history pack, and the
+**Scope:** `marginalia-ai`, `marginalia-ai-sdk`, the in-tree history pack, and the
 Logos, academic-journal, Kindle, and YourCloudLibrary repositories  
 **Related review:** [PyPI readiness review](../pypi-readiness.md)
 **Implementation runbooks:** [PyPI/plugin migration execution index](../implementation/pypi-plugin-migration/index.md)
@@ -10,9 +10,9 @@ Logos, academic-journal, Kindle, and YourCloudLibrary repositories
 
 Adopt standard Python distributions and package-metadata entry points for every plugin.
 
-- Publish core as `research-engine`.
-- Publish the standalone contract as `research-engine-sdk`.
-- Publish each plugin as an independent `research-engine-plugin-*` distribution.
+- Publish core as `marginalia-ai`.
+- Publish the standalone contract as `marginalia-ai-sdk`.
+- Publish each plugin as an independent `marginalia-ai-plugin-*` distribution.
 - Discover installed plugins through the `research_engine.plugins` entry-point group.
 - Keep runtime manifests as static package resources that core can inspect **without importing
   plugin code**.
@@ -55,7 +55,7 @@ application.
 
 ### 3.1 Goals
 
-- A lightweight `pip install research-engine` with no Torch/CUDA/Docling dependency.
+- A lightweight `pip install marginalia-ai` with no Torch/CUDA/Docling dependency.
 - Independently versioned core, SDK, and plugin artifacts.
 - Standard pip/uv/pipx install, upgrade, and uninstall behavior.
 - Static permission review before any plugin module is imported.
@@ -81,13 +81,13 @@ application.
 
 | Repository/component | Distribution | Import package | Entry point | Release cadence |
 |---|---|---|---|---|
-| Core | `research-engine` | `research_engine` | console script `research-engine` | Core/SDK lockstep through `0.x` |
-| SDK | `research-engine-sdk` | `research_engine_sdk` | none | Core/SDK lockstep through `0.x` |
-| In-tree history pack | `research-engine-plugin-history` | `history` | `history = "history"` | Independent plugin version |
-| Logos repo | `research-engine-plugin-logos` | `logos` | `logos = "logos"` | Independent |
-| Academic journal repo | `research-engine-plugin-academic-journal` | `acad` | `academic-journal = "acad"` | Independent |
-| Kindle repo | `research-engine-plugin-kindle` | `kindle` | `kindle = "kindle"` | Independent |
-| YourCloudLibrary repo | `research-engine-plugin-yourcloudlibrary` | `ycl` | `yourcloudlibrary = "ycl"` | Independent |
+| Core | `marginalia-ai` | `research_engine` | console script `research-engine` | Core/SDK lockstep through `0.x` |
+| SDK | `marginalia-ai-sdk` | `research_engine_sdk` | none | Core/SDK lockstep through `0.x` |
+| In-tree history pack | `marginalia-ai-plugin-history` | `history` | `history = "history"` | Independent plugin version |
+| Logos repo | `marginalia-ai-plugin-logos` | `logos` | `logos = "logos"` | Independent |
+| Academic journal repo | `marginalia-ai-plugin-academic-journal` | `acad` | `academic-journal = "acad"` | Independent |
+| Kindle repo | `marginalia-ai-plugin-kindle` | `kindle` | `kindle = "kindle"` | Independent |
+| YourCloudLibrary repo | `marginalia-ai-plugin-yourcloudlibrary` | `ycl` | `yourcloudlibrary = "ycl"` | Independent |
 
 The existing GitHub repository names may remain `marginalia-plugin-*`; repository and PyPI
 distribution names need not match. The public distribution family should match the core
@@ -101,7 +101,7 @@ then publish promptly.
 
 ### 5.1 Base core
 
-Base `research-engine` owns the CLI, configuration, PostgreSQL adapters and migrations, MCP,
+Base `marginalia-ai` owns the CLI, configuration, PostgreSQL adapters and migrations, MCP,
 remote inference clients, citation/works services, and lightweight text processing.
 
 Recommended base dependencies:
@@ -109,7 +109,7 @@ Recommended base dependencies:
 ```toml
 [project]
 dependencies = [
-    "research-engine-sdk>=0.6,<0.7",
+    "marginalia-ai-sdk>=0.6,<0.7",
     "pydantic>=2.5,<3",
     "pydantic-settings>=2.1,<3",
     "sqlalchemy[asyncio]>=2.0,<3",
@@ -196,7 +196,7 @@ Moving dependencies is not enough. Core must enforce the optional boundary:
 - Register `DoclingModule` only when Docling is installed. Without it, PDFs fall back to
   `PDFTextModule`; HTML and Markdown use their lightweight modules.
 - Missing support for DOCX/PPTX/XLSX/images produces an actionable
-  `research-engine[document-ai]` message.
+  `marginalia-ai[document-ai]` message.
 - Provider-specific LLM adapters import only when selected.
 
 A base-artifact CI job must assert that `torch`, `sentence_transformers`, and `docling` are not
@@ -208,7 +208,7 @@ installed while CLI help, config, migration, and remote-adapter smoke tests pass
 
 ```mermaid
 graph TD
-    Core[research-engine] --> SDK[research-engine-sdk]
+    Core[marginalia-ai] --> SDK[marginalia-ai-sdk]
     History[history plugin] --> SDK
     Logos[logos plugin] --> SDK
     Academic[academic-journal plugin] --> SDK
@@ -216,7 +216,7 @@ graph TD
     YCL[yourcloudlibrary plugin] --> SDK
 ```
 
-`research-engine-sdk` must never import `research_engine`. Core implementations conform to SDK
+`marginalia-ai-sdk` must never import `research_engine`. Core implementations conform to SDK
 protocols; plugins consume only SDK contracts.
 
 ### 6.2 Proposed SDK layout
@@ -260,7 +260,7 @@ engines, or core service classes.
 | Logos imports `build_node_tree` | Accept SDK `NodeDraft`/section DTOs through `IngestionClient`; core validates and builds storage nodes. |
 | Logos imports `EmbeddingUnavailable` | Export the public operational error from SDK. |
 | History imports `EventFilter` | Make `EventFilter` an SDK DTO or have `EventClient.query()` accept a validated SDK filter/dict. |
-| Plugin tests import `research_engine.testing` | Move portable contracts to `research_engine_sdk.testing`; database integration fixtures may depend on `research-engine[dev]`. |
+| Plugin tests import `research_engine.testing` | Move portable contracts to `research_engine_sdk.testing`; database integration fixtures may depend on `marginalia-ai[dev]`. |
 | Plugins import `research_engine.plugins.sdk` | Clean cutover to `research_engine_sdk`. |
 
 ## 7. Plugin distribution contract
@@ -282,7 +282,7 @@ Constraints:
 - one plugin entry point per distribution;
 - entry-point name equals the runtime plugin id;
 - value is one top-level module name, with no attribute or extras;
-- distribution name starts with `research-engine-plugin-` for official packages;
+- distribution name starts with `marginalia-ai-plugin-` for official packages;
 - top-level package may not shadow stdlib or another installed plugin package;
 - duplicate plugin ids are an error; core loads neither claimant.
 
@@ -414,7 +414,7 @@ research-engine plugin doctor
 ### 8.3 Approval flow
 
 ```bash
-python -m pip install research-engine-plugin-kindle
+python -m pip install marginalia-ai-plugin-kindle
 research-engine plugin enable kindle
 ```
 
@@ -451,7 +451,7 @@ fails.
 ### 8.5 Upgrades and removals
 
 ```bash
-python -m pip install --upgrade research-engine-plugin-kindle
+python -m pip install --upgrade marginalia-ai-plugin-kindle
 research-engine plugin approve-upgrade kindle
 ```
 
@@ -460,7 +460,7 @@ requires approval before the next load.
 
 ```bash
 research-engine plugin disable kindle
-python -m pip uninstall research-engine-plugin-kindle
+python -m pip uninstall marginalia-ai-plugin-kindle
 ```
 
 Removing a distribution leaves corpus data and the approval audit row. `plugin list` reports
@@ -469,8 +469,8 @@ it as missing. Reinstallation does not auto-enable a different artifact.
 For pipx:
 
 ```bash
-pipx inject research-engine research-engine-plugin-kindle
-pipx runpip research-engine uninstall research-engine-plugin-kindle
+pipx inject marginalia-ai marginalia-ai-plugin-kindle
+pipx runpip marginalia-ai uninstall marginalia-ai-plugin-kindle
 ```
 
 ### 8.6 Development installs
@@ -633,9 +633,9 @@ rather than executing it:
 ```text
 Plugin 'kindle' is not installed in this Python environment.
 Install it with:
-  python -m pip install research-engine-plugin-kindle
+  python -m pip install marginalia-ai-plugin-kindle
 For pipx:
-  pipx inject research-engine research-engine-plugin-kindle
+  pipx inject marginalia-ai marginalia-ai-plugin-kindle
 ```
 
 ## 13. Per-repository changes
@@ -654,7 +654,7 @@ For pipx:
 
 #### `packages/core`
 
-- Depend on `research-engine-sdk`; delete the duplicate core SDK package.
+- Depend on `marginalia-ai-sdk`; delete the duplicate core SDK package.
 - Add entry-point discovery with no-import manifest inspection.
 - Replace `PluginInstaller` with discovery/approval services.
 - Remove Git clone, runtime pip installation, and shell setup execution.
@@ -680,8 +680,8 @@ packages/plugins/history/
     ...
 ```
 
-- Distribution: `research-engine-plugin-history`.
-- Depend on `research-engine-sdk`, not core.
+- Distribution: `marginalia-ai-plugin-history`.
+- Depend on `marginalia-ai-sdk`, not core.
 - Replace the `research_engine.domain.events.EventFilter` import with the SDK query contract.
 - Ensure every tool has a valid input schema; the currently installed older pack fails this
   check for `history.find_missing_letters`.
@@ -702,10 +702,10 @@ Current state:
 
 Required changes:
 
-- Rename distribution to `research-engine-plugin-logos` before first PyPI upload.
+- Rename distribution to `marginalia-ai-plugin-logos` before first PyPI upload.
 - Choose one license; recommended: align metadata/manifest history with the existing
   Apache-2.0 repository license.
-- Depend on `research-engine-sdk>=0.6,<0.7`.
+- Depend on `marginalia-ai-sdk>=0.6,<0.7`.
 - Move runtime manifest to `logos/plugin.yaml`; add entry point `logos = "logos"`.
 - Replace every `research_engine.*` import with SDK contracts or plugin-owned code.
 - Use SDK chunker helpers/DTOs for `VerseChunker`.
@@ -730,8 +730,8 @@ Current state:
 
 Required changes:
 
-- Rename distribution to `research-engine-plugin-kindle`.
-- Depend on `research-engine-sdk>=0.6,<0.7`.
+- Rename distribution to `marginalia-ai-plugin-kindle`.
+- Depend on `marginalia-ai-sdk>=0.6,<0.7`.
 - Move manifest to `kindle/plugin.yaml`; add entry point `kindle = "kindle"`.
 - Let `IngestionClient` apply `prose_window`; remove the core chunker import.
 - Keep Playwright/Pillow/pytesseract as normal dependencies.
@@ -752,8 +752,8 @@ Current state:
 
 Required changes:
 
-- Rename distribution to `research-engine-plugin-yourcloudlibrary`.
-- Depend on `research-engine-sdk>=0.6,<0.7`.
+- Rename distribution to `marginalia-ai-plugin-yourcloudlibrary`.
+- Depend on `marginalia-ai-sdk>=0.6,<0.7`.
 - Move manifest to `ycl/plugin.yaml`; add entry point `yourcloudlibrary = "ycl"`.
 - Let core apply `prose_window`; remove the core chunker import.
 - Add a console login command that owns one-time Playwright/Chromium setup explicitly.
@@ -780,8 +780,8 @@ Required changes before packaging work:
 2. Ensure every manifest entry/resource exists in committed source.
 3. Add/restore package initializers, tests, README, and `pyproject.toml`.
 4. Align on Apache-2.0 or another single deliberate license.
-5. Rename distribution to `research-engine-plugin-academic-journal`.
-6. Depend on `research-engine-sdk>=0.6,<0.7`.
+5. Rename distribution to `marginalia-ai-plugin-academic-journal`.
+6. Depend on `marginalia-ai-sdk>=0.6,<0.7`.
 7. Move manifest to `acad/plugin.yaml`; add entry point `academic-journal = "acad"`.
 8. Migrate core SDK imports and expose plugin-owned database migrations explicitly.
 9. Package extraction schemas and source-search/filter contributions.
@@ -813,16 +813,16 @@ Core `0.6` performs a one-time schema/data transition but does not retain the le
 
 ```bash
 # Upgrade/install core and SDK.
-python -m pip install --upgrade research-engine
+python -m pip install --upgrade marginalia-ai
 research-engine db upgrade
 
 # Install desired plugin distributions into the same environment.
 python -m pip install \
-  research-engine-plugin-logos \
-  research-engine-plugin-academic-journal \
-  research-engine-plugin-kindle \
-  research-engine-plugin-yourcloudlibrary \
-  research-engine-plugin-history
+  marginalia-ai-plugin-logos \
+  marginalia-ai-plugin-academic-journal \
+  marginalia-ai-plugin-kindle \
+  marginalia-ai-plugin-yourcloudlibrary \
+  marginalia-ai-plugin-history
 
 # Review and enable each static manifest.
 research-engine plugin list
@@ -861,10 +861,10 @@ No `uv run` or repository `cwd` is required.
 
 ### 15.1 First coordinated release
 
-1. Finish and publish `research-engine-sdk 0.6.0`.
+1. Finish and publish `marginalia-ai-sdk 0.6.0`.
 2. Build/test core against that exact SDK artifact.
 3. Finish core discovery/approval, optional dependency, migration CLI, and artifact work.
-4. Publish `research-engine 0.6.0`.
+4. Publish `marginalia-ai 0.6.0`.
 5. Convert and publish history plus each external plugin against SDK/core `0.6`.
 6. Publish plugin docs only after production-PyPI installation and enable/load smoke tests pass.
 

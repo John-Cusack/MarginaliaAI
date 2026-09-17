@@ -64,7 +64,7 @@ class PDFTextModule:
         except ImportError as exc:
             raise RuntimeError(
                 "PDF text parsing support is not installed. Install "
-                "research-engine[documents]."
+                "marginalia-ai[documents]."
             ) from exc
 
         doc = fitz.open(str(source_path))

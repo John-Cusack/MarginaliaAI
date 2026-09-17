@@ -1,8 +1,8 @@
 # Core, SDK, and history implementation guide
 
 **Repository:** `John-Cusack/MarginaliaAI`  
-**Target releases:** `research-engine-sdk 0.6.0`, `research-engine 0.6.0`,
-`research-engine-plugin-history 0.2.0`  
+**Target releases:** `marginalia-ai-sdk 0.6.0`, `marginalia-ai 0.6.0`,
+`marginalia-ai-plugin-history 0.2.0`  
 **Depends on:** [architecture](../../design/pypi-plugin-distribution-architecture.md)  
 **Produces:** the contracts every external plugin guide consumes
 
@@ -27,8 +27,8 @@ uv sync --group dev
 uv run ruff check packages/ tests/
 uv run pytest tests/unit -q
 uv run pytest packages/plugins -q
-uv build --package research-engine --out-dir /tmp/re-core-before
-uv build --package research-engine-sdk --out-dir /tmp/re-sdk-before
+uv build --package marginalia-ai --out-dir /tmp/re-core-before
+uv build --package marginalia-ai-sdk --out-dir /tmp/re-sdk-before
 ```
 
 Do not change database or public contracts until these results are understood.
@@ -126,7 +126,7 @@ core and SDK.
 
 Update `packages/sdk/pyproject.toml`:
 
-- distribution/version `research-engine-sdk==0.6.0`;
+- distribution/version `marginalia-ai-sdk==0.6.0`;
 - package README and Apache-2.0 license file;
 - authors, classifiers, keywords, source/issues/changelog URLs;
 - `pydantic` and other genuinely standalone dependencies only;
@@ -139,20 +139,20 @@ protocol mocks, chunking contracts, and public exports.
 ### Gate 1
 
 ```bash
-uv build --package research-engine-sdk --out-dir /tmp/re-sdk-060
+uv build --package marginalia-ai-sdk --out-dir /tmp/re-sdk-060
 uvx --from twine twine check --strict /tmp/re-sdk-060/*
 uv run --isolated --no-project \
-  --with /tmp/re-sdk-060/research_engine_sdk-0.6.0-py3-none-any.whl \
+  --with /tmp/re-sdk-060/marginalia_ai_sdk-0.6.0-py3-none-any.whl \
   python -c 'import research_engine_sdk as s; [getattr(s, n) for n in s.__all__]'
 ```
 
-The environment must not contain `research-engine`.
+The environment must not contain `marginalia-ai`.
 
 ## 2. Cut core over to SDK
 
 ### 2.1 Dependency and imports
 
-Update `packages/core/pyproject.toml` to depend on `research-engine-sdk>=0.6,<0.7`; keep the
+Update `packages/core/pyproject.toml` to depend on `marginalia-ai-sdk>=0.6,<0.7`; keep the
 workspace source mapping at the root.
 
 Migrate every core caller to `research_engine_sdk`. Delete
@@ -377,7 +377,7 @@ Also smoke each extra independently and `full`.
 ## 8. Package history as the reference plugin
 
 Add `packages/plugins/history/pyproject.toml` and make it a workspace member. Target
-`research-engine-plugin-history==0.2.0`.
+`marginalia-ai-plugin-history==0.2.0`.
 
 Move:
 
@@ -393,7 +393,7 @@ Use manifest v2 and entry point:
 history = "history"
 ```
 
-Depend on `research-engine-sdk>=0.6,<0.7`; include README and Apache license. Update all imports
+Depend on `marginalia-ai-sdk>=0.6,<0.7`; include README and Apache license. Update all imports
 to SDK. Replace the core `EventFilter` import in `find_missing_letters.py` with SDK type/client
 usage.
 
@@ -425,9 +425,9 @@ require a checkout or repository `cwd`.
 uv run ruff check packages/ tests/
 uv run pytest tests/unit -q
 uv run pytest packages/plugins -q
-uv build --package research-engine-sdk --out-dir dist/sdk
-uv build --package research-engine --out-dir dist/core
-uv build --package research-engine-plugin-history --out-dir dist/history
+uv build --package marginalia-ai-sdk --out-dir dist/sdk
+uv build --package marginalia-ai --out-dir dist/core
+uv build --package marginalia-ai-plugin-history --out-dir dist/history
 uvx --from twine twine check --strict dist/sdk/* dist/core/* dist/history/*
 ```
 

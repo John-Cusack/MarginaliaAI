@@ -93,7 +93,7 @@ def _discovered(tmp_path, *, version: str = "0.2.0", digest: str = "a" * 64):
         plugin_id="history",
         module_name="history",
         entry_point_name="history",
-        distribution_name="research-engine-plugin-history",
+        distribution_name="marginalia-ai-plugin-history",
         distribution_version=version,
         project_urls={"Source": "https://example.test/history"},
         direct_url=None,
@@ -208,7 +208,7 @@ def test_enable_reviews_and_records_noninteractive_approval(tmp_path) -> None:
         result = runner.invoke(plugin_app, ["enable", "history", "--yes"])
 
     assert result.exit_code == 0, result.stdout
-    assert "research-engine-plugin-history==0.2.0" in result.stdout
+    assert "marginalia-ai-plugin-history==0.2.0" in result.stdout
     assert "Manifest SHA-256" in result.stdout
     assert "Permissions" in result.stdout
     assert "Contributions" in result.stdout
@@ -227,8 +227,8 @@ def test_unknown_plugin_prints_pip_and_pipx_commands(tmp_path) -> None:
         result = runner.invoke(plugin_app, ["audit", "kindle"])
 
     assert result.exit_code == 1
-    assert "python -m pip install research-engine-plugin-kindle" in result.stdout
-    assert "pipx inject research-engine research-engine-plugin-kindle" in result.stdout
+    assert "python -m pip install marginalia-ai-plugin-kindle" in result.stdout
+    assert "pipx inject marginalia-ai marginalia-ai-plugin-kindle" in result.stdout
 
 
 def test_cli_has_lifecycle_commands_not_package_manager_commands() -> None:

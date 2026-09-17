@@ -10,18 +10,18 @@ third-party plugins.
 ## Install
 
 ```bash
-python -m pip install research-engine
+python -m pip install marginalia-ai
 # Everything, including local inference and document AI:
-python -m pip install "research-engine[full]"
+python -m pip install "marginalia-ai[full]"
 ```
 
 Optional features are independently installable:
 
-- `research-engine[openai]` — OpenAI-compatible LLM adapter;
-- `research-engine[local-inference]` — sentence-transformers embedding and reranking;
-- `research-engine[documents]` — PDF text, EPUB, HTML, and TEI parsers;
-- `research-engine[document-ai]` — Docling layout/OCR and office/image conversion;
-- `research-engine[embed-server]` — FastAPI/Uvicorn plus its local inference runtime.
+- `marginalia-ai[openai]` — OpenAI-compatible LLM adapter;
+- `marginalia-ai[local-inference]` — sentence-transformers embedding and reranking;
+- `marginalia-ai[documents]` — PDF text, EPUB, HTML, and TEI parsers;
+- `marginalia-ai[document-ai]` — Docling layout/OCR and office/image conversion;
+- `marginalia-ai[embed-server]` — FastAPI/Uvicorn plus its local inference runtime.
 
 Local inference and Docling may download multi-gigabyte models and can require substantial disk,
 RAM, and GPU capacity. A standard PyPI install does not select PyTorch's alternate CPU wheel

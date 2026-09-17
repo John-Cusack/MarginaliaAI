@@ -1,7 +1,7 @@
 # Academic-journal plugin implementation guide
 
 **Repository:** `John-Cusack/marginalia-plugin-academic-journal`  
-**Target release:** `research-engine-plugin-academic-journal 0.2.0`  
+**Target release:** `marginalia-ai-plugin-academic-journal 0.2.0`  
 **Prerequisite:** production SDK/core `0.6.0`  
 **Critical baseline:** public `main` is incomplete; the local repository contains substantial
 uncommitted authoritative implementation
@@ -43,8 +43,8 @@ uv build --out-dir /tmp/acad-before
 
 Update `pyproject.toml`:
 
-- name/version `research-engine-plugin-academic-journal`, `0.2.0`;
-- dependency `research-engine-sdk>=0.6,<0.7` plus actual httpx/asyncpg/Pydantic runtime needs;
+- name/version `marginalia-ai-plugin-academic-journal`, `0.2.0`;
+- dependency `marginalia-ai-sdk>=0.6,<0.7` plus actual httpx/asyncpg/Pydantic runtime needs;
 - Apache-2.0 metadata matching repository `LICENSE`;
 - README, license-file, authors, classifiers, keywords, source/issues/changelog URLs;
 - entry point:
@@ -70,7 +70,7 @@ In `acad/source_search.py`, use SDK `Availability`, `IngestAction`, `SourceMatch
 Unit tests must not import core domain/filter types merely to prove protocol conformance. Use
 SDK runtime-checkable protocols/contracts.
 
-Core-dependent integration tests may install `research-engine==0.6.0`, but should prefer
+Core-dependent integration tests may install `marginalia-ai==0.6.0`, but should prefer
 public service/adapter behavior over core repositories and schema internals. Where direct DB
 verification is necessary, confine it to integration helpers and a disposable database.
 
@@ -197,7 +197,7 @@ Clean smoke:
 ```bash
 python -m venv /tmp/acad-release-smoke
 /tmp/acad-release-smoke/bin/python -m pip install --upgrade pip
-/tmp/acad-release-smoke/bin/python -m pip install research-engine==0.6.0 dist/*.whl
+/tmp/acad-release-smoke/bin/python -m pip install marginalia-ai==0.6.0 dist/*.whl
 /tmp/acad-release-smoke/bin/research-engine plugin list
 ```
 

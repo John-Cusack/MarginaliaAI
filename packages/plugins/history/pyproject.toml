@@ -1,5 +1,5 @@
 [project]
-name = "research-engine-plugin-history"
+name = "marginalia-ai-plugin-history"
 dynamic = ["version"]
 description = "Reference history research plugin for Research Engine"
 readme = "README.md"
@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "MarginaliaAI" }]
-keywords = ["correspondence", "history", "mcp", "research-engine"]
+keywords = ["correspondence", "history", "mcp", "marginalia-ai"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Text Processing :: Indexing",
 ]
 dependencies = [
-    "research-engine-sdk>=0.6,<0.7",
+    "marginalia-ai-sdk>=0.6,<0.7",
 ]
 
 [project.entry-points."research_engine.plugins"]

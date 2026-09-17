@@ -1,7 +1,7 @@
 # Logos plugin implementation guide
 
 **Repository:** `John-Cusack/marginalia-plugin-logos`  
-**Target release:** `research-engine-plugin-logos 0.2.0`  
+**Target release:** `marginalia-ai-plugin-logos 0.2.0`  
 **Prerequisite:** final SDK/core `0.6.0` chunking and ingestion contracts  
 **Current source state:** clean `main`, package `0.1.0`, no tags
 
@@ -21,8 +21,8 @@ Run network/auth/live ingestion only with explicit credentials and markers. Reco
 
 Update `pyproject.toml`:
 
-- name/version `research-engine-plugin-logos`, `0.2.0`;
-- depend on `research-engine-sdk>=0.6,<0.7`, `httpx`, `asyncpg`, and runtime Pydantic needs;
+- name/version `marginalia-ai-plugin-logos`, `0.2.0`;
+- depend on `marginalia-ai-sdk>=0.6,<0.7`, `httpx`, `asyncpg`, and runtime Pydantic needs;
 - retain Playwright under `auth` extra;
 - set Apache-2.0 to agree with repository `LICENSE`;
 - add package README, license file metadata, authors/classifiers/keywords/URLs;
@@ -188,7 +188,7 @@ Clean smoke:
 ```bash
 python -m venv /tmp/logos-release-smoke
 /tmp/logos-release-smoke/bin/python -m pip install --upgrade pip
-/tmp/logos-release-smoke/bin/python -m pip install research-engine==0.6.0 dist/*.whl
+/tmp/logos-release-smoke/bin/python -m pip install marginalia-ai==0.6.0 dist/*.whl
 /tmp/logos-release-smoke/bin/research-engine plugin list
 ```
 

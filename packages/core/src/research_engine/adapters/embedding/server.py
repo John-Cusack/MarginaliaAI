@@ -77,7 +77,7 @@ def create_app(
     except ImportError as exc:  # pragma: no cover - surfaced through the CLI
         raise ImportError(
             "FastAPI is required to run the embed server. Install "
-            "research-engine[embed-server]."
+            "marginalia-ai[embed-server]."
         ) from exc
 
     from contextlib import asynccontextmanager
@@ -88,7 +88,7 @@ def create_app(
     except ImportError as exc:
         raise ImportError(
             "Local inference is required to run the embed server. Install "
-            "research-engine[embed-server]."
+            "marginalia-ai[embed-server]."
         ) from exc
 
     backend = LocalBGEEmbedding(model, dim)

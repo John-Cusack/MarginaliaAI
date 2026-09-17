@@ -1,5 +1,5 @@
 [project]
-name = "research-engine-sdk"
+name = "marginalia-ai-sdk"
 dynamic = ["version"]
 description = "Standalone contracts for Research Engine plugins"
 readme = "README.md"
