@@ -4,7 +4,7 @@ title: 'Lexicographic Survey: mishpat (H4941) and tsedaqah (H6666)'
 type: dossier
 status: draft
 created: '2026-09-06'
-claims: []
+claims: [SIDER-006]
 citations:
 - id: c1
   document_id: 01a07932-c461-7052-bad2-3a621251ece7

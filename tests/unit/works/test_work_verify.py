@@ -58,6 +58,17 @@ class FakePassages:
             if start < char_end and end > char_start
         ]
 
+class FakeClaims:
+    def __init__(self, existing: set[str] | None = None) -> None:
+        self._existing = existing or set()
+        self.calls: list[list[str]] = []
+
+    async def existing_refs(self, refs):
+        self.calls.append(list(refs))
+        return set(refs) & self._existing
+
+
+
 
 class FakeVerification:
     def __init__(
@@ -125,11 +136,13 @@ def _verifier(tmp_path: Path, **fakes) -> WorkVerifier:
     fakes.setdefault("documents", FakeDocuments())
     fakes.setdefault("passages", FakePassages())
     fakes.setdefault("verification", FakeVerification())
+    fakes.setdefault("claims", FakeClaims())
     return WorkVerifier(
         fakes["document_texts"],
         fakes["documents"],
         fakes["passages"],
         fakes["verification"],
+        fakes["claims"],
         tmp_path,
     )
 
@@ -138,6 +151,38 @@ def _for(entry_id: str, report) -> list[str]:
     return [
         finding.rule_id for finding in report.findings if finding.citation_id == entry_id
     ]
+
+class TestClaimRefs:
+    @pytest.mark.asyncio
+    async def test_known_refs_have_no_finding_and_resolve_as_one_set(self, tmp_path):
+        claims = FakeClaims({"KNOWN-001", "KNOWN-002"})
+        report = await _verifier(tmp_path, claims=claims).verify_work(
+            "essay.md",
+            "review",
+            _work=_work(claims=["KNOWN-001", "KNOWN-002"]),
+        )
+
+        assert "AUTH_CLAIM_UNRESOLVED" not in {
+            finding.rule_id for finding in report.findings
+        }
+        assert claims.calls == [["KNOWN-001", "KNOWN-002"]]
+
+    @pytest.mark.asyncio
+    async def test_unknown_ref_is_an_error(self, tmp_path):
+        report = await _verifier(tmp_path).verify_work(
+            "essay.md",
+            "review",
+            _work=_work(claims=["MISSING-001"]),
+        )
+
+        unresolved = [
+            finding
+            for finding in report.findings
+            if finding.rule_id == "AUTH_CLAIM_UNRESOLVED"
+        ]
+        assert len(unresolved) == 1
+        assert unresolved[0].severity == "error"
+        assert report.gate.blockers == ["AUTH_CLAIM_UNRESOLVED"]
 
 
 class TestEachFinding:
@@ -264,18 +309,6 @@ class TestEachFinding:
 
         assert _for("c7", report) == ["AUTH_CITATION_MARKER_DANGLING"]
 
-    @pytest.mark.asyncio
-    async def test_unresolved_claim_is_info(self, tmp_path):
-        report = await _verifier(tmp_path).verify_work(
-            "essay.md", _work=_work(claims=["TEST-001"])
-        )
-
-        assert _for("c1", report) == []
-        assert [finding.rule_id for finding in report.findings] == [
-            "AUTH_CLAIM_UNRESOLVED"
-        ]
-        assert report.findings[0].severity == "info"
-        assert report.gate.passed
 
     @pytest.mark.asyncio
     async def test_clean_entry_reports_its_tier(self, tmp_path):

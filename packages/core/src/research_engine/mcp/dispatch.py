@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from mcp import types
 
-from research_engine.domain.errors import PermissionDenied
 from research_engine.mcp.catalog import ToolCatalog
 from research_engine.mcp.errors import envelope, failed
 from research_engine.mcp.tools import (
+    anchor_context,
     citations,
+    claim_audit,
+    claim_upsert,
     corpus_stats,
     events,
     extract,
@@ -55,6 +57,7 @@ from research_engine.mcp.tools import (
     work_validate,
     work_verify,
 )
+from research_engine_sdk import PermissionDenied
 
 if TYPE_CHECKING:
     from mcp.server.lowlevel.server import Server
@@ -107,10 +110,13 @@ CORE_TOOL_MODULES = [
     corpus_stats,
     llm_usage,
     citations,
+    anchor_context,
+    claim_audit,
     upsert_entity,
     upsert_event,
     verify_quote,
     upsert_edge,
+    claim_upsert,
     list_filters,
     search_sources,
     ingest_execute,

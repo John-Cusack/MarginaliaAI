@@ -9,15 +9,14 @@ import sqlalchemy as sa
 
 from research_engine.domain.filter_extension import FilterExtension
 from research_engine.domain.passages import SearchFilters
-from research_engine.plugins.manifest import (
-    FilterExtensionContribution,
-    PluginContributions,
-    parse_manifest,
-)
 from research_engine.plugins.registry import PluginRegistry
 from research_engine.services.search.filter_extensions import (
     EventDateRangeFilter,
     HasExtractionFilter,
+)
+from research_engine_sdk import (
+    FilterExtensionContribution,
+    PluginContributions,
 )
 
 # ---------- Helpers ----------
@@ -130,39 +129,6 @@ class TestManifestFilterExtensions:
         )
         assert len(c.filter_extensions) == 1
 
-    def test_parse_yaml_with_filter_extensions(self, tmp_path):
-        yaml_content = """
-name: test-plugin
-version: 0.1.0
-author: Test
-description: Test plugin
-
-provides:
-  filter_extensions:
-    - id: my_filter
-      entry: "mod:MyFilter"
-      description: "A custom filter."
-"""
-        manifest_path = tmp_path / "pack.yaml"
-        manifest_path.write_text(yaml_content)
-
-        m = parse_manifest(manifest_path)
-        assert len(m.provides.filter_extensions) == 1
-        assert m.provides.filter_extensions[0].id == "my_filter"
-        assert m.provides.filter_extensions[0].entry == "mod:MyFilter"
-
-    def test_parse_yaml_without_filter_extensions(self, tmp_path):
-        yaml_content = """
-name: test-plugin
-version: 0.1.0
-author: Test
-description: Test plugin
-"""
-        manifest_path = tmp_path / "pack.yaml"
-        manifest_path.write_text(yaml_content)
-
-        m = parse_manifest(manifest_path)
-        assert m.provides.filter_extensions == []
 
 
 # ---------- SearchFilters ----------

@@ -233,23 +233,228 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
             previous = os.environ.get("RE_DB_URL")
             os.environ["RE_DB_URL"] = scratch
             try:
-                await asyncio.to_thread(command.upgrade, config, "head")
-                async with engine.connect() as conn:
-                    edition_columns = {
-                        row[0]
-                        for row in (
+                await asyncio.to_thread(
+                    command.upgrade, config, "017_vector_index_restore"
+                )
+                document_id = "11111111-1111-1111-1111-111111111111"
+                span_id = "22222222-2222-2222-2222-222222222222"
+                claim_id = "33333333-3333-3333-3333-333333333333"
+                anchor_id = "44444444-4444-4444-4444-444444444444"
+                edition_id = "55555555-5555-5555-5555-555555555555"
+                edition_key = "MIGRATION-018-EDITION"
+                plugin_ids = [
+                    "logos",
+                    "academic-journal",
+                    "kindle",
+                    "yourcloudlibrary",
+                    "history",
+                ]
+                legacy_rows = [
+                    {
+                        "id": plugin_id,
+                        "version": f"0.{index}.0",
+                        "source_url": f"https://example.test/{plugin_id}.git",
+                        "source_ref": f"commit-{index}",
+                        "manifest": {
+                            "name": plugin_id,
+                            "provides": {"mcp_tools": [{"id": f"{plugin_id}.tool"}]},
+                        },
+                        "permissions": {
+                            "network": "none",
+                            "llm": plugin_id == "history",
+                        },
+                    }
+                    for index, plugin_id in enumerate(plugin_ids, start=1)
+                ]
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        sa.text(
+                            "INSERT INTO core.documents "
+                            "(id, document_type, source, content_hash, parser, parser_version) "
+                            "VALUES (:id, 'book', 'migration-fixture', "
+                            "decode(repeat('00', 32), 'hex'), 'test', '1')"
+                        ),
+                        {"id": document_id},
+                    )
+                    await conn.execute(
+                        sa.text(
+                            "INSERT INTO evidence.source_spans "
+                            "(id, document_id, char_start, char_end, quoted_text) "
+                            "VALUES (:id, :document_id, 0, 8, 'evidence')"
+                        ),
+                        {"id": span_id, "document_id": document_id},
+                    )
+                    await conn.execute(
+                        sa.text(
+                            "INSERT INTO argument.claims "
+                            "(id, ref, statement, kind) "
+                            "VALUES (:id, 'MIGRATION-018', 'Migration fixture.', 'premise')"
+                        ),
+                        {"id": claim_id},
+                    )
+                    await conn.execute(
+                        sa.text(
+                            "INSERT INTO bibliography.editions (id, edition_key) "
+                            "VALUES (:id, :edition_key)"
+                        ),
+                        {"id": edition_id, "edition_key": edition_key},
+                    )
+                    await conn.execute(
+                        sa.text(
+                            "INSERT INTO argument.anchors "
+                            "(id, claim_id, role, source_span_id, quoted_text, "
+                            "verify_status, edition_key, edition) "
+                            "VALUES (:id, :claim_id, 'supports', :span_id, "
+                            "'evidence', 'exact', :edition_key, 'legacy text')"
+                        ),
+                        {
+                            "id": anchor_id,
+                            "claim_id": claim_id,
+                            "span_id": span_id,
+                            "edition_key": edition_key,
+                        },
+                    )
+                    await conn.execute(
+                        sa.text(
+                            "INSERT INTO core.installed_packs "
+                            "(id, version, source_url, source_ref, enabled, "
+                            "manifest, permissions_granted) "
+                            "VALUES (:id, :version, :source_url, :source_ref, true, "
+                            "CAST(:manifest AS json), CAST(:permissions AS json))"
+                        ),
+                        [
+                            {
+                                **row,
+                                "manifest": json.dumps(row["manifest"]),
+                                "permissions": json.dumps(row["permissions"]),
+                            }
+                            for row in legacy_rows
+                        ],
+                    )
+
+                async def anchor_schema() -> tuple[set[str], int, int]:
+                    async with engine.connect() as conn:
+                        columns = {
+                            row[0]
+                            for row in (
+                                await conn.execute(
+                                    sa.text(
+                                        "SELECT column_name "
+                                        "FROM information_schema.columns "
+                                        "WHERE table_schema = 'argument' "
+                                        "AND table_name = 'anchors'"
+                                    )
+                                )
+                            ).all()
+                        }
+                        index_count = (
                             await conn.execute(
                                 sa.text(
-                                    "SELECT column_name "
-                                    "FROM information_schema.columns "
-                                    "WHERE table_schema = 'bibliography' "
-                                    "AND table_name = 'editions'"
+                                    "SELECT count(*) FROM pg_indexes "
+                                    "WHERE schemaname = 'argument' "
+                                    "AND indexname = 'anchors_edition_idx'"
                                 )
                             )
-                        ).all()
-                    }
-                assert "edition_key" in edition_columns
-                assert "zotero_key" not in edition_columns
+                        ).scalar_one()
+                        fk_count = (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT count(*) FROM pg_constraint "
+                                    "WHERE conname = 'anchors_edition_id_fk' "
+                                    "AND conrelid = 'argument.anchors'::regclass"
+                                )
+                            )
+                        ).scalar_one()
+                    return columns, index_count, fk_count
+
+                async def assert_upgraded() -> None:
+                    columns, index_count, fk_count = await anchor_schema()
+                    assert "edition_id" in columns
+                    assert "edition" not in columns
+                    assert index_count == 1
+                    assert fk_count == 1
+                    async with engine.connect() as conn:
+                        stored = (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT edition_id FROM argument.anchors "
+                                    "WHERE id = :id"
+                                ),
+                                {"id": anchor_id},
+                            )
+                        ).scalar_one()
+                    assert str(stored) == edition_id
+                    async with engine.connect() as conn:
+                        plugin_rows = (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT plugin_id, distribution_version, "
+                                    "legacy_source_url, legacy_source_ref, enabled, state, "
+                                    "manifest, permissions_granted "
+                                    "FROM core.plugin_activations ORDER BY plugin_id"
+                                )
+                            )
+                        ).mappings().all()
+                    assert len(plugin_rows) == 5
+                    expected = {row["id"]: row for row in legacy_rows}
+                    for row in plugin_rows:
+                        original = expected[row["plugin_id"]]
+                        assert row["distribution_version"] == original["version"]
+                        assert row["legacy_source_url"] == original["source_url"]
+                        assert row["legacy_source_ref"] == original["source_ref"]
+                        assert row["enabled"] is False
+                        assert row["state"] == "legacy"
+                        assert row["manifest"] == original["manifest"]
+                        assert row["permissions_granted"] == original["permissions"]
+
+                async def assert_downgraded() -> None:
+                    columns, index_count, fk_count = await anchor_schema()
+                    assert "edition" in columns
+                    assert "edition_id" not in columns
+                    assert index_count == 0
+                    assert fk_count == 0
+                    async with engine.connect() as conn:
+                        plugin_rows = (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT id, version, source_url, source_ref, "
+                                    "manifest, permissions_granted "
+                                    "FROM core.installed_packs ORDER BY id"
+                                )
+                            )
+                        ).mappings().all()
+                    assert len(plugin_rows) == 5
+                    expected = {row["id"]: row for row in legacy_rows}
+                    for row in plugin_rows:
+                        original = expected[row["id"]]
+                        assert row["version"] == original["version"]
+                        assert row["source_url"] == original["source_url"]
+                        assert row["source_ref"] == original["source_ref"]
+                        assert row["manifest"] == original["manifest"]
+                        assert row["permissions_granted"] == original["permissions"]
+
+                await asyncio.to_thread(command.upgrade, config, "head")
+                await assert_upgraded()
+                with pytest.raises(IntegrityError):
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            sa.text(
+                                "DELETE FROM bibliography.editions WHERE id = :id"
+                            ),
+                            {"id": edition_id},
+                        )
+
+                await asyncio.to_thread(
+                    command.downgrade, config, "017_vector_index_restore"
+                )
+                await assert_downgraded()
+                await asyncio.to_thread(command.upgrade, config, "head")
+                await assert_upgraded()
+                await asyncio.to_thread(
+                    command.downgrade, config, "017_vector_index_restore"
+                )
+                await assert_downgraded()
+
                 await asyncio.to_thread(command.downgrade, config, "008_passage_node")
                 async with engine.connect() as conn:
                     schemas = (

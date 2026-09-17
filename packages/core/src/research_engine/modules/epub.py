@@ -66,8 +66,14 @@ class EPUBModule:
 
     @staticmethod
     def _extract(source_path: Path) -> tuple[str, str, dict]:
-        from bs4 import BeautifulSoup
-        from ebooklib import epub
+        try:
+            from bs4 import BeautifulSoup
+            from ebooklib import epub
+        except ImportError as exc:
+            raise RuntimeError(
+                "EPUB parsing support is not installed. Install "
+                "research-engine[documents]."
+            ) from exc
 
         # ebooklib defaults to ignore_ncx=True, which discards the EPUB2 table
         # of contents. We want it: the NCX carries the book's own chapter

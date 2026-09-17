@@ -143,7 +143,13 @@ class TEIXMLModule:
 
     @staticmethod
     def _extract(source_path: Path) -> tuple[str, str, dict]:
-        from lxml import etree
+        try:
+            from lxml import etree
+        except ImportError as exc:
+            raise RuntimeError(
+                "TEI XML parsing support is not installed. Install "
+                "research-engine[documents]."
+            ) from exc
 
         tree = etree.parse(str(source_path))  # noqa: S320
         root = tree.getroot()

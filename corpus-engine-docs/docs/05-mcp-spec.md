@@ -1,14 +1,14 @@
 # 05 — MCP Tool Specification
 
-> **Status (2026-09-09): this is the original design specification, and the
-> implemented surface has outgrown it.** Measured on this date: **39** core
+> **Status (2026-09-15): this is the original design specification, and the
+> implemented surface has outgrown it.** Measured on this date: **41** core
 > tools are registered; **22** core tool names are described here, of which only
 > **17** exist. So the drift runs both ways.
 >
-> **Registered but undescribed (22):** `verify_quote`, `read_node`,
-> `locate_passage`, `get_document_outline`, `find_lemma`, `search_sources`,
-> `ingest_execute`, `citations`, `llm_usage`, `list_available_filters`, and the
-> twelve `work_*` tools.
+> **Registered but undescribed (24):** `verify_quote`, `anchor_context`,
+> `claim_upsert`, `read_node`, `locate_passage`, `get_document_outline`,
+> `find_lemma`, `search_sources`, `ingest_execute`, `citations`, `llm_usage`,
+> `list_available_filters`, and the twelve `work_*` tools.
 >
 > **Described but not registered (5):** `annotate_document` and
 > `annotate_passage` were never built. `list_entity_types` and

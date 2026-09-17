@@ -6,13 +6,13 @@ It ingests heterogeneous sources (PDFs, EPUBs, HTML, Markdown, TEI-XML, and more
 
 > This file orients. Where it names something the code declares — commands,
 > tools, installed packs — the code is authoritative: `research-engine --help`,
-> each pack's `pack.yaml`, and the migrations themselves.
+> each plugin's `plugin.yaml`, and the migrations themselves.
 
 ## Status
 
 A running system with a populated corpus, not a scaffold. The schema is at
-migration head `017`. For live counts, and the models and packs this engine is
-currently wired to:
+migration head `019_plugin_activations`. For live counts, and the models and
+plugins this engine is currently wired to:
 
 ```bash
 uv run research-engine status
@@ -73,6 +73,13 @@ citation verifies `exact` or `normalized`. `near` means the quote was edited
 and needs re-anchoring; `not_found` means the citation is decoration rather
 than evidence, and does not ship.
 
+Claims use the same substrate. `claim_upsert` verifies and writes a claim, its
+edges, and its anchors atomically; an unfindable quote refuses the whole call,
+and an `asserts` anchor must name the person whose position it records.
+`anchor_context` and `work_citations(context=true)` return the surrounding
+canonical text, because matching characters alone does not prove a source bears
+the interpretation placed on them.
+
 Works are files under `works/` until their first freeze, then rows in
 `authored.*`. The `work_*` MCP tools and `research-engine work` cover the
 lifecycle; `research-engine work --help` lists it.
@@ -95,75 +102,104 @@ All settings use the `RE_` prefix. See `packages/core/src/research_engine/config
 
 ## Plugin System
 
-Corpus Engine is extended through **packs** — self-contained plugins that
-contribute document types, entity types, extraction schemas, MCP tools,
-ingestion modules, chunkers, filter extensions, and post-ingestion hooks.
+Corpus Engine discovers standard Python distributions through the
+`research_engine.plugins` entry-point group. Installing a wheel makes a plugin
+**available**; it does not import or enable the plugin. Core never runs pip,
+clones Git repositories, copies plugin code, or executes manifest setup
+commands.
 
 ```bash
-# Install from a git URL, or from a local directory
-uv run research-engine plugin install https://github.com/user/my-pack.git
-uv run research-engine plugin install packages/plugins/history --link
+# Install into the same environment as research-engine.
+python -m pip install research-engine-plugin-history
+# pipx users inject into the core environment.
+pipx inject research-engine research-engine-plugin-history
 
-# Inspect and manage what is installed
-uv run research-engine plugin list
-uv run research-engine plugin enable <name>
-uv run research-engine plugin disable <name>
-uv run research-engine plugin uninstall <name>
+# Inspect the static manifest before any plugin code is imported.
+research-engine plugin list
+research-engine plugin audit history
+research-engine plugin enable history
+
+# Upgrades require approval of the new version and manifest hash.
+python -m pip install --upgrade research-engine-plugin-history
+research-engine plugin approve-upgrade history
+
+# Disable, then let the environment's package manager uninstall.
+research-engine plugin disable history
+python -m pip uninstall research-engine-plugin-history
+research-engine plugin list        # reports the retained audit row as missing
+research-engine plugin forget history
 ```
 
-`--link` symlinks a local working tree instead of copying it, so edits take
-effect on the next server start with no reinstall. It is the mode to develop a
-pack in, and it has no meaning for a git URL.
+Editable installs replace the old link mode:
 
-Packs that ship with the engine live in
-[packages/plugins/](packages/plugins/README.md). They get no privileges from
-being in-tree — the loader resolves them through `~/.research-engine/plugins`
-like any other, and the same permission gating applies. Packs that wrap a
-third-party system, and so need their own release cadence, live in their own
-repositories. `plugin list` shows what is actually installed here.
+```bash
+python -m pip install -e packages/plugins/history
+research-engine plugin enable history
+```
 
-See [07-pack-system.md](corpus-engine-docs/docs/07-pack-system.md) for the full pack specification and SDK contract.
+Plugin code executes in the Research Engine process after approval. Scoped
+clients enforce the supported API and approved capabilities; they are not a
+sandbox against malicious Python. Install and enable only trusted plugins.
+Mutable plugin state is passed through `PluginContext.data_dir` under
+`~/.research-engine/plugin-data/`, never stored in site-packages.
 
-### Writing a Pack
+### Writing a Plugin
 
-A minimal pack needs a `pack.yaml` manifest and one or more tool handlers:
+A plugin keeps its schema-v2 manifest inside its top-level import package and
+publishes distribution identity, dependencies, authorship, license, and URLs
+through `pyproject.toml`.
+
+```toml
+[project]
+name = "research-engine-plugin-mypack"
+dependencies = ["research-engine-sdk>=0.6,<0.7"]
+
+[project.entry-points."research_engine.plugins"]
+mypack = "mypack"
+```
 
 ```yaml
-# pack.yaml
-name: my-pack
-version: "0.1.0"
-author: Your Name
-description: What this pack does
-
+# mypack/plugin.yaml
+schema_version: 2
+plugin_id: mypack
 requires:
-  core_api: ">=0.1.0,<1.0.0"
-
+  core_api: ">=0.6,<0.7"
+  python: ">=3.11"
+permissions:
+  network: none
+  filesystem: plugin_data
 provides:
   mcp_tools:
     - id: mypack.my_tool
-      entry: "mypack.tools.my_tool:handler"
-      description: What the tool does
+      entry: mypack.tools.my_tool:handler
+      description: What the tool does.
+      input_schema:
+        type: object
+        properties:
+          query: {type: string}
+        required: [query]
 ```
 
-> The top-level Python package name (`mypack` above) must be globally unique
-> across installed packs and must not shadow a stdlib module (`code`, `json`,
-> …) — name it after your pack. The loader rejects collisions to prevent one
-> pack silently importing another's code.
-
-Tool handlers receive scoped clients for core services:
+Tool handlers import only the standalone SDK:
 
 ```python
-from research_engine.plugins.sdk import tool
+from research_engine_sdk import CorpusClient, tool
 
 @tool(
     id="mypack.my_tool",
     description="What the tool does",
-    input_schema={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    input_schema={
+        "type": "object",
+        "properties": {"query": {"type": "string"}},
+        "required": ["query"],
+    },
 )
-async def handler(query: str, corpus=None, entity=None, **kwargs):
-    results = await corpus.find_passages(query, k=10)
-    return {"results": results}
+async def handler(query: str, corpus: CorpusClient):
+    return await corpus.find_passages(query, k=10)
 ```
+
+See [packages/plugins/](packages/plugins/README.md) and the
+[distribution architecture](docs/design/pypi-plugin-distribution-architecture.md).
 
 ## Project Structure
 
@@ -191,6 +227,9 @@ packages/plugins/   # First-party packs that ship with the engine
 | [11-implementation-architecture.md](corpus-engine-docs/docs/11-implementation-architecture.md) | Implementation guide |
 | [docs/corpus-setup.md](docs/corpus-setup.md) | Ordered sequence for populating the Bible corpus |
 | [works/README.md](works/README.md) | The work file contract |
+| [docs/pypi-readiness.md](docs/pypi-readiness.md) | PyPI readiness assessment, blockers, and release checklist |
+| [docs/design/pypi-plugin-distribution-architecture.md](docs/design/pypi-plugin-distribution-architecture.md) | Proposed PyPI distribution, SDK, and plugin architecture |
+| [docs/implementation/pypi-plugin-migration/index.md](docs/implementation/pypi-plugin-migration/index.md) | Executable cross-repository PyPI/plugin migration runbooks |
 
 Vision, PRD, data model, roadmap and open questions are in
 [corpus-engine-docs/](corpus-engine-docs/); decision records and

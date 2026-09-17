@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.6.0 — 2026-09-17
+
+### Core and standalone SDK
+
+- Replaced the conditional SDK shim with the standalone, typed
+  `research-engine-sdk 0.6.0` contract: manifest v2, DTOs, scoped clients,
+  decorators, errors, chunking helpers, and plugin contract utilities.
+- Replaced Git/copy/runtime-pip plugin installation with no-import Python
+  entry-point discovery, exact artifact approval, atomic staged registration,
+  explicit plugin database migrations, and the distribution lifecycle CLI.
+- Added migration `019_plugin_activations`, preserving all legacy plugin
+  manifests, permissions, and source provenance as disabled audit rows.
+- Split local inference, normal documents, Docling, OpenAI, and the embed
+  server into explicit extras. The base artifact no longer requires Torch,
+  sentence-transformers, Docling, or OpenAI.
+
+### research-engine-plugin-history 0.2.0
+
+- Packaged history as the reference plugin distribution with a schema-v2
+  `history/plugin.yaml`, SDK-only runtime imports, packaged extraction schemas,
+  and complete schemas for both MCP tools.
+- Added wheel discovery, approval, atomic load, and standalone artifact
+  contract coverage.
+
+### The claim ledger has one atomic write path and a fidelity view
+
+`claim_upsert` now writes a claim, its outgoing edges, and its evidence anchors
+in one transaction. Every anchor is checked against canonical text before the
+transaction starts; `not_found` and `no_canonical_text` refuse the whole call,
+`asserts` anchors must name a person, and all writers resolve through the shared
+`evidence.source_spans` identity instead of inserting coordinates directly.
+The caller's typed quote and verification tier stay on the anchor while the
+span keeps the canonical slice and parser version.
+
+`anchor_context` reads the canonical text around a ledger anchor, every anchor
+on a claim, a work-file citation, or a bare source span, with the quotation's
+offset marked in the returned window. `work_citations(context=true)` exposes
+the same view for existing work citations, batching the text slices rather than
+loading whole documents. This is a fidelity check: verification proves the
+characters exist; context lets a reader judge whether the source bears the use.
+
+This implements the guide's currently ungated Steps 2–4. The audit rules,
+argument graph, leverage ranking, re-verification, and edition migration remain
+behind the real-ledger-row triggers the guide specifies; no placeholder methods
+or tools were added for them.
+
 ### Lemma lookup that produces citable references (`find_lemma`, migrations 015-017)
 
 `find_lemma` asks the question a lexicographic survey exists to ask — where

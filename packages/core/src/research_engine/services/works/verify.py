@@ -90,12 +90,14 @@ class WorkVerifier:
         documents: Any,
         passages: Any,
         verification: Any,
+        claims: Any,
         works_dir: Path,
     ) -> None:
         self._texts = document_texts
         self._documents = documents
         self._passages = passages
         self._verification = verification
+        self._claims = claims
         self._reader = WorkFileReader(works_dir)
 
     async def verify_all(self, gate: GateName = "none") -> VerifyOutput:
@@ -163,17 +165,17 @@ class WorkVerifier:
                     )
                 )
 
-        for ref in work.front_matter.claims:
-            findings.append(
-                Finding(
-                    rule_id="AUTH_CLAIM_UNRESOLVED",
-                    severity="info",
-                    message=(
-                        f"Claim ref {ref} has no argument.claims row "
-                        "(the ledger does not exist yet; grep-able only)"
-                    ),
+        claim_refs = work.front_matter.claims
+        existing_refs = await self._claims.existing_refs(claim_refs)
+        for ref in claim_refs:
+            if ref not in existing_refs:
+                findings.append(
+                    Finding(
+                        rule_id="AUTH_CLAIM_UNRESOLVED",
+                        severity="error",
+                        message=f"Claim ref {ref} has no argument.claims row.",
+                    )
                 )
-            )
 
         if work.front_matter.status.value == "published" and not _gate_passes(
             findings, "publish"

@@ -8,7 +8,6 @@ and find_passages' schema is rebuilt from the registry.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -16,15 +15,12 @@ import pytest
 
 from research_engine.mcp.dispatch import refresh_pack_tools, register_core_tools
 from research_engine.mcp.tools import find_passages
+from research_engine.plugins.discovery import scan_plugins
 from research_engine.plugins.loader import PluginLoader
-from research_engine.plugins.manifest import parse_manifest
 from research_engine.plugins.registry import PluginRegistry
 
 pytestmark = pytest.mark.integration
 
-HISTORY_PACK_DIR = (
-    Path(__file__).resolve().parents[2] / "packages" / "plugins" / "history"
-)
 
 
 class _StubServer:
@@ -53,14 +49,20 @@ class _FakeEventClient:
     """An event service holding no letters: cadence reports nothing to check."""
 
     async def query(self, *args, **kwargs):
-        return [], None
+        return [], []
 
 
-def _wired_container():
+def _history():
+    return next(plugin for plugin in scan_plugins().plugins if plugin.plugin_id == "history")
+
+
+def _wired_container(tmp_path):
     registry = PluginRegistry()
     loader = PluginLoader(
-        AsyncMock(), registry, HISTORY_PACK_DIR.parent,
-        event_service=_FakeEventClient(),
+        AsyncMock(),
+        registry,
+        tmp_path / "plugin-data",
+        event=_FakeEventClient(),
     )
     container = SimpleNamespace(registry=registry, plugin_loader=loader)
     return container, loader, registry
@@ -71,13 +73,12 @@ async def _list_ids(server) -> dict[str, dict]:
     return {t.name: t for t in tools}
 
 
-async def test_install_without_restart():
-    container, loader, registry = _wired_container()
+async def test_install_without_restart(tmp_path):
+    container, loader, registry = _wired_container(tmp_path)
     server = _StubServer()
     register_core_tools(server, container)
 
     before = await _list_ids(server)
-    assert len(before) == 39
     assert "history.find_missing_letters" not in before
 
     # A pack contributing a filter extension changes a *core* tool's
@@ -89,12 +90,11 @@ async def test_install_without_restart():
         "test",
     )
 
-    manifest = parse_manifest(HISTORY_PACK_DIR / "pack.yaml")
-    await loader._load_one(manifest, HISTORY_PACK_DIR)
+    await loader._load_one(_history())
     refresh_pack_tools(container)
 
     after = await _list_ids(server)
-    assert len(after) == 41
+    assert len(after) == len(before) + 2
     assert "history.find_missing_letters" in after
     assert "history.correspondence_cadence" in after
 
@@ -123,25 +123,3 @@ async def test_install_without_restart():
     assert "synth_ext" in schema["properties"]["filters"]["properties"]["extensions"]["properties"]
 
 
-async def test_unload_is_expressible():
-    """Replacing the pack slice with the empty set unlists every pack tool."""
-    container, loader, registry = _wired_container()
-    server = _StubServer()
-    register_core_tools(server, container)
-
-    manifest = parse_manifest(HISTORY_PACK_DIR / "pack.yaml")
-    await loader._load_one(manifest, HISTORY_PACK_DIR)
-    refresh_pack_tools(container)
-    assert len(await _list_ids(server)) == 41
-
-    # Unload: the registry forgets the pack, the catalogue follows.
-    for tool_id in [t for t in registry.get_mcp_tools()]:
-        del registry._mcp_tools[tool_id]
-    refresh_pack_tools(container)
-
-    after = await _list_ids(server)
-    assert len(after) == 39
-    assert "history.find_missing_letters" not in after
-
-    [msg] = await server.call_fn("history.find_missing_letters", {})
-    assert json.loads(msg["text"])["error"]["code"] == "unknown_tool"

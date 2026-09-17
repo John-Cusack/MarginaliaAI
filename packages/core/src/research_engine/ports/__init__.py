@@ -12,10 +12,10 @@ from research_engine.ports.repositories import (
     ExtractionRepo,
     ExtractionSchemaRepo,
     IngestionRunRepo,
-    InstalledPluginRepo,
     LLMCallLogRepo,
     MentionRepo,
     PassageRepo,
+    PluginActivationRepo,
 )
 from research_engine.ports.reranker import RerankerPort
 
@@ -30,7 +30,7 @@ __all__ = [
     "ExtractionSchemaRepo",
     "HttpPort",
     "IngestionRunRepo",
-    "InstalledPluginRepo",
+    "PluginActivationRepo",
     "LLMCallLogRepo",
     "LLMPort",
     "MentionRepo",

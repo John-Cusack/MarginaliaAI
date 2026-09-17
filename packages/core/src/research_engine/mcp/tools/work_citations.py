@@ -15,9 +15,11 @@ logger = structlog.get_logger()
 TOOL_NAME = "work_citations"
 TOOL_DESCRIPTION = (
     "Find the works citing a source: by document id, by edition key, or the "
-    "works resting on a claim ref. Exactly one selector. In Phase 0 this scans "
-    "the work files; once the Step 4 mirror exists the same call queries it "
-    "and says so in `source`."
+    "works resting on a claim ref. Exactly one selector. Set context=true to "
+    "read the canonical text around each span citation and assess fidelity, "
+    "not merely quotation existence. In Phase 0 this scans the work files; "
+    "once the Step 4 mirror exists the same call queries it and says so in "
+    "`source`."
 )
 TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -35,6 +37,11 @@ TOOL_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "Only works resting on this claim ref.",
         },
+        "context": {
+            "type": "boolean",
+            "default": False,
+            "description": "Include canonical text around each span citation.",
+        },
     },
 }
 
@@ -45,6 +52,7 @@ async def handler(
     document_id: str | None = None,
     edition_key: str | None = None,
     claim_ref: str | None = None,
+    context: bool = False,
 ) -> dict[str, Any]:
     reader = getattr(container, "work_files", None)
     if reader is None:
@@ -65,6 +73,31 @@ async def handler(
         result = await finder.find(
             document_id=doc_uuid, edition_key=edition_key, claim_ref=claim_ref
         )
+        if context:
+            indexed = [
+                (
+                    index,
+                    UUID(match["document_id"]),
+                    match["char_start"],
+                    match["char_end"],
+                )
+                for index, match in enumerate(result["matches"])
+                if match.get("document_id") is not None
+                and match.get("char_start") is not None
+                and match.get("char_end") is not None
+            ]
+            contexts = await container.anchor_context_service.many_for_coordinates(
+                [
+                    (document_id, char_start, char_end)
+                    for _, document_id, char_start, char_end in indexed
+                ]
+            )
+            for (index, _, _, _), item_context in zip(
+                indexed, contexts, strict=True
+            ):
+                result["matches"][index]["context"] = item_context.model_dump(
+                    mode="json"
+                )
         if getattr(container, "works_mirror_available", False):
             result["source"] = "mirror"
         return result

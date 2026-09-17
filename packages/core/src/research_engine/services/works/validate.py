@@ -7,10 +7,9 @@ at `freeze` and `publish` every unwaived error blocks, and waivers — rows
 naming a rule, an optional subject, and who answers for it — clear the
 finding they name.
 
-What is deliberately absent: claim refs. Rows hold no `claims:` — the ledger
-has no `claim_upsert` yet, and the only claim refs in the system are front
-matter carried in `metadata.port` — so `AUTH_CLAIM_UNRESOLVED` has nothing to
-resolve against and is not emitted (guide Appendix F).
+Row-level claim refs are deliberately absent. No import, flip, or creation path
+persists file front matter in a canonical revision field, so validation does not
+invent a metadata key. File refs are resolved by ``WorkVerifier``.
 """
 
 from __future__ import annotations
@@ -66,6 +65,7 @@ _DEFAULT_SEVERITY: dict[str, str] = {
     "AUTH_BLOCK_UNGROUNDED": "warning",
     "AUTH_UNUSED_CITATION": "warning",
     "AUTH_FILE_DRIFT": "warning",
+    "AUTH_LICENSE_EXPORT": "warning",
 }
 
 
@@ -188,9 +188,20 @@ class WorkValidationService:
             if drift is not None:
                 findings.append(drift)
         for finding in findings:
-            finding.severity = resolve_severity(
-                self._policy, work.work_type, finding.rule_id, finding.severity
+            default = finding.severity
+            if finding.rule_id == "AUTH_LICENSE_EXPORT":
+                default = "error" if gate == "publish" else "warning"
+            configured = resolve_severity(
+                self._policy, work.work_type, finding.rule_id, default
             )
+            if finding.rule_id == "AUTH_LICENSE_EXPORT":
+                finding.severity = (
+                    "error"
+                    if default == "error" or configured == "error"
+                    else "warning"
+                )
+            else:
+                finding.severity = configured
         findings = [
             finding for finding in findings
             if finding.severity in ("error", "warning")
@@ -362,6 +373,7 @@ class _Checker:
                         "block, not the one rendered with it",
                     )
             await self._check_block(item)
+        self._check_license_quota()
         await self._check_revision()
         return self._findings
 
@@ -519,6 +531,45 @@ class _Checker:
                     block_key=str(block.block_key),
                     message="The block's parent is in another revision",
                 )
+
+    def _check_license_quota(self) -> None:
+        totals: dict[UUID, int] = {}
+        citation_keys: dict[UUID, set[str]] = {}
+        seen_items: set[tuple[UUID, int]] = set()
+        for block in self._view.blocks:
+            for entry in block.citations:
+                key = str(entry.occurrence.citation_key)
+                for row in entry.items:
+                    item_key = (row.occurrence_id, row.position)
+                    if item_key in seen_items or row.quoted_text is None:
+                        continue
+                    seen_items.add(item_key)
+                    if row.source_span_id is None:
+                        continue
+                    span = self._view.spans.get(row.source_span_id)
+                    if span is None:
+                        continue
+                    totals[span.document_id] = (
+                        totals.get(span.document_id, 0) + len(row.quoted_text)
+                    )
+                    citation_keys.setdefault(span.document_id, set()).add(key)
+        for document_id, total in sorted(totals.items(), key=lambda item: str(item[0])):
+            if total <= MAX_QUOTE_CHARS:
+                continue
+            self._add(
+                "AUTH_LICENSE_EXPORT",
+                "warning",
+                message=(
+                    f"Stored quotations copy {total} characters from document "
+                    f"{document_id}, above the {MAX_QUOTE_CHARS}-character cap"
+                ),
+                detail={
+                    "document_id": str(document_id),
+                    "quoted_characters": total,
+                    "cap": MAX_QUOTE_CHARS,
+                    "citation_keys": sorted(citation_keys[document_id]),
+                },
+            )
 
     async def _check_revision(self) -> None:
         revision = self._view.revision

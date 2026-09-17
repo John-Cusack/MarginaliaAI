@@ -8,6 +8,7 @@ rejected by the composite foreign key before any application code runs.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -65,9 +66,7 @@ class PGWorkBlockRepo:
             ).first()
             assert row is not None
             return self._to_domain(row)
-        if expected_updated_at is None or str(existing.updated_at) != str(
-            expected_updated_at
-        ):
+        if not _same_updated_at(existing.updated_at, expected_updated_at):
             raise StaleWriteError(
                 f"Block {existing.id} changed under you: re-read and retry."
             )
@@ -185,3 +184,12 @@ class PGWorkBlockRepo:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+
+def _same_updated_at(actual: datetime, expected: Any) -> bool:
+    if isinstance(expected, str):
+        try:
+            expected = datetime.fromisoformat(expected.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    return actual == expected

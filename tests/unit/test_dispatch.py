@@ -161,7 +161,7 @@ class TestPermissionDenied:
         body = json.loads(msg["text"])
         assert body["error"]["code"] == "permission_denied"
         assert body["error"]["details"] == {"plugin": "test_pack", "permission": "llm"}
-        assert "pack.yaml" in body["error"]["message"]
+        assert "plugin.yaml" in body["error"]["message"]
 
     async def test_core_handler_denial_returns_permission_denied(
         self, monkeypatch

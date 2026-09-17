@@ -6,9 +6,10 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from research_engine.domain.common import FusionMode
+from research_engine_sdk import PassageDraft as PassageDraft
 
 
 class Passage(BaseModel):
@@ -32,47 +33,6 @@ class Passage(BaseModel):
     created_at: datetime
 
 
-class PassageDraft(BaseModel):
-    """Data needed to create a passage record.
-
-    ``char_start`` / ``char_end`` are the passage's span in the document's
-    canonical text, and are required: they are the address every other feature
-    hangs off — pin-cites, quote verification, annotations, re-chunking. The
-    contract every chunker must satisfy is::
-
-        draft.text == canonical_text[draft.char_start:draft.char_end]
-
-    ``locator`` stays for type-specific extras (page, verse, timecode) that are
-    meaningful to a reader but not usable as an address.
-    """
-
-    position: int
-    char_start: int
-    char_end: int
-    locator: dict[str, Any] = Field(default_factory=dict)
-    text: str
-    token_count: int | None = None
-    chunker: str
-    chunker_version: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    #: Resolved after the document tree is written, since node ids do not
-    #: exist while a chunker is running.
-    node_id: UUID | None = None
-
-    @model_validator(mode="after")
-    def _span_is_well_formed(self) -> PassageDraft:
-        if self.char_start < 0:
-            raise ValueError(f"char_start must be non-negative, got {self.char_start}")
-        if self.char_end < self.char_start:
-            raise ValueError(
-                f"char_end ({self.char_end}) precedes char_start ({self.char_start})"
-            )
-        if self.char_end - self.char_start != len(self.text):
-            raise ValueError(
-                f"span width {self.char_end - self.char_start} does not match "
-                f"text length {len(self.text)} — the span and the text disagree"
-            )
-        return self
 
 
 class PassageWindow(BaseModel):

@@ -15,6 +15,15 @@ if TYPE_CHECKING:
         CitationOccurrence,
         OccurrenceDraft,
     )
+    from research_engine.domain.claims import (
+        Anchor,
+        AnchorDraft,
+        Claim,
+        ClaimAuditReport,
+        ClaimDraft,
+        ClaimEdge,
+        ClaimRelation,
+    )
     from research_engine.domain.documents import (
         Document,
         DocumentDraft,
@@ -42,9 +51,10 @@ if TYPE_CHECKING:
     from research_engine.domain.provenance import (
         IngestionItem,
         IngestionRun,
-        InstalledPlugin,
         LLMCall,
         LLMCallDraft,
+        PluginActivation,
+        PluginActivationState,
     )
     from research_engine.domain.spans import SourceSpan
     from research_engine.domain.works import (
@@ -166,6 +176,29 @@ class SourceSpanRepo(Protocol):
     async def for_document(self, document_id: UUID) -> list[SourceSpan]: ...
     async def stale(self, limit: int = 100) -> list[SourceSpan]: ...
 
+
+
+@runtime_checkable
+class ClaimRepo(Protocol):
+    async def upsert_claim(self, tx: Transaction, draft: ClaimDraft) -> Claim: ...
+    async def add_edge(
+        self,
+        tx: Transaction,
+        source_id: UUID,
+        target_id: UUID,
+        relation: ClaimRelation,
+        confidence: float | None = None,
+        note: str | None = None,
+    ) -> ClaimEdge: ...
+    async def add_anchor(
+        self, tx: Transaction, claim_id: UUID, draft: AnchorDraft
+    ) -> Anchor: ...
+    async def existing_refs(self, refs: list[str]) -> set[str]: ...
+    async def get_by_ref(self, ref: str) -> Claim | None: ...
+    async def anchors_for(self, claim_id: UUID) -> list[Anchor]: ...
+    async def anchor_by_id(self, anchor_id: UUID) -> Anchor | None: ...
+    async def edges_for(self, claim_id: UUID) -> list[ClaimEdge]: ...
+    async def audit(self, refs: list[str] | None = None) -> ClaimAuditReport: ...
 
 @runtime_checkable
 class EditionRepo(Protocol):
@@ -354,10 +387,27 @@ class IngestionRunRepo(Protocol):
 
 
 @runtime_checkable
-class InstalledPluginRepo(Protocol):
-    async def insert(self, plugin: InstalledPlugin) -> None: ...
-    async def get(self, plugin_id: str) -> InstalledPlugin | None: ...
-    async def list_enabled(self) -> list[InstalledPlugin]: ...
-    async def list_all(self) -> list[InstalledPlugin]: ...
-    async def set_enabled(self, plugin_id: str, enabled: bool) -> None: ...
+class PluginActivationRepo(Protocol):
+    async def save(self, activation: PluginActivation) -> None: ...
+    async def get(self, plugin_id: str) -> PluginActivation | None: ...
+    async def list_enabled(self) -> list[PluginActivation]: ...
+    async def list_all(self) -> list[PluginActivation]: ...
+    async def update_state(
+        self,
+        plugin_id: str,
+        state: PluginActivationState,
+        *,
+        enabled: bool | None = None,
+        last_error: str | None = None,
+        last_seen_at: Any | None = None,
+    ) -> None: ...
+    async def record_migration(
+        self,
+        plugin_id: str,
+        *,
+        revision: int,
+        status: str,
+        state: PluginActivationState,
+        last_error: str | None = None,
+    ) -> None: ...
     async def delete(self, plugin_id: str) -> None: ...

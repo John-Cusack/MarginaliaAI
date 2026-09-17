@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import enum
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from research_engine.domain.common import IngestionItemStatus, IngestionRunStatus
 
@@ -101,14 +102,53 @@ class IngestionItem(BaseModel):
     created_at: datetime
 
 
-class InstalledPlugin(BaseModel):
-    """Record of an installed plugin."""
+class PluginActivationState(enum.StrEnum):
+    available = "available"
+    enabled = "enabled"
+    disabled = "disabled"
+    pending_approval = "pending_approval"
+    missing = "missing"
+    incompatible = "incompatible"
+    error = "error"
+    legacy = "legacy"
 
-    id: str  # pack name
-    version: str
-    source_url: str
-    source_ref: str  # commit SHA
+
+class PluginActivation(BaseModel):
+    """Approval and runtime state for one installed plugin distribution."""
+
+    plugin_id: str
+    distribution_name: str | None = None
+    distribution_version: str
+    entry_point_name: str | None = None
+    manifest_sha256: str | None = None
+    manifest: dict[str, Any]
+    permissions_granted: dict[str, Any]
     installed_at: datetime
-    enabled: bool = True
-    manifest: dict[str, Any] = Field(default_factory=dict)
-    permissions_granted: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = False
+    state: PluginActivationState = PluginActivationState.legacy
+    approved_at: datetime | None = None
+    approved_non_interactive: bool = False
+    last_seen_at: datetime | None = None
+    last_error: str | None = None
+    provenance: dict[str, Any] | None = None
+    legacy_source_url: str | None = None
+    legacy_source_ref: str | None = None
+    database_revision: int | None = None
+    database_status: str | None = None
+
+    @model_validator(mode="after")
+    def _approved_rows_have_distribution_identity(self) -> PluginActivation:
+        if self.state is PluginActivationState.legacy:
+            return self
+        required = {
+            "distribution_name": self.distribution_name,
+            "entry_point_name": self.entry_point_name,
+            "manifest_sha256": self.manifest_sha256,
+            "approved_at": self.approved_at,
+        }
+        missing = [name for name, value in required.items() if value is None]
+        if missing:
+            raise ValueError(
+                "non-legacy plugin activation requires " + ", ".join(missing)
+            )
+        return self

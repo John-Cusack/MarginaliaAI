@@ -13,18 +13,23 @@ from research_engine.adapters.storage.postgres.repositories.authored import (
     PGWorkRepo,
     PGWorkRevisionRepo,
 )
+from research_engine.adapters.storage.postgres.repositories.claims import PGClaimRepo
 from research_engine.adapters.storage.postgres.repositories.spans import PGSourceSpanRepo
 from research_engine.adapters.storage.postgres.schema import (
+    claim_edges,
+    claims,
     documents,
     passages,
     source_spans,
     works,
 )
+from research_engine.domain.claims import ClaimDraft, ClaimKind
 from research_engine.domain.works import WorkDraft, WorkRevisionDraft
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
+    from research_engine.domain.claims import Claim
     from research_engine.domain.spans import SourceSpan
     from research_engine.domain.works import Work, WorkRevision
 
@@ -51,6 +56,7 @@ class Corpus:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._document_ids: list[UUID] = []
+        self._claim_ids: list[UUID] = []
         self._span_ids: list[UUID] = []
         self._extra: list[tuple[Any, UUID]] = []
 
@@ -155,6 +161,27 @@ class Corpus:
         self._span_ids.append(span_id)
         return span_id
 
+
+    async def add_claim(
+        self,
+        ref: str,
+        statement: str = "A claim under test.",
+        kind: ClaimKind = ClaimKind.PREMISE,
+    ) -> Claim:
+        """Create a claim whose edges and anchors cascade during cleanup."""
+        async with transaction(self._engine) as tx:
+            claim = await PGClaimRepo(self._engine).upsert_claim(
+                tx,
+                ClaimDraft(ref=ref, statement=statement, kind=kind),
+            )
+        self._claim_ids.append(claim.id)
+        return claim
+
+    def adopt_claim(self, claim_id: UUID) -> UUID:
+        """Track a claim written through the real claim service."""
+        self._claim_ids.append(claim_id)
+        return claim_id
+
     async def add_work(
         self, slug: str, title: str = "A work", work_type: str = "essay"
     ) -> tuple[Work, WorkRevision]:
@@ -178,16 +205,28 @@ class Corpus:
         return work, revision
 
     async def cleanup(self) -> None:
-        # Works first: they cascade to items and links, which RESTRICT the
-        # spans and editions below. Spans next: they RESTRICT their document.
-        # Documents next: their cascades clear the rows referencing tracked
-        # entities and schemas. The remaining extras (entities, editions, …)
-        # go last, unreferenced by then.
+        # Edges first: target_id is RESTRICT, so a multi-row claim delete cannot
+        # rely on the source-side cascade to run before the target check. Claims
+        # then cascade to anchors, freeing spans. Works follow, then spans,
+        # documents, and finally the remaining tracked entities and schemas.
         first = [(table, row_id) for table, row_id in self._extra if table is works]
         rest = [
             (table, row_id) for table, row_id in self._extra if table is not works
         ]
         async with self._engine.begin() as conn:
+            if self._claim_ids:
+                await conn.execute(
+                    claim_edges.delete().where(
+                        sa.or_(
+                            claim_edges.c.source_id.in_(self._claim_ids),
+                            claim_edges.c.target_id.in_(self._claim_ids),
+                        )
+                    )
+                )
+            if self._claim_ids:
+                await conn.execute(
+                    claims.delete().where(claims.c.id.in_(self._claim_ids))
+                )
             for table, row_id in reversed(first):
                 await conn.execute(table.delete().where(table.c.id == row_id))
             if self._span_ids:
@@ -200,6 +239,7 @@ class Corpus:
                 )
             for table, row_id in reversed(rest):
                 await conn.execute(table.delete().where(table.c.id == row_id))
+        self._claim_ids.clear()
         self._span_ids.clear()
         self._document_ids.clear()
         self._extra.clear()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from research_engine_sdk import PermissionDenied as PermissionDenied
+
 
 class ResearchEngineError(Exception):
     """Base for all engine errors."""
@@ -146,16 +148,6 @@ class PluginConflict(PluginError):
         )
 
 
-class PermissionDenied(PluginError):
-    """Plugin tried to use a capability it wasn't granted."""
-
-    def __init__(self, plugin: str, permission: str) -> None:
-        self.plugin = plugin
-        self.permission = permission
-        super().__init__(
-            f"Plugin '{plugin}' lacks permission '{permission}'. "
-            f"Add it to the permissions section of pack.yaml."
-        )
 
 
 class PluginConfigError(PluginError):

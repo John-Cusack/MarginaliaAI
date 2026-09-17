@@ -13,14 +13,14 @@ from typing import Any
 
 import structlog
 
-from research_engine.domain.source_search import (
+from research_engine.mcp.errors import failed
+from research_engine_sdk import (
     Availability,
     SourceMatch,
     SourceQuery,
     SourceSearchProvider,
     availability_rank,
 )
-from research_engine.mcp.errors import failed
 
 logger = structlog.get_logger()
 

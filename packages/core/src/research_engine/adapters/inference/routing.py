@@ -152,9 +152,7 @@ class InferenceBackends:
 
 def build_inference(settings: Settings) -> InferenceBackends:
     """Build embedding and reranking adapters according to the configured modes."""
-    from research_engine.adapters.embedding.local_bge import LocalBGEEmbedding
     from research_engine.adapters.embedding.remote_api import RemoteEmbeddingClient
-    from research_engine.adapters.reranker.local_bge import LocalBGEReranker
     from research_engine.adapters.reranker.noop import NoopReranker
     from research_engine.adapters.reranker.remote_api import RemoteReranker
 
@@ -177,6 +175,14 @@ def build_inference(settings: Settings) -> InferenceBackends:
     _local_cache: dict[str, EmbeddingPort] = {}
 
     def local_embedding() -> EmbeddingPort:
+        try:
+            from research_engine.adapters.embedding.local_bge import LocalBGEEmbedding
+        except ImportError as exc:
+            raise ConfigurationError(
+                "Local embedding support is not installed. Install "
+                "research-engine[local-inference] or set "
+                "RE_EMBEDDING_PROVIDER=remote_api."
+            ) from exc
         if "e" not in _local_cache:
             _local_cache["e"] = LocalBGEEmbedding(
                 settings.embedding_model, settings.embedding_dim
@@ -221,6 +227,14 @@ def build_inference(settings: Settings) -> InferenceBackends:
         reranker: RerankerPort = NoopReranker()
         rerank_summary = "reranking disabled"
     elif rerank_mode == "local_bge":
+        try:
+            from research_engine.adapters.reranker.local_bge import LocalBGEReranker
+        except ImportError as exc:
+            raise ConfigurationError(
+                "Local reranking support is not installed. Install "
+                "research-engine[local-inference], set "
+                "RE_RERANKER_PROVIDER=remote_api, or disable reranking."
+            ) from exc
         reranker = LocalBGEReranker(settings.reranker_model)
         rerank_summary = f"reranking local ({settings.reranker_model})"
     else:

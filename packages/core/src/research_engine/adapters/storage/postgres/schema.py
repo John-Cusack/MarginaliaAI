@@ -606,17 +606,33 @@ ingestion_items = sa.Table(
 
 sa.Index("ingestion_items_run_idx", ingestion_items.c.run_id)
 
-installed_packs = sa.Table(
-    "installed_packs",
+plugin_activations = sa.Table(
+    "plugin_activations",
     metadata,
-    sa.Column("id", sa.Text, primary_key=True),
-    sa.Column("version", sa.Text, nullable=False),
-    sa.Column("source_url", sa.Text, nullable=False),
-    sa.Column("source_ref", sa.Text, nullable=False),
+    sa.Column("plugin_id", sa.Text, primary_key=True),
+    sa.Column("distribution_name", sa.Text),
+    sa.Column("distribution_version", sa.Text, nullable=False),
+    sa.Column("entry_point_name", sa.Text),
+    sa.Column("manifest_sha256", sa.Text),
+    sa.Column("legacy_source_url", sa.Text),
+    sa.Column("legacy_source_ref", sa.Text),
     sa.Column("installed_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-    sa.Column("enabled", sa.Boolean, nullable=False, server_default="true"),
+    sa.Column("enabled", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.Column("state", sa.Text, nullable=False, server_default="legacy"),
     sa.Column("manifest", sa.JSON, nullable=False),
     sa.Column("permissions_granted", sa.JSON, nullable=False, server_default="{}"),
+    sa.Column("approved_at", sa.DateTime(timezone=True)),
+    sa.Column(
+        "approved_non_interactive",
+        sa.Boolean,
+        nullable=False,
+        server_default=sa.false(),
+    ),
+    sa.Column("last_seen_at", sa.DateTime(timezone=True)),
+    sa.Column("last_error", sa.Text),
+    sa.Column("provenance", sa.JSON),
+    sa.Column("database_revision", sa.Integer),
+    sa.Column("database_status", sa.Text),
 )
 
 # --- Evidence: cited addresses ---
@@ -730,7 +746,11 @@ anchors = sa.Table(
     sa.Column("verify_status", sa.Text),
     sa.Column("verified_at", sa.DateTime(timezone=True)),
     sa.Column("parser_version", sa.Text),
-    sa.Column("edition", sa.Text),
+    sa.Column(
+        "edition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
+    ),
     sa.Column("edition_key", sa.Text),
     sa.Column("locator", sa.JSON, nullable=False, server_default="{}"),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
@@ -747,6 +767,7 @@ anchors = sa.Table(
 
 sa.Index("anchors_claim_idx", anchors.c.claim_id)
 sa.Index("anchors_span_idx", anchors.c.source_span_id)
+sa.Index("anchors_edition_idx", anchors.c.edition_id)
 
 # --- Bibliography: the editions stub ---
 

@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import re
 
-from research_engine.domain.passages import PassageDraft
-from research_engine.services.ingestion.chunking.fixed_window import (
-    split_at_boundary,
-    trim_span,
-)
-from research_engine.services.text.tokens import (
+from research_engine_sdk import PassageDraft
+from research_engine_sdk.chunking import (
     approx_tokens,
     chars_per_token,
     min_chars_per_token,
+    split_at_boundary,
     token_budget_chars,
+    trim_span,
 )
 
 #: A paragraph is this chunker's unit, and it holds to that — but not past the

@@ -59,7 +59,13 @@ class PDFTextModule:
 
     @staticmethod
     def _extract(source_path: Path) -> tuple[str, str, dict]:
-        import fitz  # pymupdf
+        try:
+            import fitz  # pymupdf
+        except ImportError as exc:
+            raise RuntimeError(
+                "PDF text parsing support is not installed. Install "
+                "research-engine[documents]."
+            ) from exc
 
         doc = fitz.open(str(source_path))
         try:

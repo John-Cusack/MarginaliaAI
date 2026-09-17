@@ -5,6 +5,7 @@ from research_engine.adapters.storage.postgres.repositories.authored import (
     PGWorkRevisionRepo,
 )
 from research_engine.adapters.storage.postgres.repositories.citations import PGCitationRepo
+from research_engine.adapters.storage.postgres.repositories.claims import PGClaimRepo
 from research_engine.adapters.storage.postgres.repositories.document_texts import (
     PGDocumentTextRepo,
 )
@@ -22,7 +23,7 @@ from research_engine.adapters.storage.postgres.repositories.nodes import (
     PGDocumentNodeRepo,
 )
 from research_engine.adapters.storage.postgres.repositories.passages import PGPassageRepo
-from research_engine.adapters.storage.postgres.repositories.plugins import PGInstalledPluginRepo
+from research_engine.adapters.storage.postgres.repositories.plugins import PGPluginActivationRepo
 from research_engine.adapters.storage.postgres.repositories.provenance import (
     PGIngestionRunRepo,
     PGLLMCallLogRepo,
@@ -35,6 +36,7 @@ from research_engine.adapters.storage.postgres.repositories.work_blocks import (
 from research_engine.adapters.storage.postgres.repositories.work_links import PGWorkLinkRepo
 
 __all__ = [
+    "PGClaimRepo",
     "PGCitationRepo",
     "PGDocumentRepo",
     "PGDocumentNodeRepo",
@@ -46,7 +48,7 @@ __all__ = [
     "PGExtractionRepo",
     "PGExtractionSchemaRepo",
     "PGIngestionRunRepo",
-    "PGInstalledPluginRepo",
+    "PGPluginActivationRepo",
     "PGLLMCallLogRepo",
     "PGMentionRepo",
     "PGPassageRepo",

@@ -73,7 +73,13 @@ class TestTheReadmeMatchesWhatShips:
 
     def test_every_research_engine_command_it_names_exists(self) -> None:
         """The list that went stalest: five groups named, sixteen registered."""
-        named = set(re.findall(r"research-engine ([a-z][a-z-]*)", fenced_commands()))
+        named = set(
+            re.findall(
+                r"^\s*research-engine ([a-z][a-z-]*)",
+                fenced_commands(),
+                re.MULTILINE,
+            )
+        )
         unknown = named - cli_names()
         assert not unknown, (
             f"README shows commands the CLI does not register: {sorted(unknown)}"

@@ -19,6 +19,7 @@ import asyncio
 import json
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -27,17 +28,23 @@ from typer.testing import CliRunner
 
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.adapters.storage.postgres.repositories import (
+    PGClaimRepo,
+    PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
     PGPassageRepo,
+    PGSourceSpanRepo,
 )
 from research_engine.cli.work import work_app
 from research_engine.domain.common import FusionMode
 from research_engine.domain.passages import PassageDraft, SearchQuery
+from research_engine.mcp.tools import work_citations
+from research_engine.services.argument import AnchorContextService
 from research_engine.services.search.hit_source import HitSourceReader
 from research_engine.services.search.hybrid import HybridSearchService
 from research_engine.services.verification import QuoteVerifier
 from research_engine.services.works.citations import WorkCitationFinder
+from research_engine.services.works.files import WorkFileReader
 from research_engine.services.works.verify import WorkVerifier
 
 if TYPE_CHECKING:
@@ -101,6 +108,7 @@ def _verifier(engine: AsyncEngine, works_dir: Path) -> WorkVerifier:
         QuoteVerifier(
             PGDocumentTextRepo(engine), PGPassageRepo(engine), PGDocumentRepo(engine)
         ),
+        PGClaimRepo(engine),
         works_dir,
     )
 
@@ -134,9 +142,13 @@ async def test_verify_reports_each_finding(
     assert [finding.rule_id for finding in report.findings].count(
         "AUTH_CLAIM_UNRESOLVED"
     ) == 1
-    assert report.findings[-1].severity == "info"
+    assert report.findings[-1].severity == "error"
     assert not report.gate.passed
-    assert report.gate.blockers == ["AUTH_QUOTE_UNVERIFIED", "AUTH_SPAN_NOT_NARROWED"]
+    assert report.gate.blockers == [
+        "AUTH_CLAIM_UNRESOLVED",
+        "AUTH_QUOTE_UNVERIFIED",
+        "AUTH_SPAN_NOT_NARROWED",
+    ]
 
 
 @pytest.mark.asyncio
@@ -226,6 +238,29 @@ async def test_citations_find_the_fixture_work(
 
     missing = await finder.find(edition_key="NO_SUCH_KEY")
     assert missing["matches"] == []
+
+    contextual = await work_citations.handler(
+        SimpleNamespace(
+            work_files=WorkFileReader(tmp_path),
+            works_mirror_available=False,
+            anchor_context_service=AnchorContextService(
+                PGSourceSpanRepo(engine),
+                PGDocumentTextRepo(engine),
+                PGDocumentNodeRepo(engine),
+            ),
+        ),
+        document_id=str(doc_id),
+        context=True,
+    )
+    assert len(contextual["matches"]) == 7
+    assert all("context" in match for match in contextual["matches"])
+    for match in contextual["matches"]:
+        item_context = match["context"]
+        offset = item_context["quote_offset_in_window"]
+        length = item_context["quote_length"]
+        assert item_context["window"][offset : offset + length] == TEXT[
+            match["char_start"] : match["char_end"]
+        ]
 
 
 # A token the live dev corpus does not contain, so the query below matches

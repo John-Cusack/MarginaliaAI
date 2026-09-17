@@ -1,19 +1,18 @@
-"""Plugin loader — 8-phase loading pipeline."""
+"""Approved plugin loading from installed Python distributions."""
 
 from __future__ import annotations
 
 import importlib
-import re
-import sys
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as metadata_version
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import structlog
+import yaml
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 from research_engine.domain.errors import PluginLoadError
-from research_engine.plugins.compatibility import check_core_api, check_plugin_deps
-from research_engine.plugins.manifest import PluginManifest, parse_manifest
+from research_engine.plugins.discovery import DiscoveredPlugin, scan_plugins
 from research_engine.plugins.permissions import (
     DeniedEdgeClient,
     DeniedHttpClient,
@@ -21,367 +20,384 @@ from research_engine.plugins.permissions import (
     DeniedLLMClient,
     GatedHttpClient,
 )
+from research_engine_sdk import PluginContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
     from research_engine.plugins.registry import PluginRegistry
-    from research_engine.ports.repositories import InstalledPluginRepo
+    from research_engine.ports.repositories import PluginActivationRepo
 
 logger = structlog.get_logger()
 
 
+@dataclass(slots=True)
 class LoadedPlugin:
-    def __init__(self, manifest: PluginManifest, plugin_dir: Path) -> None:
-        self.manifest = manifest
-        self.plugin_dir = plugin_dir
-        self.tools: dict[str, Any] = {}
+    discovery: DiscoveredPlugin
+    tools: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def manifest(self):
+        return self.discovery.manifest
 
 
 class PluginLoader:
     def __init__(
         self,
-        installed_plugins: InstalledPluginRepo,
+        plugin_activations: PluginActivationRepo,
         registry: PluginRegistry,
-        plugins_dir: Path,
+        plugin_data_dir: Path,
         llm: Any = None,
         http: Any = None,
         **services: Any,
     ) -> None:
-        self._installed = installed_plugins
+        self._activations = plugin_activations
         self._registry = registry
-        self._plugins_dir = plugins_dir
+        self._plugin_data_dir = plugin_data_dir
         self._llm = llm
         self._http = http
         self._services = services
         self._loaded: dict[str, LoadedPlugin] = {}
-        # Top-level Python module name -> owning plugin, to detect collisions.
-        self._module_owners: dict[str, str] = {}
-        #: Fired after a pack's tools register. The composition root sets this
-        #: to rebuild the live MCP catalogue; the loader itself never imports
-        #: the server, so the event — not a call — crosses that boundary.
         self.on_tools_changed: Callable[[], None] | None = None
 
     @staticmethod
-    def _check_pip_deps(pip_deps: list[str]) -> list[str]:
-        """Check which pip dependencies are missing. Returns missing package names.
-
-        Resolves each declared distribution via ``importlib.metadata`` (which
-        applies PEP 503 normalization for case/dash/underscore/dot), so there is
-        no need to guess the import name from the pip name.
-        """
-        # Pattern to extract package name from PEP 508 strings like "playwright>=1.40"
-        _pkg_name_re = re.compile(r"^([A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?)")
-        missing = []
-        for dep in pip_deps:
-            match = _pkg_name_re.match(dep)
-            if not match:
-                continue
-            pkg_name = match.group(1)
-            try:
-                metadata_version(pkg_name)
-            except PackageNotFoundError:
-                missing.append(pkg_name)
-        return missing
+    def _activation_id(activation: Any) -> str:
+        return str(
+            getattr(activation, "plugin_id", None)
+            or getattr(activation, "id", "")
+        )
 
     @staticmethod
-    def _resolve_plugin_deps(
-        validated: list[tuple[Any, Path, PluginManifest]],
-    ) -> list[tuple[Any, Path, PluginManifest]]:
-        """Drop every pack whose declared pack dependencies will not be loaded.
+    def _is_exactly_approved(
+        activation: Any, discovered: DiscoveredPlugin
+    ) -> bool:
+        database = discovered.manifest.provides.database
+        migration_ready = (
+            database is None
+            or (getattr(activation, "database_revision", None) or 0)
+            >= database.current_revision
+        )
+        return bool(
+            getattr(activation, "enabled", False)
+            and getattr(activation, "state", "legacy") == "enabled"
+            and getattr(activation, "distribution_name", None)
+            == discovered.distribution_name
+            and getattr(activation, "distribution_version", None)
+            == discovered.distribution_version
+            and getattr(activation, "entry_point_name", None)
+            == discovered.entry_point_name
+            and getattr(activation, "manifest_sha256", None)
+            == discovered.manifest_sha256
+            and migration_ready
+        )
 
-        Repeats until stable so a dropped pack takes its dependents with it:
-        one pass would drop a pack whose dependency is missing but keep the pack
-        that depended on *it*, which is the case worth the extra pass.
-
-        Two packs that require each other and are both installed both survive,
-        which is correct — each one's dependency is satisfied. A cycle only
-        collapses when something it rests on is genuinely absent, and then it
-        collapses entirely.
-        """
-        surviving = list(validated)
+    @staticmethod
+    def _resolve_plugin_dependencies(
+        discovered: list[DiscoveredPlugin],
+    ) -> list[DiscoveredPlugin]:
+        surviving = list(discovered)
         while True:
-            available = {m.name: m.version for _, _, m in surviving}
-            kept = []
-            for entry in surviving:
-                manifest = entry[2]
-                reasons = check_plugin_deps(
-                    [(dep.name, dep.version) for dep in manifest.requires.plugins],
-                    available,
-                )
-                if reasons:
-                    logger.error(
-                        "plugin_missing_plugin_deps",
-                        plugin=manifest.name,
-                        reasons=reasons,
-                    )
-                    continue
-                kept.append(entry)
+            available = {
+                plugin.plugin_id: plugin.distribution_version
+                for plugin in surviving
+            }
+            kept: list[DiscoveredPlugin] = []
+            for plugin in surviving:
+                missing = False
+                for dependency in plugin.manifest.requires.plugins:
+                    installed = available.get(dependency.name)
+                    if installed is None or Version(installed) not in SpecifierSet(
+                        dependency.version
+                    ):
+                        logger.error(
+                            "plugin_dependency_unsatisfied",
+                            plugin=plugin.plugin_id,
+                            dependency=dependency.name,
+                            required=dependency.version,
+                            installed=installed,
+                        )
+                        missing = True
+                        break
+                if not missing:
+                    kept.append(plugin)
             if len(kept) == len(surviving):
                 return kept
             surviving = kept
 
-    async def load_enabled(self) -> list[str]:
-        """Load all enabled plugins. Returns list of loaded plugin names."""
-        enabled = await self._installed.list_enabled()
-        loaded_names = []
+    async def load_enabled(
+        self,
+        discovered_plugins: Iterable[DiscoveredPlugin] | None = None,
+    ) -> list[str]:
+        """Load only exact, enabled approvals in deterministic plugin-id order."""
 
-        # Phase 1: Discover
-        plugins_to_load: list[tuple[Any, Path]] = []
-        for installed in enabled:
-            plugin_dir = self._plugins_dir / f"{installed.id}@{installed.version}"
-            manifest_path = plugin_dir / "pack.yaml"
-            if not manifest_path.exists():
-                logger.warning("plugin_manifest_missing", plugin=installed.id, dir=str(plugin_dir))
+        if discovered_plugins is None:
+            report = scan_plugins()
+            for issue in report.issues:
+                logger.error(
+                    "plugin_discovery_rejected",
+                    plugin=issue.entry_point_name,
+                    distribution=issue.distribution_name,
+                    reason=issue.reason,
+                )
+            discovered = list(report.plugins)
+        else:
+            discovered = sorted(discovered_plugins, key=lambda plugin: plugin.plugin_id)
+
+        enabled = {
+            self._activation_id(activation): activation
+            for activation in await self._activations.list_enabled()
+        }
+        approved = [
+            plugin
+            for plugin in discovered
+            if (activation := enabled.get(plugin.plugin_id)) is not None
+            and self._is_exactly_approved(activation, plugin)
+        ]
+        approved = self._resolve_plugin_dependencies(approved)
+
+        loaded_names: list[str] = []
+        for plugin in approved:
+            try:
+                await self._load_one(plugin)
+            except Exception as exc:
+                logger.error(
+                    "plugin_load_failed",
+                    plugin=plugin.plugin_id,
+                    distribution=plugin.distribution_name,
+                    error=str(exc) or type(exc).__name__,
+                )
                 continue
-            plugins_to_load.append((installed, plugin_dir))
-
-        # Phase 2-3: Validate manifest and dependencies
-        validated: list[tuple[Any, Path, PluginManifest]] = []
-        for installed, plugin_dir in plugins_to_load:
-            try:
-                manifest = parse_manifest(plugin_dir / "pack.yaml")
-
-                # Check core API compatibility
-                incompat = check_core_api(manifest.requires.core_api)
-                if incompat:
-                    logger.error(
-                        "plugin_incompatible_core_api",
-                        plugin=installed.id,
-                        reason=incompat,
-                    )
-                    continue
-
-                # Check pip dependencies are importable
-                missing = self._check_pip_deps(manifest.requires.pip)
-                if missing:
-                    logger.error(
-                        "plugin_missing_pip_deps",
-                        plugin=installed.id,
-                        missing=missing,
-                    )
-                    continue
-
-                validated.append((installed, plugin_dir, manifest))
-            except Exception as e:
-                logger.error("plugin_validate_failed", plugin=installed.id, error=str(e))
-
-        # Phase 3b: Pack dependencies, resolved against what will actually load.
-        #
-        # Checked after the per-pack loop rather than inside it, because the
-        # answer depends on the whole surviving set: a pack whose dependency
-        # was itself dropped for an incompatible core_api must drop too. Hence
-        # the fixed point — each pass may remove a pack that another pack
-        # needed, so it repeats until a pass removes nothing.
-        validated = self._resolve_plugin_deps(validated)
-
-        # Phase 4-8: Register types, load code, register contributions
-        for _installed, plugin_dir, manifest in validated:
-            try:
-                await self._load_one(manifest, plugin_dir)
-                loaded_names.append(manifest.name)
-                logger.info("plugin_loaded", plugin=manifest.name, version=manifest.version)
-            except Exception as e:
-                logger.error("plugin_load_failed", plugin=manifest.name, error=str(e))
-
+            loaded_names.append(plugin.plugin_id)
+            logger.info(
+                "plugin_loaded",
+                plugin=plugin.plugin_id,
+                distribution=plugin.distribution_name,
+                version=plugin.distribution_version,
+            )
         return loaded_names
 
-    async def _load_one(self, manifest: PluginManifest, plugin_dir: Path) -> None:
-        loaded = LoadedPlugin(manifest, plugin_dir)
+    async def _load_one(self, discovered: DiscoveredPlugin) -> None:
+        """Import and validate every contribution in an isolated registry stage."""
+
+        manifest = discovered.manifest
+        plugin_id = manifest.plugin_id
         provides = manifest.provides
+        stage = self._registry.create_stage()
+        staged = stage.registry
+        loaded = LoadedPlugin(discovery=discovered)
 
-        # Phase 4: Register types
-        for dt in provides.document_types:
-            self._registry.register_document_type(
-                dt.id, {"default_chunker": dt.default_chunker}, manifest.name
-            )
-        for et in provides.entity_types:
-            self._registry.register_entity_type(et.id, {}, manifest.name)
-        for evt in provides.event_types:
-            self._registry.register_event_type(evt.id, {}, manifest.name)
-        for rt in provides.relation_types:
-            self._registry.register_relation_type(
-                rt.id, {"inverse": rt.inverse}, manifest.name
-            )
-
-        # Phase 4b: Register chunkers
-        for chunker_contrib in provides.chunkers:
-            try:
-                chunker_cls = self._import_entry(plugin_dir, chunker_contrib.entry, manifest.name)
-                self._registry.register_chunker(chunker_contrib.id, chunker_cls, manifest.name)
-            except Exception as e:
-                raise PluginLoadError(
-                    f"Failed to load chunker {chunker_contrib.id}: {e}"
-                ) from e
-
-        # Phase 4c: Register ingestion modules
-        for im_contrib in provides.ingestion_modules:
-            try:
-                im_cls = self._import_entry(plugin_dir, im_contrib.entry, manifest.name)
-                self._registry.register_ingestion_module(im_contrib.id, im_cls, manifest.name)
-            except Exception as e:
-                raise PluginLoadError(
-                    f"Failed to load ingestion module {im_contrib.id}: {e}"
-                ) from e
-
-        # Phase 4d: Register filter extensions
-        for fe_contrib in provides.filter_extensions:
-            try:
-                fe_cls = self._import_entry(plugin_dir, fe_contrib.entry, manifest.name)
-                instance = fe_cls() if isinstance(fe_cls, type) else fe_cls
-                self._registry.register_filter_extension(fe_contrib.id, instance, manifest.name)
-            except Exception as e:
-                raise PluginLoadError(
-                    f"Failed to load filter extension {fe_contrib.id}: {e}"
-                ) from e
-
-        # Phase 4e: Register source search providers
-        for ss_contrib in provides.source_search:
-            try:
-                ss_cls = self._import_entry(plugin_dir, ss_contrib.entry, manifest.name)
-                provider = ss_cls() if isinstance(ss_cls, type) else ss_cls
-                self._registry.register_source_search_provider(provider, manifest.name)
-            except Exception as e:
-                raise PluginLoadError(
-                    f"Failed to load source search provider {ss_contrib.id}: {e}"
-                ) from e
-
-        # Phase 5: Load code
-        for tool_contrib in provides.mcp_tools:
-            try:
-                handler = self._import_entry(plugin_dir, tool_contrib.entry, manifest.name)
-                loaded.tools[tool_contrib.id] = handler
-            except Exception as e:
-                raise PluginLoadError(
-                    f"Failed to load tool {tool_contrib.id}: {e}"
-                ) from e
-
-        # Phase 6: Register contributions. Iterate the manifest contributions
-        # (not the loaded handlers) so each tool's manifest description and
-        # input schema are in hand when its spec is built.
-        for contrib in provides.mcp_tools:
-            handler = loaded.tools[contrib.id]
-            self._registry.register_mcp_tool(
-                contrib.id,
-                handler,
-                manifest.name,
-                description=contrib.description,
-                input_schema=contrib.input_schema,
-            )
-            spec = self._registry.get_mcp_tool_specs()[contrib.id]
-            if not spec.input_schema:
-                raise PluginLoadError(
-                    f"Tool {contrib.id} has no input schema. Decorate its entry "
-                    f"with @tool(input_schema=...) or add input_schema: to pack.yaml."
+        try:
+            for contribution in provides.document_types:
+                staged.register_document_type(
+                    contribution.id,
+                    {
+                        "default_chunker": contribution.default_chunker,
+                        "default_ingestion_module": (
+                            contribution.default_ingestion_module
+                        ),
+                        "schema": contribution.schema_path,
+                    },
+                    plugin_id,
+                )
+            for contribution in provides.entity_types:
+                staged.register_entity_type(
+                    contribution.id,
+                    {"schema": contribution.schema_path},
+                    plugin_id,
+                )
+            for contribution in provides.event_types:
+                staged.register_event_type(
+                    contribution.id,
+                    {"schema": contribution.schema_path},
+                    plugin_id,
+                )
+            for contribution in provides.relation_types:
+                staged.register_relation_type(
+                    contribution.id,
+                    {"inverse": contribution.inverse},
+                    plugin_id,
                 )
 
-        # Phase 7: Extraction schemas
-        for es in provides.extraction_schemas:
-            schema_path = plugin_dir / es.file
-            if schema_path.exists():
-                import yaml
-                with open(schema_path) as f:
-                    schema_data = yaml.safe_load(f)
-                self._registry.register_extraction_schema(
-                    es.id, es.version, schema_data, manifest.name
+            for contribution in provides.chunkers:
+                staged.register_chunker(
+                    contribution.id,
+                    self._import_entry(discovered, contribution.entry),
+                    plugin_id,
+                )
+            for contribution in provides.ingestion_modules:
+                staged.register_ingestion_module(
+                    contribution.id,
+                    self._import_entry(discovered, contribution.entry),
+                    plugin_id,
+                )
+            for contribution in provides.filter_extensions:
+                value = self._import_entry(discovered, contribution.entry)
+                staged.register_filter_extension(
+                    contribution.id,
+                    value() if isinstance(value, type) else value,
+                    plugin_id,
+                )
+            for contribution in provides.source_search:
+                value = self._import_entry(discovered, contribution.entry)
+                staged.register_source_search_provider(
+                    value() if isinstance(value, type) else value,
+                    plugin_id,
                 )
 
-        self._loaded[manifest.name] = loaded
+            for contribution in provides.mcp_tools:
+                handler = self._import_entry(discovered, contribution.entry)
+                loaded.tools[contribution.id] = handler
+                staged.register_mcp_tool(
+                    contribution.id,
+                    handler,
+                    plugin_id,
+                    description=contribution.description,
+                    input_schema=contribution.input_schema,
+                )
+                if not staged.get_mcp_tool_specs()[contribution.id].input_schema:
+                    raise PluginLoadError(
+                        f"tool {contribution.id!r} has no input schema"
+                    )
 
+            for contribution in provides.extraction_schemas:
+                definition = yaml.safe_load(
+                    discovered.resource_path(contribution.file).read_text()
+                )
+                if not isinstance(definition, dict):
+                    raise PluginLoadError(
+                        f"schema {contribution.id!r} must contain a YAML object"
+                    )
+                staged.register_extraction_schema(
+                    contribution.id,
+                    contribution.version,
+                    definition,
+                    plugin_id,
+                )
+
+            for contribution in provides.vocabularies:
+                definition = yaml.safe_load(
+                    discovered.resource_path(contribution.file).read_text()
+                )
+                staged.register_vocabulary(
+                    contribution.id,
+                    definition,
+                    plugin_id,
+                )
+
+            hook_handlers: dict[str, Any] = {}
+            for contribution in provides.post_ingestion_hooks:
+                if contribution.event != "post_ingestion":
+                    raise PluginLoadError(
+                        f"unsupported hook event {contribution.event!r}"
+                    )
+                hook_handlers[contribution.id] = self._import_entry(
+                    discovered, contribution.entry
+                )
+            for document_type in provides.document_types:
+                for hook_id in document_type.post_hooks:
+                    try:
+                        handler = hook_handlers[hook_id]
+                    except KeyError as exc:
+                        raise PluginLoadError(
+                            f"document type {document_type.id!r} references "
+                            f"unknown hook {hook_id!r}"
+                        ) from exc
+                    staged.register_post_ingestion_hook(
+                        document_type.id, handler, plugin_id
+                    )
+            for handler in hook_handlers.values():
+                for document_type in getattr(handler, "_hook_document_types", ()):
+                    staged.register_post_ingestion_hook(
+                        document_type, handler, plugin_id
+                    )
+
+            stage.commit()
+        except Exception as exc:
+            stage.discard()
+            if isinstance(exc, PluginLoadError):
+                raise
+            raise PluginLoadError(
+                f"failed to load plugin {plugin_id!r}: "
+                f"{str(exc) or type(exc).__name__}"
+            ) from exc
+
+        self._loaded[plugin_id] = loaded
         if self.on_tools_changed is not None:
             self.on_tools_changed()
 
-    def _import_entry(self, plugin_dir: Path, entry: str, plugin_name: str) -> Any:
-        """Import a plugin entry point like 'module.path:attr'.
-
-        Python caches imports in the global ``sys.modules`` keyed by name, so two
-        plugins shipping the same top-level package — or a package shadowing a
-        stdlib module — would silently resolve to whichever loaded first. Guard
-        against both by raising ``PluginLoadError`` instead of binding the wrong
-        code. Plugin packages must therefore use a globally-unique top-level name.
-        """
-        module_path, attr = entry.rsplit(":", 1)
-        top = module_path.split(".", 1)[0]
-
-        if top in sys.stdlib_module_names:
+    @staticmethod
+    def _import_entry(discovered: DiscoveredPlugin, entry: str) -> Any:
+        module_path, attribute = entry.rsplit(":", 1)
+        if module_path != discovered.module_name and not module_path.startswith(
+            f"{discovered.module_name}."
+        ):
             raise PluginLoadError(
-                f"Plugin '{plugin_name}' entry '{entry}' uses top-level module "
-                f"'{top}', which shadows a Python standard-library module. "
-                f"Rename the plugin's package to a unique name."
+                f"entry {entry!r} is outside package {discovered.module_name!r}"
             )
-        owner = self._module_owners.get(top)
-        if owner is not None and owner != plugin_name:
-            raise PluginLoadError(
-                f"Plugin '{plugin_name}' entry '{entry}' uses top-level module "
-                f"'{top}', already owned by plugin '{owner}'. Plugin package "
-                f"names must be globally unique."
-            )
-
-        old_path = sys.path[:]
-        sys.path.insert(0, str(plugin_dir))
+        module = importlib.import_module(module_path)
         try:
-            mod = importlib.import_module(module_path)
-            self._module_owners[top] = plugin_name
-            return getattr(mod, attr)
-        finally:
-            sys.path[:] = old_path
+            return getattr(module, attribute)
+        except AttributeError as exc:
+            raise PluginLoadError(f"entry {entry!r} does not exist") from exc
 
     def build_plugin_clients(self, plugin_name: str) -> dict[str, Any]:
-        """Build scoped clients for a plugin."""
         loaded = self._loaded.get(plugin_name)
-        if not loaded:
+        if loaded is None:
             return {}
 
-        perms = loaded.manifest.permissions
-
-        # Corpus client: adapter that conforms search + docs + passages to the
-        # SDK CorpusClient Protocol. Built per-call so it shares no state across
-        # plugin invocations. Falls back to the raw search service if the
-        # repos weren't passed in (older composition wiring).
+        discovered = loaded.discovery
+        permissions = discovered.manifest.permissions
         from research_engine.adapters.corpus_client import CorpusServiceAdapter
 
         search = self._services.get("search")
         documents = self._services.get("documents")
         passages = self._services.get("passages")
+        corpus_client: Any
         if search is not None and documents is not None and passages is not None:
-            corpus_client: Any = CorpusServiceAdapter(
-                search, documents, passages, self._services.get("document_nodes")
+            corpus_client = CorpusServiceAdapter(
+                search,
+                documents,
+                passages,
+                self._services.get("document_nodes"),
             )
         else:
             corpus_client = search
 
+        data_dir = (self._plugin_data_dir / plugin_name).resolve()
+        data_dir.mkdir(parents=True, exist_ok=True)
         clients = {
+            "context": PluginContext(
+                plugin_id=plugin_name,
+                data_dir=data_dir,
+                distribution_name=discovered.distribution_name,
+                distribution_version=discovered.distribution_version,
+            ),
             "corpus": corpus_client,
-            "entity": self._services.get("entity_service"),
-            "event": self._services.get("event_service"),
+            "entity": self._services.get("entity"),
+            "event": self._services.get("event"),
             "extraction": self._services.get("extraction"),
+            "llm": (
+                self._llm
+                if permissions.llm and self._llm is not None
+                else DeniedLLMClient(plugin_name)
+            ),
+            "http": (
+                GatedHttpClient(self._http, permissions, plugin_name)
+                if permissions.network.value != "none" and self._http is not None
+                else DeniedHttpClient(plugin_name)
+            ),
+            "ingestion": (
+                self._services["ingestion"]
+                if permissions.ingest and self._services.get("ingestion") is not None
+                else DeniedIngestionClient(plugin_name)
+            ),
+            "edge": (
+                self._services["edge"]
+                if permissions.write and self._services.get("edge") is not None
+                else DeniedEdgeClient(plugin_name)
+            ),
         }
-
-        # LLM client
-        if perms.llm and self._llm:
-            clients["llm"] = self._llm
-        else:
-            clients["llm"] = DeniedLLMClient(plugin_name)
-
-        # HTTP client
-        if perms.network.value != "none" and self._http:
-            clients["http"] = GatedHttpClient(self._http, perms, plugin_name)
-        else:
-            clients["http"] = DeniedHttpClient(plugin_name)
-
-        # Ingestion client
-        if perms.ingest and self._services.get("ingestion"):
-            clients["ingestion"] = self._services["ingestion"]
-        else:
-            clients["ingestion"] = DeniedIngestionClient(plugin_name)
-
-        # Edge client (graph writes) — gated on the `write` permission
-        if perms.write and self._services.get("edge"):
-            clients["edge"] = self._services["edge"]
-        else:
-            clients["edge"] = DeniedEdgeClient(plugin_name)
-
         return clients
 
     @property

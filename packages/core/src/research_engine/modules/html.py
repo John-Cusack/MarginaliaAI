@@ -65,7 +65,13 @@ class HTMLModule:
 
     @staticmethod
     def _extract(source_path: Path) -> tuple[str, str, dict]:
-        from bs4 import BeautifulSoup
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError as exc:
+            raise RuntimeError(
+                "HTML parsing support is not installed. Install "
+                "research-engine[documents]."
+            ) from exc
 
         raw = source_path.read_text(encoding="utf-8", errors="replace")
         soup = BeautifulSoup(raw, "html.parser")

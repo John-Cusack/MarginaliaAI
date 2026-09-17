@@ -4,8 +4,9 @@ version = "0.2.0"
 description = "Corpus Engine workspace root"
 requires-python = ">=3.11"
 dependencies = [
-    "research-engine",
+    "research-engine[full]",
     "research-engine-sdk",
+    "research-engine-plugin-history",
 ]
 
 [tool.uv]
@@ -23,8 +24,9 @@ dev = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/core", "packages/sdk"]
+members = ["packages/core", "packages/sdk", "packages/plugins/history"]
 
 [tool.uv.sources]
 research-engine = { workspace = true }
 research-engine-sdk = { workspace = true }
+research-engine-plugin-history = { workspace = true }

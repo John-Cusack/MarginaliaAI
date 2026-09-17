@@ -19,6 +19,7 @@ import pytest
 
 from research_engine.adapters.storage.postgres.repositories import (
     PGCitationRepo,
+    PGClaimRepo,
     PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
@@ -33,6 +34,10 @@ from research_engine.adapters.storage.postgres.repositories import (
 )
 
 EXPECTED = {
+    PGClaimRepo: [
+        "upsert_claim", "add_edge", "add_anchor", "existing_refs", "get_by_ref",
+        "anchors_for", "anchor_by_id", "edges_for", "audit",
+    ],
     PGDocumentTextRepo: [
         "put", "get", "get_text", "get_span", "count", "missing_document_ids",
         "find_documents_containing", "lengths", "find_raw", "find_normalized",

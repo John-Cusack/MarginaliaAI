@@ -45,6 +45,7 @@ from research_engine.domain.entities import EntityDraft
 from research_engine.domain.errors import FrozenRevisionError, StaleWriteError
 from research_engine.domain.passages import PassageDraft
 from research_engine.domain.works import WorkBlockDraft
+from research_engine.mcp.dispatch import dispatch_tool
 from research_engine.services.ingestion.orchestrator import IngestionOrchestrator
 from research_engine.services.verification import QuoteVerifier
 from research_engine.services.works.assembly import assemble_revision, hash_assembled
@@ -57,6 +58,7 @@ from research_engine.services.works.publication import (
 )
 from research_engine.services.works.trace import WorkTraceService
 from research_engine.services.works.validate import WorkValidationService
+from research_engine.services.works.verify import MAX_QUOTE_CHARS
 from research_engine.services.works.work_service import WorkService
 from research_engine.testing.corpus import new_id
 
@@ -182,6 +184,39 @@ async def _ingest(engine: AsyncEngine, corpus: Corpus, **metadata: str) -> UUID:
             ],
         )
     return doc_id
+
+async def _ingest_quoted_text(
+    engine: AsyncEngine,
+    corpus: Corpus,
+    *,
+    title: str,
+    edition_key: str,
+    text: str,
+) -> UUID:
+    document_id = await corpus.add_document(
+        title=title, metadata={"edition_key": edition_key}
+    )
+    async with transaction(engine) as tx:
+        await PGDocumentTextRepo(engine).put(
+            tx, document_id, text, "test", "license-quota-1"
+        )
+        await PGPassageRepo(engine).insert_many(
+            tx,
+            document_id,
+            [
+                PassageDraft(
+                    position=0,
+                    char_start=0,
+                    char_end=len(text),
+                    text=text,
+                    chunker="test",
+                    chunker_version="1.0",
+                )
+            ],
+        )
+        edition = await PGEditionRepo(engine).upsert_key(tx, edition_key)
+    corpus.track(editions, edition.id)
+    return document_id
 
 
 async def _work_with_cited_paragraph(
@@ -961,3 +996,159 @@ async def test_publish(engine: AsyncEngine, corpus: Corpus) -> None:
     assert sealed.state == "published"
     report = await spine.validate.validate(slug="spine-publish", gate="publish")
     assert report.gate.passed is True
+
+
+@pytest.mark.asyncio
+async def test_quote_quota_is_per_document_and_blocks_only_publish(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    total = MAX_QUOTE_CHARS + 2
+    long_text = ("licensed source words " * 100)[:total]
+    long_doc = await _ingest_quoted_text(
+        engine,
+        corpus,
+        title="One licensed source",
+        edition_key="LICENSE-LONG",
+        text=long_text,
+    )
+
+    async def cited_work(
+        slug: str, sources: list[tuple[UUID, str, str]]
+    ) -> _Spine:
+        spine = _Spine(engine)
+        created = await spine.works.create(
+            slug=slug, title=slug, work_type="essay"
+        )
+        corpus.track(works, created.work_id)
+        for position, (document_id, edition_key, quote) in enumerate(sources):
+            block = await spine.works.upsert_block(
+                slug=slug,
+                position=position,
+                block_type="paragraph",
+                body_markdown=f"Source {position}.",
+            )
+            attached = await spine.cite.attach(
+                slug=slug,
+                block_key=block.block_key,
+                intent="support",
+                quote=quote,
+                document_id=document_id,
+                edition_key=edition_key,
+            )
+            corpus.adopt_span(attached.item.source_span_id)
+            await spine.works.upsert_block(
+                slug=slug,
+                position=position,
+                block_type="paragraph",
+                body_markdown=f"Source {position}. {attached.marker}",
+                block_key=block.block_key,
+                expected_updated_at=block.updated_at,
+            )
+        return spine
+
+    over = await cited_work(
+        "license-over", [(long_doc, "LICENSE-LONG", long_text)]
+    )
+    draft = await over.validate.validate(slug="license-over", gate="none")
+    [finding] = [
+        item for item in draft.findings if item.rule_id == "AUTH_LICENSE_EXPORT"
+    ]
+    assert finding.severity == "warning"
+    assert finding.detail is not None
+    assert finding.detail["document_id"] == str(long_doc)
+    assert finding.detail["quoted_characters"] == total
+    assert finding.detail["cap"] == MAX_QUOTE_CHARS
+    assert len(finding.detail["citation_keys"]) == 1
+    assert draft.gate.passed
+    assert (
+        await over.validate.validate(slug="license-over", gate="freeze")
+    ).gate.passed
+    allow_policy = _Spine(
+        engine, policy={"essay": {"AUTH_LICENSE_EXPORT": "allow"}}
+    )
+    allowed = await allow_policy.validate.validate(slug="license-over", gate="freeze")
+    assert next(
+        item for item in allowed.findings if item.rule_id == "AUTH_LICENSE_EXPORT"
+    ).severity == "warning"
+    tighten_policy = _Spine(
+        engine, policy={"essay": {"AUTH_LICENSE_EXPORT": "error"}}
+    )
+    tightened = await tighten_policy.validate.validate(
+        slug="license-over", gate="freeze"
+    )
+    assert "AUTH_LICENSE_EXPORT" in tightened.gate.blockers
+    publish = await over.validate.validate(slug="license-over", gate="publish")
+    assert publish.gate.passed is False
+    assert "AUTH_LICENSE_EXPORT" in publish.gate.blockers
+    assert next(
+        item for item in publish.findings if item.rule_id == "AUTH_LICENSE_EXPORT"
+    ).severity == "error"
+
+    half = total // 2
+    first_text = ("first document words " * 100)[:half]
+    second_text = ("second document words " * 100)[: total - half]
+    first_doc = await _ingest_quoted_text(
+        engine,
+        corpus,
+        title="Split source one",
+        edition_key="LICENSE-SPLIT-ONE",
+        text=first_text,
+    )
+    second_doc = await _ingest_quoted_text(
+        engine,
+        corpus,
+        title="Split source two",
+        edition_key="LICENSE-SPLIT-TWO",
+        text=second_text,
+    )
+    split = await cited_work(
+        "license-split",
+        [
+            (first_doc, "LICENSE-SPLIT-ONE", first_text),
+            (second_doc, "LICENSE-SPLIT-TWO", second_text),
+        ],
+    )
+    split_report = await split.validate.validate(
+        slug="license-split", gate="publish"
+    )
+    assert "AUTH_LICENSE_EXPORT" not in {
+        item.rule_id for item in split_report.findings
+    }
+    assert split_report.gate.passed
+
+
+@pytest.mark.asyncio
+async def test_block_update_accepts_json_serialized_timestamp(
+    engine: AsyncEngine, corpus: Corpus
+) -> None:
+    spine = _Spine(engine)
+    created = await spine.works.create(
+        slug="spine-json-lock", title="JSON lock", work_type="essay"
+    )
+    corpus.track(works, created.work_id)
+    block = await spine.works.upsert_block(
+        slug="spine-json-lock",
+        position=0,
+        block_type="paragraph",
+        body_markdown="Before.",
+    )
+
+    response = await dispatch_tool(
+        SimpleNamespace(work_service=spine.works),
+        "work_block_upsert",
+        {
+            "slug": "spine-json-lock",
+            "block_key": str(block.block_key),
+            "position": 0,
+            "block_type": "paragraph",
+            "body_markdown": "After.",
+            "expected_updated_at": block.model_dump(mode="json")["updated_at"],
+        },
+    )
+
+    assert "error" not in response
+    stored = await spine.repos.blocks.by_key(
+        created.revision_id, block.block_key
+    )
+    assert stored is not None
+    assert stored.body_markdown == "After."

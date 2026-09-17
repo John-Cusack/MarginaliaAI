@@ -1,0 +1,43 @@
+[project]
+name = "research-engine-plugin-history"
+dynamic = ["version"]
+description = "Reference history research plugin for Research Engine"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MarginaliaAI" }]
+keywords = ["correspondence", "history", "mcp", "research-engine"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Text Processing :: Indexing",
+]
+dependencies = [
+    "research-engine-sdk>=0.6,<0.7",
+]
+
+[project.entry-points."research_engine.plugins"]
+history = "history"
+
+[project.urls]
+Homepage = "https://github.com/John-Cusack/MarginaliaAI"
+Source = "https://github.com/John-Cusack/MarginaliaAI/tree/main/packages/plugins/history"
+Issues = "https://github.com/John-Cusack/MarginaliaAI/issues"
+Changelog = "https://github.com/John-Cusack/MarginaliaAI/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "history/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["history"]
+
+[tool.hatch.build.targets.sdist]
+include = ["history", "tests", "README.md", "LICENSE", "pyproject.toml"]

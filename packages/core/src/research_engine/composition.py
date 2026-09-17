@@ -4,19 +4,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import partial
+from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any
 
 from research_engine.adapters.clock import SystemClock
 from research_engine.adapters.edge_client import EdgeServiceAdapter
+from research_engine.adapters.entity_client import EntityServiceAdapter
+from research_engine.adapters.event_client import EventServiceAdapter
 from research_engine.adapters.extraction_client import ExtractionServiceAdapter
 from research_engine.adapters.http.httpx_adapter import HttpxAdapter
 from research_engine.adapters.inference import InferenceBackends, build_inference
-from research_engine.adapters.llm.anthropic import AnthropicLLMAdapter
+from research_engine.adapters.ingestion_client import IngestionServiceAdapter
 from research_engine.adapters.llm.budget_guard import BudgetGuard
-from research_engine.adapters.llm.openai_compatible import OpenAICompatibleLLMAdapter
 from research_engine.adapters.storage.postgres.engine import build_engine, transaction
 from research_engine.adapters.storage.postgres.repositories import (
     PGCitationRepo,
+    PGClaimRepo,
     PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
@@ -27,10 +30,10 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGExtractionRepo,
     PGExtractionSchemaRepo,
     PGIngestionRunRepo,
-    PGInstalledPluginRepo,
     PGLLMCallLogRepo,
     PGMentionRepo,
     PGPassageRepo,
+    PGPluginActivationRepo,
     PGSourceSpanRepo,
     PGWaiverRepo,
     PGWorkBlockRepo,
@@ -42,6 +45,11 @@ from research_engine.mcp.catalog import ToolCatalog
 from research_engine.mcp.dispatch import refresh_pack_tools
 from research_engine.plugins.loader import PluginLoader
 from research_engine.plugins.registry import PluginRegistry
+from research_engine.services.argument import (
+    AnchorContextService,
+    ClaimAuditService,
+    ClaimService,
+)
 from research_engine.services.diagnostics import PGDiagnosticsRepo
 from research_engine.services.entities.service import EntityService
 from research_engine.services.events.service import EventService
@@ -93,7 +101,7 @@ class Container:
     extraction_schemas: PGExtractionSchemaRepo
     llm_calls: PGLLMCallLogRepo
     ingestion_runs: PGIngestionRunRepo
-    installed_plugins: PGInstalledPluginRepo
+    plugin_activations: PGPluginActivationRepo
     ingestion: IngestionOrchestrator
     search: HybridSearchService
     verification: QuoteVerifier
@@ -105,6 +113,10 @@ class Container:
     lemma_lookup: LemmaLookup
     #: Corpus coverage stats over `core.documents`, read by `corpus_stats`.
     diagnostics_repo: PGDiagnosticsRepo
+    claims: PGClaimRepo
+    claim_audit_service: ClaimAuditService
+    claim_service: ClaimService
+    anchor_context_service: AnchorContextService
     plugin_loader: PluginLoader
     plugin_registry: PluginRegistry
     engine: Any  # AsyncEngine
@@ -228,18 +240,32 @@ async def build_container(settings: Settings) -> Container:
     extraction_schemas_repo = PGExtractionSchemaRepo(sql_engine)
     llm_calls_repo = PGLLMCallLogRepo(sql_engine)
     ingestion_runs_repo = PGIngestionRunRepo(sql_engine)
-    installed_plugins_repo = PGInstalledPluginRepo(sql_engine)
+    plugin_activations_repo = PGPluginActivationRepo(sql_engine)
     diagnostics_repo = PGDiagnosticsRepo(sql_engine)
     lemma_lookup = LemmaLookup(sql_engine)
 
     # External ports
     if settings.llm_provider == "anthropic":
+        from research_engine.adapters.llm.anthropic import AnthropicLLMAdapter
+
         llm = AnthropicLLMAdapter(
             settings.anthropic_api_key,
             llm_calls_repo,
             settings.default_llm_model,
         )
     else:
+        try:
+            from research_engine.adapters.llm.openai_compatible import (
+                OpenAICompatibleLLMAdapter,
+            )
+        except ImportError as exc:
+            from research_engine.domain.errors import ConfigurationError
+
+            raise ConfigurationError(
+                "OpenAI-compatible LLM support is not installed. Install "
+                "research-engine[openai] or set RE_LLM_PROVIDER=anthropic."
+            ) from exc
+
         llm = OpenAICompatibleLLMAdapter(
             settings.openai_compatible_base_url or "http://localhost:8000/v1",
             settings.openai_compatible_api_key.get_secret_value() if settings.openai_compatible_api_key else None,
@@ -314,6 +340,24 @@ async def build_container(settings: Settings) -> Container:
         document_nodes=document_nodes_repo,
     )
     spans_repo = PGSourceSpanRepo(sql_engine)
+    tx_factory = partial(transaction, sql_engine)
+    claims_repo = PGClaimRepo(sql_engine)
+    editions_repo = PGEditionRepo(sql_engine)
+    claim_audit_service = ClaimAuditService(claims_repo)
+    claim_service = ClaimService(
+        claims_repo=claims_repo,
+        spans_repo=spans_repo,
+        editions_repo=editions_repo,
+        entity_service=entity_service,
+        verification=quote_verifier,
+        audit=claim_audit_service,
+        transaction_factory=tx_factory,
+    )
+    anchor_context_service = AnchorContextService(
+        spans=spans_repo,
+        document_texts=document_texts_repo,
+        document_nodes=document_nodes_repo,
+    )
     work_citer = WorkCiter(
         verification=quote_verifier,
         spans=spans_repo,
@@ -321,13 +365,11 @@ async def build_container(settings: Settings) -> Container:
     )
 
     # The Phase-1 spine: one repo per table group, services over them.
-    tx_factory = partial(transaction, sql_engine)
     works_repo = PGWorkRepo(sql_engine)
     revisions_repo = PGWorkRevisionRepo(sql_engine)
     blocks_repo = PGWorkBlockRepo(sql_engine)
     citations_repo = PGCitationRepo(sql_engine)
     links_repo = PGWorkLinkRepo(sql_engine)
-    editions_repo = PGEditionRepo(sql_engine)
     waivers_repo = PGWaiverRepo(sql_engine)
     work_service = WorkService(
         works=works_repo,
@@ -402,7 +444,7 @@ async def build_container(settings: Settings) -> Container:
     if settings.works_dir is not None:
         work_files = WorkFileReader(settings.works_dir)
         work_verifier = WorkVerifier(
-            document_texts_repo, docs, passages_repo, quote_verifier,
+            document_texts_repo, docs, passages_repo, quote_verifier, claims_repo,
             settings.works_dir,
         )
         work_renderer = WorkRenderer(docs, quote_verifier, settings.works_dir)
@@ -449,31 +491,31 @@ async def build_container(settings: Settings) -> Container:
         editions=editions_repo,
     )
 
-    # Plugin-facing client adapters. Built here (not in the Container) because
-    # the loader needs them before the Container is constructed. Both reference
-    # sql_engine directly via the same transaction factory the Container exposes.
-    tx_factory = partial(transaction, sql_engine)
-    edge_service = EdgeServiceAdapter(edges_repo, tx_factory)
+    # Plugin-facing adapters are the only objects crossing the SDK boundary.
+    edge_client = EdgeServiceAdapter(edges_repo, tx_factory)
+    entity_client = EntityServiceAdapter(entity_service, tx_factory)
+    event_client = EventServiceAdapter(event_service, tx_factory)
     extraction_client = ExtractionServiceAdapter(
         extraction_service, passages_repo, extractions_repo
     )
+    ingestion_client = IngestionServiceAdapter(ingestion_service, registry)
 
     # Plugin loader
     plugin_loader = PluginLoader(
-        installed_plugins=installed_plugins_repo,
+        plugin_activations=plugin_activations_repo,
         registry=registry,
-        plugins_dir=settings.resolved_plugins_dir,
+        plugin_data_dir=settings.data_dir / "plugin-data",
         llm=llm,
         http=http,
         search=search_service,
         documents=docs,
         passages=passages_repo,
         document_nodes=document_nodes_repo,
-        entity_service=entity_service,
-        event_service=event_service,
+        entity=entity_client,
+        event=event_client,
         extraction=extraction_client,
-        edge=edge_service,
-        ingestion=ingestion_service,
+        edge=edge_client,
+        ingestion=ingestion_client,
     )
     await plugin_loader.load_enabled()
 
@@ -497,7 +539,7 @@ async def build_container(settings: Settings) -> Container:
         extraction_schemas=extraction_schemas_repo,
         llm_calls=llm_calls_repo,
         ingestion_runs=ingestion_runs_repo,
-        installed_plugins=installed_plugins_repo,
+        plugin_activations=plugin_activations_repo,
         ingestion=ingestion_service,
         search=search_service,
         verification=quote_verifier,
@@ -506,6 +548,10 @@ async def build_container(settings: Settings) -> Container:
         event_service=event_service,
         lemma_lookup=lemma_lookup,
         diagnostics_repo=diagnostics_repo,
+        claims=claims_repo,
+        claim_audit_service=claim_audit_service,
+        claim_service=claim_service,
+        anchor_context_service=anchor_context_service,
         plugin_loader=plugin_loader,
         plugin_registry=registry,
         engine=sql_engine,
@@ -535,26 +581,35 @@ def _register_builtin_modules(
     dispatcher: ModuleDispatcher, settings: Settings
 ) -> None:
     """Register core ingestion modules."""
-    from research_engine.modules.docling_converter import DoclingModule
     from research_engine.modules.epub import EPUBModule
     from research_engine.modules.html import HTMLModule
     from research_engine.modules.markdown import MarkdownModule
     from research_engine.modules.pdf_text import PDFTextModule
     from research_engine.modules.plain_text import PlainTextModule
     from research_engine.modules.tei_xml import TEIXMLModule
-
-    # DoclingModule first — highest confidence for supported formats.
-    # Existing modules remain as fallbacks.
-    #
-    # It is the only module that needs configuring, and until now it was the only
-    # component `build_container` did not configure: it read the environment
-    # directly and sized its process pool from constants no operator could reach.
-    dispatcher.register(
-        DoclingModule(
-            device=settings.docling_device,
-            max_workers=settings.docling_max_workers,
-            pages_per_task=settings.docling_pages_per_task,
-        )
+    from research_engine.modules.unavailable_document_ai import (
+        DocumentAIUnavailableModule,
     )
-    for mod_cls in [PlainTextModule, MarkdownModule, PDFTextModule, EPUBModule, HTMLModule, TEIXMLModule]:
+
+    if find_spec("docling") is not None:
+        from research_engine.modules.docling_converter import DoclingModule
+
+        dispatcher.register(
+            DoclingModule(
+                device=settings.docling_device,
+                max_workers=settings.docling_max_workers,
+                pages_per_task=settings.docling_pages_per_task,
+            )
+        )
+    else:
+        dispatcher.register(DocumentAIUnavailableModule())
+
+    for mod_cls in [
+        PlainTextModule,
+        MarkdownModule,
+        PDFTextModule,
+        EPUBModule,
+        HTMLModule,
+        TEIXMLModule,
+    ]:
         dispatcher.register(mod_cls())

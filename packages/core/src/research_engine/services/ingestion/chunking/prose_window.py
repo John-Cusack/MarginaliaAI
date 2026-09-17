@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import re
 
-from research_engine.domain.passages import PassageDraft
-from research_engine.services.ingestion.chunking.fixed_window import (
-    cap_spans,
-    split_at_boundary,
-)
-from research_engine.services.text.tokens import (
+from research_engine_sdk import PassageDraft
+from research_engine_sdk.chunking import (
     approx_tokens,
+    cap_spans,
     chars_per_token,
+    split_at_boundary,
     token_budget_chars,
 )
 

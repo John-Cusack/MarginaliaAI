@@ -1,20 +1,14 @@
-name: history
-version: 0.1.0
-author: "MarginaliaAI"
-description: |
-  History research pack. Provides domain types and tools for
-  historical correspondence research, including epistolary
-  reference extraction, missing letter detection, and
-  correspondence cadence analysis.
-license: Apache-2.0
+schema_version: 2
+plugin_id: history
 
 requires:
-  core_api: ">=0.1.0,<1.0.0"
+  core_api: ">=0.6,<0.7"
+  python: ">=3.11"
 
 permissions:
   network: none
+  filesystem: plugin_data
   llm: true
-  filesystem: default
 
 provides:
   document_types:
@@ -50,8 +44,8 @@ provides:
     - id: history.find_missing_letters
       entry: history.tools.find_missing_letters:tool_handler
       description: >
-        Detect likely missing letters between two correspondents
-        using referenced letters, cadence analysis, and content inference.
+        Detect likely missing letters between two correspondents using
+        referenced letters, cadence analysis, and content inference.
       input_schema:
         type: object
         properties:
@@ -78,8 +72,7 @@ provides:
     - id: history.correspondence_cadence
       entry: history.tools.correspondence_cadence:tool_handler
       description: >
-        Analyze the density and cadence of correspondence between
-        two entities over a time range.
+        Analyze correspondence density and cadence between two entities.
       input_schema:
         type: object
         properties:
