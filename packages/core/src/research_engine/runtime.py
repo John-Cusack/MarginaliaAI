@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 
 import structlog
 
@@ -12,8 +13,15 @@ from research_engine.config import Settings, load_settings
 
 
 def configure_logging(settings: Settings) -> None:
-    """Configure structured logging."""
+    """Configure structured logging, writing to stderr.
+
+    stderr, not structlog's default stdout: under ``serve`` stdout *is* the MCP
+    stdio transport, so a log line lands in the middle of the JSON-RPC stream. A
+    tolerant client reports a parse error per line and carries on; a strict one
+    drops the connection.
+    """
     structlog.configure(
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,

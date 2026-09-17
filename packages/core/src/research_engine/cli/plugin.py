@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
@@ -16,6 +18,11 @@ from research_engine.plugins.activation import (
     PluginNotInstalledError,
     PluginStatus,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from research_engine.config import Settings
 
 plugin_app = typer.Typer(no_args_is_help=True)
 console = Console()
@@ -74,13 +81,35 @@ def _print_review(status: PluginStatus) -> None:
         )
 
 
-async def _open():
-    from research_engine.composition import build_container
+@dataclass(frozen=True)
+class _Resources:
+    """The database handle the plugin commands need, and nothing else."""
+
+    engine: AsyncEngine
+
+    async def close(self) -> None:
+        await self.engine.dispose()
+
+
+async def _open() -> tuple[Settings, _Resources, PluginActivationManager]:
+    """Open the activation store.
+
+    Deliberately not ``build_container``: discovering, auditing and approving a
+    plugin needs the database and the installed distributions — not embeddings,
+    reranking or an LLM. Building the container made every one of these commands
+    fail on a base install, which has no local model ("Local embedding support is
+    not installed"), and `plugin list` is how an operator finds that out.
+    """
+    from research_engine.adapters.storage.postgres.engine import build_engine
+    from research_engine.adapters.storage.postgres.repositories.plugins import (
+        PGPluginActivationRepo,
+    )
     from research_engine.config import load_settings
 
     settings = load_settings()
-    container = await build_container(settings)
-    return settings, container, PluginActivationManager(container.plugin_activations)
+    engine = await build_engine(settings.db_url)
+    manager = PluginActivationManager(PGPluginActivationRepo(engine))
+    return settings, _Resources(engine), manager
 
 
 @plugin_app.command("list")

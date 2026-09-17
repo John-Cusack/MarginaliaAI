@@ -8,7 +8,8 @@ import typer
 from rich.console import Console
 
 serve_app = typer.Typer()
-console = Console()
+# stderr: stdout carries the MCP stdio protocol (see runtime.configure_logging).
+console = Console(stderr=True)
 
 
 @serve_app.callback(invoke_without_command=True)
