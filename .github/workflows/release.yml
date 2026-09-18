@@ -17,11 +17,22 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      start_at:
+        description: First distribution to publish (use core to resume after SDK)
+        required: true
+        default: sdk
+        type: choice
+        options:
+          - sdk
+          - core
+          - history
 permissions:
   contents: read
 
 jobs:
   build-sdk:
+    if: github.event_name == 'push' || inputs.start_at == 'sdk'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +53,7 @@ jobs:
 
   publish-sdk:
     needs: build-sdk
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-sdk
     permissions:
@@ -58,7 +69,7 @@ jobs:
 
   publish-sdk-testpypi:
     needs: build-sdk
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.start_at == 'sdk'
     runs-on: ubuntu-latest
     environment: pypi-sdk
     permissions:
@@ -77,7 +88,8 @@ jobs:
     needs: [publish-sdk, publish-sdk-testpypi]
     if: >-
       always() &&
-      (needs.publish-sdk.result == 'success' ||
+      ((github.event_name == 'workflow_dispatch' && inputs.start_at == 'core') ||
+      needs.publish-sdk.result == 'success' ||
       needs.publish-sdk-testpypi.result == 'success')
     runs-on: ubuntu-latest
     steps:
@@ -103,7 +115,10 @@ jobs:
 
   publish-core:
     needs: build-core
-    if: github.event_name == 'push'
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      needs.build-core.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-core
     permissions:
@@ -119,7 +134,11 @@ jobs:
 
   publish-core-testpypi:
     needs: build-core
-    if: github.event_name == 'workflow_dispatch'
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.start_at != 'history' &&
+      needs.build-core.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-core
     permissions:
@@ -138,7 +157,8 @@ jobs:
     needs: [publish-core, publish-core-testpypi]
     if: >-
       always() &&
-      (needs.publish-core.result == 'success' ||
+      ((github.event_name == 'workflow_dispatch' && inputs.start_at == 'history') ||
+      needs.publish-core.result == 'success' ||
       needs.publish-core-testpypi.result == 'success')
     runs-on: ubuntu-latest
     steps:
@@ -161,7 +181,10 @@ jobs:
 
   publish-history:
     needs: build-history
-    if: github.event_name == 'push'
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      needs.build-history.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-history
     permissions:
@@ -177,7 +200,10 @@ jobs:
 
   publish-history-testpypi:
     needs: build-history
-    if: github.event_name == 'workflow_dispatch'
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      needs.build-history.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-history
     permissions:
