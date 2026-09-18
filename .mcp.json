@@ -2,8 +2,8 @@
   "mcpServers": {
     "research-engine": {
       "type": "stdio",
-      "command": "research-engine",
-      "args": ["serve"],
+      "command": "uv",
+      "args": ["run", "research-engine", "serve"],
       "env": {
         "RE_DEFAULT_LANGUAGE": "en"
       }

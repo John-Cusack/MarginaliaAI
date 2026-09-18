@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Local checkouts use the released plugin environment
+
+The workspace now locks the published Logos, Academic Journal, and
+YourCloudLibrary distributions in a default `plugins` dependency group, and
+the repository MCP configuration starts `uv run research-engine serve`.
+Running `uv sync` therefore cannot silently remove the plugins the checked-out
+server expects.
+
+Core now exposes `research-engine db current` and
+`research-engine db upgrade` from an installed wheel. Runtime startup refuses a
+database behind the packaged Alembic head with that exact remediation instead
+of crashing on whichever new table is queried first. The unused
+`RE_AUTO_MIGRATE` setting was removed; schema changes remain explicit.
+
+The public README now leads with MarginaliaAI's purpose, developer-preview
+status, PyPI installation, database prerequisites, and source-checkout path
+rather than the state of one local corpus.
+
 ## 0.6.0 — 2026-09-17
 
 ### Distribution names are the MarginaliaAI family

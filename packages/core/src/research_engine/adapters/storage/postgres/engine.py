@@ -7,6 +7,9 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from research_engine.adapters.storage.postgres.migrations.runner import (
+    require_current_schema,
+)
 from research_engine.ports.repositories import Transaction
 
 if TYPE_CHECKING:
@@ -14,7 +17,7 @@ if TYPE_CHECKING:
 
 
 async def build_engine(db_url: str, **kwargs: object) -> AsyncEngine:
-    """Create an async SQLAlchemy engine."""
+    """Create an engine and refuse to run against an outdated schema."""
     engine = create_async_engine(
         db_url,
         pool_size=5,
@@ -22,6 +25,11 @@ async def build_engine(db_url: str, **kwargs: object) -> AsyncEngine:
         pool_pre_ping=True,
         **kwargs,
     )
+    try:
+        await require_current_schema(engine)
+    except BaseException:
+        await engine.dispose()
+        raise
     return engine
 
 

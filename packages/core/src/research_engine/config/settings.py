@@ -26,7 +26,6 @@ SECRET_FIELDS = frozenset(
 class Settings(BaseSettings):
     # Database
     db_url: str = "postgresql+asyncpg://re_dev:re_dev_pass@localhost:5435/research_engine"
-    auto_migrate: bool = True
 
     # LLM
     llm_provider: Literal["anthropic", "openai_compatible"] = "anthropic"

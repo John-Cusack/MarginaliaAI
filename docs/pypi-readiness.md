@@ -89,38 +89,34 @@ characters.
 
 A release is not ready until every item in this section is closed.
 
-### P0.1 — Make installation useful without a repository checkout
+### P0.1 — Expose installed migration commands
 
-The current quick start is source-development-only:
+The migration-command blocker is resolved for the public distribution. Installed
+users can manage packaged migrations without a Makefile or source tree:
 
 ```text
-uv sync
-make db
-make migrate
-uv run research-engine serve
+research-engine db current
+research-engine db upgrade
+research-engine doctor
 ```
 
-A PyPI user has no Makefile or checked-out `tools/dev-postgres`, and the CLI has no migration
-command. `Settings.auto_migrate` defaults to `True` but is not consumed anywhere. The core
-wheel contains the migrations, so the missing piece is a supported command, not missing
-package data.
+The CLI resolves migrations from the installed `research_engine` package.
+Schema changes remain explicit: runtime startup checks the Alembic head and
+reports `research-engine db upgrade` when the database is behind, rather than
+migrating implicitly. The unused `Settings.auto_migrate` field was removed, and
+the development Makefile calls the same public command.
 
-Implement:
+The end-user database guide covers:
 
-- Add `research-engine db current` and `research-engine db upgrade` (or equivalent names).
-- Locate migrations from the installed package with `importlib.resources`, not a repository
-  path or current working directory.
-- Keep schema changes explicit. Remove the unused `auto_migrate` setting rather than
-  silently migrating whenever the MCP server starts.
-- Make the Makefile target call the public command, so development and installed users
-  exercise the same path.
-- Add an end-user database guide covering:
-  - PostgreSQL 15 or newer;
-  - the server-side `vector`, `pg_trgm`, and `ltree` extensions;
-  - the fact that migration-created extensions may require an elevated database role;
-  - `RE_DB_URL` and credentials;
-  - running `research-engine db upgrade` and then `research-engine doctor`;
-  - `pg_dump` and `pg_restore` being external requirements for backup commands.
+- PostgreSQL 15 or newer;
+- the server-side `vector`, `pg_trgm`, and `ltree` extensions;
+- the fact that migration-created extensions may require an elevated database role;
+- `RE_DB_URL` and credentials;
+- running `research-engine db upgrade` and then `research-engine doctor`;
+- `pg_dump` and `pg_restore` as external requirements for backup commands.
+
+Remaining installation hardening:
+
 - Choose a public bootstrap story. The conservative option is a documented Docker Compose
   example in the repository plus instructions for an existing Postgres server; the Python
   package should not attempt to install or own PostgreSQL.

@@ -88,10 +88,12 @@ may require an elevated database role. Set the async URL explicitly:
 
 ```bash
 export RE_DB_URL='postgresql+asyncpg://user:password@localhost:5432/research_engine'
-ALEMBIC_INI="$(python -c 'from importlib.resources import files; print(files("research_engine").joinpath("adapters/storage/postgres/migrations/alembic.ini"))')"
-alembic -c "$ALEMBIC_INI" upgrade head
+research-engine db upgrade
 research-engine doctor
 ```
+
+Runtime commands refuse an outdated schema and report the exact upgrade command;
+they never migrate the database implicitly.
 
 `pg_dump` and `pg_restore` are external requirements for backup commands.
 
