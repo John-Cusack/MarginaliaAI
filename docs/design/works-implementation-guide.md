@@ -88,7 +88,7 @@ then the companion docs. Nothing in a companion doc overrides the master.
 | Package root | `/home/john/repos/MarginaliaAI/packages/core/src/research_engine` (all paths below are relative to this unless stated) |
 | Python / tooling | Python 3.11 target; everything through `uv run`; lint is ruff only (`ruff.toml`: line length 100, rules `E F I UP B SIM TCH`, no mypy) |
 | Dev database | `make db` starts `tools/dev-postgres/docker-compose.yml`: image `pgvector/pgvector:pg15`, host port **5435**, db `research_engine`, user `re_dev`; `init.sql` creates schema `core` and extensions `vector`, `pg_trgm`, `uuid-ossp`; tables come from Alembic |
-| Migrations | `make migrate` = `uv run alembic -c packages/core/src/research_engine/adapters/storage/postgres/migrations/alembic.ini upgrade head` |
+| Migrations | `make migrate` = `uv run research-engine db upgrade`; runtime commands refuse an outdated schema rather than migrating implicitly |
 | Settings | `config/settings.py`, class `Settings(BaseSettings)`, env prefix `RE_`; `load_settings()` finds the nearest `.env` upward from the cwd (or `RE_ENV_FILE`); `RE_DB_URL` defaults to the dev database |
 | Tests | repo-root `tests/unit` and `tests/integration`; `pytest.ini` sets `asyncio_mode = auto` and markers `unit`, `integration`, `contract`, `slow`; `make test` (unit), `make test-integration` (needs `make db`, skips without it), `make lint` |
 | CI | `uv sync --group dev`, ruff, `pytest tests/unit -q`, `pytest packages/plugins -q`; integration tests are not run in CI |

@@ -35,15 +35,14 @@ db-status: ## Check DB status
 
 ALEMBIC_INI := packages/core/src/research_engine/adapters/storage/postgres/migrations/alembic.ini
 
-migrate: ## Run Alembic migrations
-	uv run alembic -c $(ALEMBIC_INI) upgrade head
+migrate: ## Upgrade the database to the packaged schema head
+	uv run research-engine db upgrade
 
 migrate-down: ## Revert the most recent migration
 	uv run alembic -c $(ALEMBIC_INI) downgrade -1
 
-migrate-status: ## Show current and available revisions
-	uv run alembic -c $(ALEMBIC_INI) current
-	uv run alembic -c $(ALEMBIC_INI) history
+migrate-status: ## Show the current database revision
+	uv run research-engine db current
 
 test: ## Run unit tests
 	uv run pytest tests/unit/ -v

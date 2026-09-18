@@ -1443,6 +1443,22 @@ requires-dist = [
 provides-extras = ["dev", "document-ai", "documents", "embed-server", "full", "local-inference", "openai"]
 
 [[package]]
+name = "marginalia-ai-plugin-academic-journal"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asyncpg" },
+    { name = "httpx" },
+    { name = "marginalia-ai-sdk" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c7/c4/1177f49107e7142c4d08a8c0f23d317607968943ecb80d42dc0525bfe9c5/marginalia_ai_plugin_academic_journal-0.2.0.tar.gz", hash = "sha256:2ae8ea674031e59a6e197a5d55b26115edce9da546ab676968e22887f9531da1", size = 77862, upload-time = "2026-09-18T12:56:09.78Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/59/770cde5a6fa5782a5700130e890bb6f7da3887322a5e3ad17dad69aa7d58/marginalia_ai_plugin_academic_journal-0.2.0-py3-none-any.whl", hash = "sha256:71a368c25de64445287a73a282c97ea1ecc3fd9669fee1aa3842c83de696eaa1", size = 63745, upload-time = "2026-09-18T12:56:08.231Z" },
+]
+
+[[package]]
 name = "marginalia-ai-plugin-history"
 source = { editable = "packages/plugins/history" }
 dependencies = [
@@ -1451,6 +1467,45 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "marginalia-ai-sdk", editable = "packages/sdk" }]
+
+[[package]]
+name = "marginalia-ai-plugin-logos"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asyncpg" },
+    { name = "httpx" },
+    { name = "marginalia-ai-sdk" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+    { name = "structlog" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ff/41/ae97f4ec9cf3118310b6a995872db462bae2b09bd2e68cb3708f7d8cd2a7/marginalia_ai_plugin_logos-0.2.0.tar.gz", hash = "sha256:4570048931be9cccf65991a70d37c83d00eea6769f71c9acaf1a4fe331afc6fa", size = 105381, upload-time = "2026-09-18T15:37:44.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/36/d5/05fb58e205abb5283a531ab548191ed8dbce7e89bf3a21d407cda13ba623/marginalia_ai_plugin_logos-0.2.0-py3-none-any.whl", hash = "sha256:41dbd7fff42b47566726541ea442403b9e34a7971c3286d2ce57924e65772615", size = 129691, upload-time = "2026-09-18T15:37:42.607Z" },
+]
+
+[package.optional-dependencies]
+auth = [
+    { name = "playwright" },
+]
+
+[[package]]
+name = "marginalia-ai-plugin-yourcloudlibrary"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "marginalia-ai-sdk" },
+    { name = "playwright" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "structlog" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/0d/378261cf15f49272e118d8bb83d883431aba9cd866b95722f675e9e55d7c/marginalia_ai_plugin_yourcloudlibrary-0.3.0.tar.gz", hash = "sha256:25076a53ea2e89b595e3b1fe8fb985003305b394b4fd1b85137fe381be17b242", size = 106437, upload-time = "2026-09-18T12:56:12.053Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/2c/1849cc04b54ecd3ab21eb3c819c7e59948c90039dc073b3ec67066fc5c1b/marginalia_ai_plugin_yourcloudlibrary-0.3.0-py3-none-any.whl", hash = "sha256:be38bbc08d19484fa8a506d9c1f11541be2c11fbba6c4507fb13e78df6c73423", size = 81727, upload-time = "2026-09-18T12:56:10.527Z" },
+]
 
 [[package]]
 name = "marginalia-ai-sdk"
@@ -1486,6 +1541,11 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+plugins = [
+    { name = "marginalia-ai-plugin-academic-journal" },
+    { name = "marginalia-ai-plugin-logos", extra = ["auth"] },
+    { name = "marginalia-ai-plugin-yourcloudlibrary" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1501,6 +1561,11 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "ruff", specifier = ">=0.4" },
+]
+plugins = [
+    { name = "marginalia-ai-plugin-academic-journal", specifier = ">=0.2,<0.3" },
+    { name = "marginalia-ai-plugin-logos", extras = ["auth"], specifier = ">=0.2,<0.3" },
+    { name = "marginalia-ai-plugin-yourcloudlibrary", specifier = ">=0.3,<0.4" },
 ]
 
 [[package]]
@@ -2206,6 +2271,25 @@ wheels = [
 ]
 
 [[package]]
+name = "playwright"
+version = "1.63.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "greenlet" },
+    { name = "pyee" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/dd/fbb3d34228ad753bc14464d5f2252585b73367539775a88d0a3949cf5a45/playwright-1.63.0-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:84c540759e8e7f01e690e197e04060f48899d37cea322299f255843273d3385d", size = 44278407, upload-time = "2026-09-15T16:49:06.045Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/9a/948b930b1a8c4ee869e5a139a2b7747caa06aab56a3f09a2f0abdcbda221/playwright-1.63.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:fd1aa00631d44d55e56e0975bf3f3f285fac4a9fd2813183f0c12a488f1a1b24", size = 42944679, upload-time = "2026-09-15T16:49:10.039Z" },
+    { url = "https://files.pythonhosted.org/packages/94/11/dc5c13fa1602371603acd461be47529c1b3513815d3a0dc98f642c291a10/playwright-1.63.0-py3-none-macosx_11_0_universal2.whl", hash = "sha256:c89fc4736502a1f0fac2c8ca5d10c0cbc1c669f1f4774a2d8507a43140e4d53f", size = 44278410, upload-time = "2026-09-15T16:49:13.861Z" },
+    { url = "https://files.pythonhosted.org/packages/27/9c/103a5037789062bdab27c7dca53f3ca6b075b572ab2cd96eec825b3aec4e/playwright-1.63.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:ad21bc07516b187965a7521c5cf0df0bd657b17482eaad74335272d35a2b07de", size = 48217159, upload-time = "2026-09-15T16:49:17.404Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/82/3d85505284c5a210f2da6c07b8f757524e79d1fba9cfdafe1eafb766ae59/playwright-1.63.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:354e15b29503565fc598b89f16fbe070459343bef9d7498a93e304864000c6a7", size = 47902708, upload-time = "2026-09-15T16:49:21.055Z" },
+    { url = "https://files.pythonhosted.org/packages/69/8d/f74ff6b52751859f4b69caf66aa7d4a3c8d6c1f0c7dc9920da103612ee39/playwright-1.63.0-py3-none-win32.whl", hash = "sha256:660c00c62639e31b16700ba5456b351ddba55bb766b7ce8261223aa34928e482", size = 38606075, upload-time = "2026-09-15T16:49:29.546Z" },
+    { url = "https://files.pythonhosted.org/packages/76/eb/d6b8d92658038e260dbc7dd69fb3fdbe245aac283953de8b50b02bfe5f61/playwright-1.63.0-py3-none-win_amd64.whl", hash = "sha256:2f9a707a6c6c91157ed77bff2b8caeb04b3c8d46e70d585fc134298cbe4b5cc6", size = 38606082, upload-time = "2026-09-15T16:49:32.838Z" },
+    { url = "https://files.pythonhosted.org/packages/be/75/2432b3e3c7c62103b72d4c4cc8b16a56383ada372bbb0d1278591e988f71/playwright-1.63.0-py3-none-win_arm64.whl", hash = "sha256:1e4a3a838ce22fb68ad17193fcd142a19610d9d70fb9966d2239f5dddc0cc05b", size = 34523554, upload-time = "2026-09-15T16:49:36.455Z" },
+]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2430,6 +2514,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/52/6d/fffca34caecc4a3f97bda81b2098da5e8ab7efc9a66e819074a11955d87e/pydantic_settings-2.13.1.tar.gz", hash = "sha256:b4c11847b15237fb0171e1462bf540e294affb9b86db4d9aa5c01730bdbe4025", size = 223826, upload-time = "2026-02-19T13:45:08.055Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/4b/ccc026168948fec4f7555b9164c724cf4125eac006e176541483d2c959be/pydantic_settings-2.13.1-py3-none-any.whl", hash = "sha256:d56fd801823dbeae7f0975e1f8c8e25c258eb75d278ea7abb5d9cebb01b56237", size = 58929, upload-time = "2026-02-19T13:45:06.034Z" },
+]
+
+[[package]]
+name = "pyee"
+version = "13.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8b/04/e7c1fe4dc78a6fdbfd6c337b1c3732ff543b8a397683ab38378447baa331/pyee-13.0.1.tar.gz", hash = "sha256:0b931f7c14535667ed4c7e0d531716368715e860b988770fc7eb8578d1f67fc8", size = 31655, upload-time = "2026-02-14T21:12:28.044Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl", hash = "sha256:af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228", size = 15659, upload-time = "2026-02-14T21:12:26.263Z" },
 ]
 
 [[package]]

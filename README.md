@@ -1,28 +1,47 @@
-# Corpus Engine
+# MarginaliaAI
 
-Corpus Engine turns a personal library into a research superpower by making every document deeply queryable, extractable, and cross-linkable through an AI agent.
+**Give AI agents access to the books and papers you trust—not just what they
+remember.**
 
-It ingests heterogeneous sources (PDFs, EPUBs, HTML, Markdown, TEI-XML, and more), indexes them with rich metadata and vector embeddings, and exposes the full corpus to Claude Code and other MCP-capable agents through a well-designed tool interface.
+Much of the information researchers rely on is not available on the open web.
+It lives in personal and institutional libraries: books, journals, archives,
+scanned documents, research collections, and licensed databases.
 
-> This file orients. Where it names something the code declares — commands,
-> tools, installed packs — the code is authoritative: `research-engine --help`,
-> each plugin's `plugin.yaml`, and the migrations themselves.
+Most AI systems cannot reliably search those sources, retrieve the relevant
+passages, and show exactly where an answer came from. MarginaliaAI turns sources
+you are authorized to use into a searchable, citable corpus that AI agents can
+access through the Model Context Protocol (MCP).
 
-## Status
+Instead of asking an agent what it remembers about a subject, you can let it
+search the sources you trust, inspect the relevant text, and cite exact
+locations in the canonical document.
 
-A running system with a populated corpus, not a scaffold. The schema is at
-migration head `019_plugin_activations`. For live counts, and the models and
-plugins this engine is currently wired to:
+> [!IMPORTANT]
+> **MarginaliaAI 0.6 is a developer preview.** It requires PostgreSQL 15 or
+> newer. Plugins are installed separately and must be explicitly audited and
+> enabled. Integrations such as Logos and YourCloudLibrary use accounts you are
+> authorized to access. MarginaliaAI does not redistribute licensed source
+> content.
 
-```bash
-uv run research-engine status
-```
-
-The corpus in active use is the Hebrew Bible across three editions — WLC, LHB
-and ESV — over a Strong's-indexed word table. Building one from empty is an
-ordered sequence; see [docs/corpus-setup.md](docs/corpus-setup.md).
+This README orients. Where it names something the code declares—commands,
+tools, installed plugins—the code is authoritative: `research-engine --help`,
+each plugin's `plugin.yaml`, and the migrations themselves.
 
 ## Quick Start
+
+Install the public distribution:
+
+```bash
+python -m pip install marginalia-ai
+research-engine --help
+```
+
+MarginaliaAI requires PostgreSQL 15 or newer with `vector`, `pg_trgm`, and
+`ltree`. Follow the
+[installed-package database setup](packages/core/README.md) to set
+`RE_DB_URL`, upgrade the schema, and configure an MCP client.
+
+From a source checkout:
 
 ```bash
 uv sync
@@ -31,14 +50,13 @@ make migrate
 uv run research-engine serve
 ```
 
-Use `make db` rather than `docker compose up -d` directly: compose returns
-before Postgres is ready, and the migration then races it. `make help` lists
-the other targets.
+The source workspace locks the three external public plugins in its default
+`plugins` dependency group; History remains an in-workspace package. `uv sync`
+therefore installs the same four-plugin family documented below. Installation
+still does not enable or trust any plugin.
 
-That leaves you with an empty schema at head. Filling it is a separate, ordered
-sequence — see [docs/corpus-setup.md](docs/corpus-setup.md) for the Bible
-corpus, whose six steps must run in order because later ones validate against
-rows the earlier ones write.
+The source workflow creates an empty schema. The repository's
+[corpus setup guide](docs/corpus-setup.md) documents one example corpus build.
 
 ## What it does
 

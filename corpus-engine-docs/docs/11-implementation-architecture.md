@@ -1210,10 +1210,11 @@ All within one atomic transaction.
 
 ### 7.4 Migrations
 
-Alembic. Migration files live in
-`adapters/storage/postgres/migrations/`. Migrations run automatically
-on engine startup if `settings.auto_migrate = True` (default for
-development; explicit opt-in for production).
+Alembic migration files live in
+`adapters/storage/postgres/migrations/`. Schema changes are always explicit:
+`research-engine db upgrade` resolves those files from the installed package,
+and runtime startup refuses an outdated database with that command as the
+remediation. Startup never applies migrations implicitly.
 
 ### 7.5 Embedding storage and re-indexing
 
@@ -1395,7 +1396,6 @@ when forced.
 class Settings(BaseSettings):
     # Database
     db_url: str = "postgresql+asyncpg://localhost/research_engine"
-    auto_migrate: bool = True
 
     # LLM
     llm_provider: Literal["anthropic", "openai_compatible"] = "anthropic"
