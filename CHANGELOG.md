@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Shared vocabulary and documents keep stable identity
+
+Shared entity, event, and relation vocabulary keeps its first declarant and
+every value that declarant defined, while later plugins may complete attributes
+the owner left absent. History can therefore supply `replies_to`'s
+`replied_by` inverse without a false redefinition warning. Inverse metadata is
+not yet used for edge traversal.
+
+PDF ingestion now recovers DOI, JSTOR stable URL, and validated ISBN identity
+from the document's first page, stores the normalized `edition_key`, and links
+the document to `bibliography.editions`. Migration `020_document_editions`
+materializes already-declared edition keys and adds the explicit document FK.
+File ingestion deduplicates different artifacts carrying the same stable
+identity; plugin component documents may still share one edition.
+
 ### Local checkouts use the released plugin environment
 
 The workspace now locks the published Logos, Academic Journal, and

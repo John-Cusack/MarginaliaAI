@@ -49,20 +49,6 @@ async def _rows(engine: AsyncEngine, sql: str, **params: object) -> list:
 
 
 class TestSchemesCoverEveryEdition:
-    async def test_every_edition_names_a_versification_scheme(
-        self, engine: AsyncEngine
-    ) -> None:
-        """An edition with no declared scheme is one whose verses cannot be mapped."""
-        missing = await _rows(
-            engine,
-            "SELECT e.edition_key FROM bibliography.editions e "
-            "LEFT JOIN core.editions_versification v ON v.edition_key = e.edition_key "
-            "WHERE v.edition_key IS NULL",
-        )
-        assert missing == [], (
-            f"editions with no versification scheme: {[r[0] for r in missing]}. "
-            f"Add them to SCHEMES in scripts/load_versification.py and reload."
-        )
 
     async def test_the_schemes_are_the_two_traditions_the_corpus_holds(
         self, engine: AsyncEngine

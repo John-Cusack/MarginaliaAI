@@ -14,6 +14,7 @@ from typing import Any
 import structlog
 
 from research_engine.mcp.errors import failed
+from research_engine.services.ingestion.identifiers import normalize_doi, normalize_isbn
 from research_engine_sdk import (
     Availability,
     SourceMatch,
@@ -85,12 +86,12 @@ def _dedup_key(match: SourceMatch) -> str:
     Prefers the first-class ``doi``/``isbn`` fields, falling back to the
     ``metadata`` dict so providers that stash identity there still dedupe.
     """
-    doi = match.doi or match.metadata.get("doi") or ""
+    doi = normalize_doi(str(match.doi or match.metadata.get("doi") or ""))
     if doi:
-        return f"doi:{doi.lower()}"
-    isbn = match.isbn or match.metadata.get("isbn") or ""
+        return f"doi:{doi}"
+    isbn = normalize_isbn(str(match.isbn or match.metadata.get("isbn") or ""))
     if isbn:
-        return f"isbn:{isbn.replace('-', '').replace(' ', '')}"
+        return f"isbn:{isbn}"
     first_author = match.authors[0] if match.authors else ""
     return f"t:{_normalize_title(match.title)}|a:{_normalize_title(first_author)}|y:{match.year or ''}"
 

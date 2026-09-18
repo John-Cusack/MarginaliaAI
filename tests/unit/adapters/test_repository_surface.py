@@ -47,7 +47,10 @@ EXPECTED = {
         "get", "get_many", "get_by_document", "covering_span", "set_locators",
         "set_node_ids", "vector_search", "keyword_search", "insert_many",
     ],
-    PGDocumentRepo: ["get", "get_many", "insert", "find_by_hash", "find_by_metadata"],
+    PGDocumentRepo: [
+        "get", "get_many", "insert", "find_by_hash", "find_by_edition_id",
+        "find_by_metadata",
+    ],
     PGDocumentNodeRepo: [
         "get", "get_tree", "get_outline", "get_subtree",
         "get_ancestors", "get_ancestors_many", "find_by_span", "insert_many",
