@@ -8,16 +8,15 @@ name: Release
 #   marginalia-ai                 John-Cusack   MarginaliaAI  release.yml  pypi-core
 #   marginalia-ai-plugin-history  John-Cusack   MarginaliaAI  release.yml  pypi-history
 #
-# The same values apply on TestPyPI (https://test.pypi.org/manage/account/publishing/)
-# once a TestPyPI upload job exists; this workflow publishes to production PyPI only.
-# Create the three environments under Settings → Environments, with required
-# reviewers, before the first tag.
+# TestPyPI uses the same publisher tuples and environment names. A manual run
+# publishes SDK, core, then history to TestPyPI; a version tag continues to
+# publish the same sequence to production PyPI.
 
 on:
   push:
     tags:
       - "v*"
-
+  workflow_dispatch:
 permissions:
   contents: read
 
@@ -43,6 +42,7 @@ jobs:
 
   publish-sdk:
     needs: build-sdk
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: pypi-sdk
     permissions:
@@ -56,8 +56,29 @@ jobs:
         with:
           packages-dir: dist/sdk/
 
+  publish-sdk-testpypi:
+    needs: build-sdk
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: pypi-sdk
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-distributions
+          path: dist/sdk
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/sdk/
+          repository-url: https://test.pypi.org/legacy/
+
   build-core:
-    needs: publish-sdk
+    needs: [publish-sdk, publish-sdk-testpypi]
+    if: >-
+      always() &&
+      (needs.publish-sdk.result == 'success' ||
+      needs.publish-sdk-testpypi.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,6 +103,7 @@ jobs:
 
   publish-core:
     needs: build-core
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: pypi-core
     permissions:
@@ -95,8 +117,29 @@ jobs:
         with:
           packages-dir: dist/core/
 
+  publish-core-testpypi:
+    needs: build-core
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: pypi-core
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-distributions
+          path: dist/core
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/core/
+          repository-url: https://test.pypi.org/legacy/
+
   build-history:
-    needs: publish-core
+    needs: [publish-core, publish-core-testpypi]
+    if: >-
+      always() &&
+      (needs.publish-core.result == 'success' ||
+      needs.publish-core-testpypi.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,6 +161,7 @@ jobs:
 
   publish-history:
     needs: build-history
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: pypi-history
     permissions:
@@ -130,3 +174,20 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/history/
+
+  publish-history-testpypi:
+    needs: build-history
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: pypi-history
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: history-distributions
+          path: dist/history
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/history/
+          repository-url: https://test.pypi.org/legacy/
