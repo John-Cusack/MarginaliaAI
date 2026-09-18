@@ -108,22 +108,96 @@ Corpus Engine discovers standard Python distributions through the
 clones Git repositories, copies plugin code, or executes manifest setup
 commands.
 
-```bash
-# Install into the same environment as marginalia-ai.
-python -m pip install marginalia-ai-plugin-history
-# pipx users inject into the core environment.
-pipx inject marginalia-ai marginalia-ai-plugin-history
+### Published Plugins
 
-# Inspect the static manifest before any plugin code is imported.
+These are the public plugins supported by the `0.6.x` SDK and core. Install
+plugins into the same Python environment as `marginalia-ai`. The distribution
+name used by pip is not necessarily the GitHub repository name.
+
+| Distribution | Current release | Plugin ID | What it adds | Setup |
+|--------------|-----------------|-----------|--------------|-------|
+| [`marginalia-ai-plugin-history`](https://pypi.org/project/marginalia-ai-plugin-history/) | `0.2.0` | `history` | Correspondence schemas plus `history.find_missing_letters` and `history.correspondence_cadence` | None |
+| [`marginalia-ai-plugin-logos`](https://pypi.org/project/marginalia-ai-plugin-logos/) | `0.2.0` | `logos` | Logos library search, passage and lexicon access, and licensed-book ingestion | [`auth` extra, Chromium, and Logos sign-in](https://github.com/John-Cusack/marginalia-plugin-logos#install) |
+| [`marginalia-ai-plugin-academic-journal`](https://pypi.org/project/marginalia-ai-plugin-academic-journal/) | `0.2.0` | `academic-journal` | Scholarly discovery, open-access acquisition, paper search, and citation graphs | [Provider configuration and database migration](https://github.com/John-Cusack/marginalia-plugin-academic-journal#install) |
+| [`marginalia-ai-plugin-yourcloudlibrary`](https://pypi.org/project/marginalia-ai-plugin-yourcloudlibrary/) | `0.3.0` | `yourcloudlibrary` | Library catalog search and borrowed-book acquisition and ingestion | [Chromium and library sign-in](https://github.com/John-Cusack/marginalia-plugin-yourcloudlibrary#install) |
+
+Kindle is intentionally not published on PyPI. Do not infer that
+`marginalia-ai-plugin-kindle` exists from architecture documents or old local
+installations.
+
+Install any subset, or all four:
+
+```bash
+python -m pip install \
+  marginalia-ai-plugin-history \
+  "marginalia-ai-plugin-logos[auth]" \
+  marginalia-ai-plugin-academic-journal \
+  marginalia-ai-plugin-yourcloudlibrary
+
+# Logos sign-in and YourCloudLibrary use Playwright. Wheels never download a browser.
+python -m playwright install chromium
+```
+
+For a pipx-managed core, inject plugins into that existing environment.
+`--include-apps` exposes the plugins' login and diagnostic commands:
+
+```bash
+pipx inject marginalia-ai marginalia-ai-plugin-history
+pipx inject --include-apps marginalia-ai "marginalia-ai-plugin-logos[auth]"
+pipx inject marginalia-ai marginalia-ai-plugin-academic-journal
+pipx inject --include-apps marginalia-ai marginalia-ai-plugin-yourcloudlibrary
+
+# POSIX pipx environments:
+"$(pipx environment --value PIPX_LOCAL_VENVS)/marginalia-ai/bin/python" \
+  -m playwright install chromium
+```
+
+Authentication is provider-owned. It never happens during wheel installation
+or plugin approval:
+
+```bash
+logos-login
+research-engine-ycl-login
+```
+
+Review static manifests before importing plugin code, then enable the exact
+artifacts. Only Logos and academic-journal currently own database migrations:
+
+```bash
 research-engine plugin list
 research-engine plugin audit history
-research-engine plugin enable history
+research-engine plugin audit logos
+research-engine plugin audit academic-journal
+research-engine plugin audit yourcloudlibrary
 
-# Upgrades require approval of the new version and manifest hash.
+research-engine plugin enable history
+research-engine plugin enable logos
+research-engine plugin enable academic-journal
+research-engine plugin enable yourcloudlibrary
+research-engine plugin migrate logos
+research-engine plugin migrate academic-journal
+research-engine plugin doctor
+```
+
+Restart the MCP server after enabling or upgrading plugins. Enabled plugin
+tools then appear in the MCP tool catalogue with their manifest descriptions.
+Agents should use those descriptions rather than guess parameters. Common
+entry points include `logos.search`, `logos.get_entry`,
+`logos.ingest_book`, `academic-journal.discover_papers`,
+`academic-journal.search_papers`, `yourcloudlibrary.search_catalog`, and
+`yourcloudlibrary.acquire_and_ingest`.
+
+Upgrades require approval of the new version and manifest hash:
+
+```bash
 python -m pip install --upgrade marginalia-ai-plugin-history
 research-engine plugin approve-upgrade history
+```
 
-# Disable, then let the environment's package manager uninstall.
+Disable before uninstalling. The approval audit row and plugin data remain
+until explicitly forgotten or deleted:
+
+```bash
 research-engine plugin disable history
 python -m pip uninstall marginalia-ai-plugin-history
 research-engine plugin list        # reports the retained audit row as missing
@@ -203,18 +277,18 @@ See [packages/plugins/](packages/plugins/README.md) and the
 
 ## Project Structure
 
-```
+```text
 packages/core/src/research_engine/
   config/           # Settings (pydantic-settings, .env loading)
   adapters/         # Postgres repos, embedding, reranker, LLM, HTTP
   services/         # Search, extraction, ingestion, entities, events
-  plugins/          # Pack loader, registry, SDK, permissions
+  plugins/          # Entry-point discovery, approval, loading, permissions
   mcp/              # MCP server + tool handlers
   cli/              # Command-line surface (`research-engine --help`)
   domain/           # Core domain models and error types
   ports/            # Repository protocols
 packages/sdk/       # Plugin SDK distribution
-packages/plugins/   # First-party packs that ship with the engine
+packages/plugins/   # First-party plugin distributions in this workspace
 ```
 
 ## Documentation

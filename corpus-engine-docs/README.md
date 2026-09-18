@@ -34,9 +34,10 @@ Read in the order below for a top-down understanding.
 ## Conventions
 
 - **Core** — the general-purpose engine; knows nothing about specific domains.
-- **Pack** — a domain extension (history, biblical studies, biology, …)
-  distributed as a GitHub repo.
+- **Plugin** — a domain extension distributed as a Python package with a static
+  `plugin.yaml` manifest and `research_engine.plugins` entry point. Older
+  documents may call this a **pack**.
 - **Module** — an ingestion adapter for a specific source type (PDF, EPUB,
-  Logos, Kindle, …). Some live in core; some live in packs.
+  Logos, …). A module may live in core or in a plugin.
 - **MCP** — Model Context Protocol. The engine exposes its capabilities to
   Claude Code and similar agents over MCP.
