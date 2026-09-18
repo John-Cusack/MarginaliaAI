@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from structlog.testing import capture_logs
 
 from research_engine.domain.errors import PluginConflict, PluginLoadError, UnknownType
 from research_engine.plugins.registry import PluginRegistry
@@ -125,6 +126,59 @@ class TestPluginRegistry:
         stored = getattr(r, lister)()["battle"]
         assert stored["description"] == "armed engagement"
         assert stored["plugin"] == "history"
+
+    def test_later_declaration_completes_an_undefined_attribute(self):
+        """Core reserved the name, but did not define an inverse to overwrite."""
+        r = PluginRegistry()
+        r.register_core_types()
+
+        with capture_logs() as logs:
+            r.register_relation_type(
+                "replies_to", {"inverse": "replied_by"}, "history"
+            )
+
+        assert r.list_relation_types()["replies_to"] == {
+            "plugin": "core",
+            "inverse": "replied_by",
+        }
+        assert not any(
+            log.get("event") == "vocabulary_redefined_ignored" for log in logs
+        )
+
+    def test_later_declaration_cannot_replace_a_defined_attribute(self):
+        r = PluginRegistry()
+        r.register_relation_type(
+            "replies_to", {"inverse": "answered_by"}, "owner"
+        )
+
+        with capture_logs() as logs:
+            r.register_relation_type(
+                "replies_to", {"inverse": "replied_by"}, "history"
+            )
+
+        assert r.list_relation_types()["replies_to"]["inverse"] == "answered_by"
+        warning = next(
+            log for log in logs
+            if log.get("event") == "vocabulary_redefined_ignored"
+        )
+        assert warning["differing"] == ["inverse"]
+        assert warning["owner"] == "owner"
+
+    def test_shared_vocabulary_does_not_block_the_rest_of_a_stage(self):
+        """The history regression: one common term must not discard the plugin."""
+        r = PluginRegistry()
+        r.register_core_types()
+        stage = r.create_stage()
+
+        stage.register_entity_type("person", {"schema": None}, "history")
+        stage.register_relation_type(
+            "replies_to", {"inverse": "replied_by"}, "history"
+        )
+        stage.register_document_type("letter", {}, "history")
+        stage.commit()
+
+        assert "letter" in r.list_document_types()
+        assert r.list_relation_types()["replies_to"]["inverse"] == "replied_by"
 
     def test_register_mcp_tool(self):
         r = PluginRegistry()

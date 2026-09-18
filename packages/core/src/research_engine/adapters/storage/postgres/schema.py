@@ -44,11 +44,17 @@ documents = sa.Table(
     sa.Column("created_date_start", sa.DateTime(timezone=True)),
     sa.Column("created_date_end", sa.DateTime(timezone=True)),
     sa.Column("created_precision", sa.Text),
+    sa.Column(
+        "edition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
+    ),
     sa.Column("metadata", sa.JSON, nullable=False, server_default="{}"),
     sa.UniqueConstraint("content_hash", "source"),
 )
 
 sa.Index("documents_type_idx", documents.c.document_type)
+sa.Index("documents_edition_idx", documents.c.edition_id)
 # NOTE: no GIN index on `metadata`. The column is `json`, not `jsonb`, and
 # Postgres has no default GIN operator class for `json` — declaring one here made
 # `metadata.create_all` fail outright, and migration 001 never created it, so the

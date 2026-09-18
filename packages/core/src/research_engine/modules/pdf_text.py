@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine.services.ingestion.identifiers import with_first_page_identity
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -16,7 +18,7 @@ logger = structlog.get_logger()
 
 class PDFTextModule:
     id = "pdf_text"
-    version = "1.0"
+    version = "1.1"
     supported_extensions = {".pdf"}
     supported_mime_types = {"application/pdf"}
 
@@ -101,6 +103,9 @@ class PDFTextModule:
             }
             # Remove empty metadata values
             metadata = {k: v for k, v in metadata.items() if v != ""}
+            metadata = with_first_page_identity(
+                metadata, pages_text[0] if pages_text else ""
+            )
 
             return full_text, title, metadata
         finally:

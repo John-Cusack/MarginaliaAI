@@ -1,6 +1,6 @@
 # Setting up the Bible corpus
 
-`make db && make migrate` gives you an empty schema at head (`019`). Everything
+`make db && make migrate` gives you an empty schema at head (`020`). Everything
 below fills it. None of it runs automatically, none of it is idempotent by
 accident, and the order is not arbitrary — later steps validate against rows
 earlier steps write, and refuse rather than guess when those rows are absent.

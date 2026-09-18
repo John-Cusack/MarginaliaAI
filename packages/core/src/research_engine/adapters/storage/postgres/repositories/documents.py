@@ -38,6 +38,7 @@ class PGDocumentRepo:
             "created_date_start": draft.created_date_start,
             "created_date_end": draft.created_date_end,
             "created_precision": draft.created_precision,
+            "edition_id": draft.edition_id,
             "metadata": draft.metadata,
         }
         await tx.conn.execute(documents.insert().values(**values))
@@ -64,6 +65,17 @@ class PGDocumentRepo:
                 )
             ).first()
             return self._to_domain(row) if row else None
+
+    async def find_by_edition_id(
+        self, tx: Transaction, edition_id: UUID
+    ) -> Document | None:
+        """Find an already-ingested artifact while its edition row is locked."""
+        row = (
+            await tx.conn.execute(
+                documents.select().where(documents.c.edition_id == edition_id).limit(1)
+            )
+        ).first()
+        return self._to_domain(row) if row else None
 
     async def find_by_metadata(self, key: str, value: str) -> list[Document]:
         """Documents whose metadata has *key* equal to *value*.
@@ -158,5 +170,6 @@ class PGDocumentRepo:
             created_date_start=row.created_date_start,
             created_date_end=row.created_date_end,
             created_precision=row.created_precision,
+            edition_id=row.edition_id,
             metadata=row.metadata or {},
         )

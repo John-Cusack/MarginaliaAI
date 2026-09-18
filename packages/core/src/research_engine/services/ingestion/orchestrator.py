@@ -79,13 +79,22 @@ class IngestionOrchestrator:
         """Prefer what the caller or parser knows; otherwise the configured default."""
         return supplied or self._default_language
 
-    async def _record_edition(self, tx: Any, metadata: dict[str, Any] | None) -> None:
-        """Keep `bibliography.editions` behind document ingest, in the same transaction."""
+    async def _record_edition(
+        self,
+        tx: Any,
+        metadata: dict[str, Any] | None,
+        *,
+        lock: bool = False,
+    ) -> Any | None:
+        """Materialize a declared edition and optionally serialize its file ingest."""
         if self._editions is None:
-            return
+            return None
         key = (metadata or {}).get("edition_key")
-        if isinstance(key, str) and key:
-            await self._editions.upsert_key(tx, key)
+        if not isinstance(key, str) or not key:
+            return None
+        if lock:
+            return await self._editions.upsert_key(tx, key, lock=True)
+        return await self._editions.upsert_key(tx, key)
 
     async def ingest_paths(
         self, paths: list[Path], plugin_hint: str | None = None
@@ -217,8 +226,10 @@ class IngestionOrchestrator:
         )
 
         async with transaction(self._engine) as tx:
+            edition = await self._record_edition(tx, metadata)
+            if edition is not None:
+                doc_draft = doc_draft.model_copy(update={"edition_id": edition.id})
             doc = await self._docs.insert(tx, doc_draft)
-            await self._record_edition(tx, metadata)
             if full_text is not None and self._document_texts is not None:
                 await self._document_texts.put(
                     tx, doc.id, full_text, "plugin_direct", "1.0"
@@ -281,6 +292,68 @@ class IngestionOrchestrator:
             "node_count": len(node_drafts or []),
         }
 
+    async def _store_file_document(
+        self,
+        *,
+        draft: DocumentDraft,
+        metadata: dict[str, Any],
+        full_text: str,
+        module: Any,
+        passage_drafts: list[Any],
+        title: str,
+        language: str | None,
+    ) -> tuple[Any, list[Any], bool]:
+        """Write one parsed file, with edition identity locked through commit."""
+        async with transaction(self._engine) as tx:
+            edition = await self._record_edition(tx, metadata, lock=True)
+            if edition is not None:
+                existing = await self._docs.find_by_edition_id(tx, edition.id)
+                if existing is not None:
+                    return existing, [], True
+                draft = draft.model_copy(update={"edition_id": edition.id})
+
+            doc = await self._docs.insert(tx, draft)
+            if self._document_texts is not None:
+                await self._document_texts.put(
+                    tx, doc.id, full_text, module.id, module.version
+                )
+            if self._document_nodes is not None:
+                stored_nodes = await self._document_nodes.insert_many(
+                    tx,
+                    doc.id,
+                    build_node_tree(
+                        metadata.get("sections") or [],
+                        text_length=len(full_text),
+                        title=title,
+                    ),
+                )
+                passage_drafts = attach_nodes(passage_drafts, stored_nodes)
+            saved_passages = await self._passages.insert_many(
+                tx, doc.id, passage_drafts
+            )
+
+            passage_ids = [passage.id for passage in saved_passages]
+            texts = [passage.text for passage in saved_passages]
+            for index in range(0, len(texts), self._embedding_batch_size):
+                batch_texts = texts[index : index + self._embedding_batch_size]
+                batch_ids = passage_ids[
+                    index : index + self._embedding_batch_size
+                ]
+                embeddings = await self._embedding.embed_batch(batch_texts)
+                await self._passages.store_embeddings(
+                    tx,
+                    batch_ids,
+                    embeddings,
+                    self._embedding.model_name,
+                    self._embedding.model_version,
+                    self._embedding.dim,
+                )
+
+            await self._passages.index_fts(
+                tx, passage_ids, texts, pg_config(language)
+            )
+        return doc, saved_passages, False
+
     async def _ingest_one(
         self, run_id: object, source_path: Path, hint: str | None, stats: dict
     ) -> None:
@@ -324,52 +397,30 @@ class IngestionOrchestrator:
                 full_text, chunker_id, metadata, parser_id=module.id
             )
 
-            # Transaction: insert doc + passages + embeddings + FTS
-            async with transaction(self._engine) as tx:
-                doc = await self._docs.insert(tx, draft)
-                await self._record_edition(tx, metadata)
-                # Canonical text first: the passages inserted next carry offsets
-                # into it, and both must land in the same transaction or the
-                # offsets address text that is not there.
-                if self._document_texts is not None:
-                    await self._document_texts.put(
-                        tx, doc.id, full_text, module.id, module.version
-                    )
-                # Structure lands with the text it addresses, in the same
-                # transaction and for the same reason as passages: a tree whose
-                # spans point into text that is not there is worse than no tree.
-                if self._document_nodes is not None:
-                    stored_nodes = await self._document_nodes.insert_many(
-                        tx,
-                        doc.id,
-                        build_node_tree(
-                            metadata.get("sections") or [],
-                            text_length=len(full_text),
-                            title=title,
-                        ),
-                    )
-                    # Nodes first, so their ids exist to be pointed at. A
-                    # chunker cannot do this itself: it runs long before the
-                    # tree is written.
-                    passage_drafts = attach_nodes(passage_drafts, stored_nodes)
-                saved_passages = await self._passages.insert_many(tx, doc.id, passage_drafts)
-
-                # Embed in batches
-                passage_ids = [p.id for p in saved_passages]
-                texts = [p.text for p in saved_passages]
-
-                for i in range(0, len(texts), self._embedding_batch_size):
-                    batch_texts = texts[i : i + self._embedding_batch_size]
-                    batch_ids = passage_ids[i : i + self._embedding_batch_size]
-                    embeddings = await self._embedding.embed_batch(batch_texts)
-                    await self._passages.store_embeddings(
-                        tx, batch_ids, embeddings,
-                        self._embedding.model_name, self._embedding.model_version,
-                        self._embedding.dim,
-                    )
-
-                # FTS index, stemmed for this document's language
-                await self._passages.index_fts(tx, passage_ids, texts, pg_config(language))
+            doc, saved_passages, duplicate = await self._store_file_document(
+                draft=draft,
+                metadata=metadata,
+                full_text=full_text,
+                module=module,
+                passage_drafts=passage_drafts,
+                title=title,
+                language=language,
+            )
+            if duplicate:
+                logger.info(
+                    "ingestion_skipped_edition_duplicate",
+                    document_id=str(doc.id),
+                    edition_key=metadata.get("edition_key"),
+                    source=str(source_path),
+                )
+                stats["skipped"] += 1
+                await self._ingestion_runs.update_item(
+                    item.id,
+                    status="skipped",
+                    document_id=doc.id,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                )
+                return
 
             duration_ms = int((time.monotonic() - start) * 1000)
             await self._ingestion_runs.update_item(

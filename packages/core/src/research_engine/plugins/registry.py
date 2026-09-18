@@ -154,9 +154,10 @@ class PluginRegistry:
         unreachable — the whole reason the Civil War volumes were never typed as
         correspondence.
 
-        The first declaration keeps the definition. A later one that disagrees
-        is logged rather than applied, because silently redefining a type under
-        the pack that already uses it is worse than either.
+        The first declaration keeps ownership and every attribute it defines.
+        A later declaration may complete attributes the owner left undefined,
+        but a genuine disagreement is logged and cannot replace the owner's
+        value.
         """
         key = (kind, id)
         owner = self._owners.get(key)
@@ -169,13 +170,24 @@ class PluginRegistry:
             )
         return False
 
-    def _note_redefinition(
-        self, kind: str, id: str, plugin: str, existing: dict[str, Any], spec: dict[str, Any]
-    ) -> None:
+    def _merge_vocabulary_completion(
+        self,
+        kind: str,
+        id: str,
+        plugin: str,
+        existing: dict[str, Any],
+        spec: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Return a completed copy, while keeping defined owner values immutable."""
+        supplied = {
+            key: value
+            for key, value in spec.items()
+            if key != "plugin" and value is not None
+        }
         differing = {
-            k: (existing.get(k), v)
-            for k, v in spec.items()
-            if k != "plugin" and existing.get(k) != v
+            key: (existing[key], value)
+            for key, value in supplied.items()
+            if key in existing and existing[key] != value
         }
         if differing:
             logger.warning(
@@ -186,6 +198,15 @@ class PluginRegistry:
                 owner=existing.get("plugin"),
                 differing=sorted(differing),
             )
+
+        completion = {
+            key: value for key, value in supplied.items() if key not in existing
+        }
+        if not completion:
+            return None
+        # Stages shallow-copy their registries. Never mutate the nested live
+        # dictionary before the stage commits.
+        return {**existing, **completion}
 
     # --- Document types ---
 
@@ -205,9 +226,12 @@ class PluginRegistry:
 
     def register_entity_type(self, id: str, spec: dict[str, Any], plugin: str) -> None:
         if not self._claim_vocabulary("entity_type", id, plugin):
-            self._note_redefinition(
+            merged = self._merge_vocabulary_completion(
                 "entity_type", id, plugin, self._entity_types.get(id, {}), spec
             )
+            if merged is not None:
+                self._entity_types[id] = merged
+                self._touch()
             return
         self._entity_types[id] = {**spec, "plugin": plugin}
         self._touch()
@@ -223,9 +247,12 @@ class PluginRegistry:
 
     def register_event_type(self, id: str, spec: dict[str, Any], plugin: str) -> None:
         if not self._claim_vocabulary("event_type", id, plugin):
-            self._note_redefinition(
+            merged = self._merge_vocabulary_completion(
                 "event_type", id, plugin, self._event_types.get(id, {}), spec
             )
+            if merged is not None:
+                self._event_types[id] = merged
+                self._touch()
             return
         self._event_types[id] = {**spec, "plugin": plugin}
         self._touch()
@@ -237,9 +264,12 @@ class PluginRegistry:
 
     def register_relation_type(self, id: str, spec: dict[str, Any], plugin: str) -> None:
         if not self._claim_vocabulary("relation_type", id, plugin):
-            self._note_redefinition(
+            merged = self._merge_vocabulary_completion(
                 "relation_type", id, plugin, self._relation_types.get(id, {}), spec
             )
+            if merged is not None:
+                self._relation_types[id] = merged
+                self._touch()
             return
         self._relation_types[id] = {**spec, "plugin": plugin}
         self._touch()

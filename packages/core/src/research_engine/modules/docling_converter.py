@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import structlog
 
 from research_engine.domain.errors import describe_exception
+from research_engine.services.ingestion.identifiers import with_first_page_identity
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -978,11 +979,11 @@ def _extract_title(full_text: str, source_path: Path) -> str:
 
 class DoclingModule:
     id = "docling"
+    # 2.1: first-page publication identifiers become stable edition metadata.
     # 2.0: canonical text is built from Docling's item stream rather than its
-    # markdown export, so structure and page provenance survive. The text moves
-    # by a trailing newline and the offsets move with it — a re-ingest, not a
-    # re-chunk. 1.0 documents are stale.
-    version = "2.0"
+    # markdown export, so structure and page provenance survive. The text and
+    # offsets move together, making adoption a re-ingest rather than a reindex.
+    version = "2.1"
 
     def __init__(
         self,
@@ -1091,5 +1092,7 @@ class DoclingModule:
 
         # Remove empty values
         metadata = {k: v for k, v in metadata.items() if v not in ("", None)}
+        first_page_end = pages[1]["char_start"] if len(pages) > 1 else len(full_text)
+        metadata = with_first_page_identity(metadata, full_text[:first_page_end])
 
         return full_text, title, metadata

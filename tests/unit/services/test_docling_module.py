@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -68,7 +69,44 @@ class TestModuleAttributes:
         assert module.id == "docling"
 
     def test_version(self, module: DoclingModule) -> None:
-        assert module.version == "2.0"
+        assert module.version == "2.1"
+
+    def test_conversion_adds_identity_from_the_first_page(
+        self, module: DoclingModule, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from research_engine.modules import docling_converter
+
+        first_page = "Article title\nDOI: 10.1177/026537880001700202"
+        second_page = "References\nDOI: 10.1000/cited-work"
+        full_text = f"{first_page}\n\n{second_page}"
+        monkeypatch.setattr(docling_converter, "_pdf_has_text", lambda _path: True)
+        monkeypatch.setattr(docling_converter, "_pdf_page_count", lambda _path: 2)
+        monkeypatch.setattr(
+            docling_converter,
+            "_get_converter",
+            lambda **_kwargs: SimpleNamespace(
+                convert=lambda _path: SimpleNamespace(document=object())
+            ),
+        )
+        monkeypatch.setattr(
+            docling_converter,
+            "_text_and_structure",
+            lambda _document: (
+                full_text,
+                [],
+                [
+                    {"char_start": 0, "page": 1},
+                    {"char_start": len(first_page) + 2, "page": 2},
+                ],
+            ),
+        )
+        monkeypatch.setattr(
+            docling_converter, "_pdf_metadata_author", lambda _path: None
+        )
+
+        _text, _title, metadata = module._convert(tmp_path / "article.pdf")
+
+        assert metadata["edition_key"] == "doi:10.1177/026537880001700202"
 
 
 # --- structure from the item stream -----------------------------------------

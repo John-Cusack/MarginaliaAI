@@ -24,6 +24,7 @@ class Document(BaseModel):
     created_date_start: datetime | None = None
     created_date_end: datetime | None = None
     created_precision: str | None = None
+    edition_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -40,6 +41,7 @@ class DocumentDraft(BaseModel):
     created_date_start: datetime | None = None
     created_date_end: datetime | None = None
     created_precision: str | None = None
+    edition_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

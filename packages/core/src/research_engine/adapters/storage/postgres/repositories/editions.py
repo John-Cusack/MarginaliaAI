@@ -43,9 +43,14 @@ class PGEditionRepo:
             return self._to_domain(row) if row else None
 
     async def upsert_key(
-        self, tx: Transaction, edition_key: str, csl: dict[str, Any] | None = None
+        self,
+        tx: Transaction,
+        edition_key: str,
+        csl: dict[str, Any] | None = None,
+        *,
+        lock: bool = False,
     ) -> Edition:
-        """The row for this key, creating it and refreshing its CSL when given."""
+        """Return one edition row, optionally locked through the ingest transaction."""
         stmt = pg_insert(editions).values(id=uuid7(), edition_key=edition_key)
         if csl is not None:
             stmt = stmt.on_conflict_do_update(
@@ -57,11 +62,10 @@ class PGEditionRepo:
                 index_elements=[editions.c.edition_key]
             )
         await tx.conn.execute(stmt)
-        row = (
-            await tx.conn.execute(
-                editions.select().where(editions.c.edition_key == edition_key)
-            )
-        ).first()
+        query = editions.select().where(editions.c.edition_key == edition_key)
+        if lock:
+            query = query.with_for_update()
+        row = (await tx.conn.execute(query)).first()
         assert row is not None  # just inserted, or it was already there
         return self._to_domain(row)
 

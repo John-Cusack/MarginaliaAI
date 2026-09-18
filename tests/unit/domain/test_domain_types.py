@@ -59,6 +59,7 @@ class TestDocumentDraft:
         )
         assert draft.document_type == "generic"
         assert draft.metadata == {}
+        assert draft.edition_id is None
         assert draft.title is None
 
     def test_full(self):
@@ -71,9 +72,11 @@ class TestDocumentDraft:
             parser="plain_text",
             parser_version="1.0",
             metadata={"sender": "McClellan"},
+            edition_id=uuid4(),
         )
         assert draft.title == "A Letter"
         assert draft.metadata["sender"] == "McClellan"
+        assert draft.edition_id is not None
 
 
 class TestDocument:
@@ -89,11 +92,13 @@ class TestDocument:
             parser_version="1.0",
             ingested_at=datetime.now(UTC),
             metadata={"key": "value"},
+            edition_id=uuid4(),
         )
         data = doc.model_dump()
         doc2 = Document(**data)
         assert doc2.id == doc.id
         assert doc2.metadata == {"key": "value"}
+        assert doc2.edition_id == doc.edition_id
 
 
 class TestPassageDraft:

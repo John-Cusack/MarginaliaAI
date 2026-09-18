@@ -242,6 +242,8 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                 anchor_id = "44444444-4444-4444-4444-444444444444"
                 edition_id = "55555555-5555-5555-5555-555555555555"
                 edition_key = "MIGRATION-018-EDITION"
+                identity_document_id = "66666666-6666-6666-6666-666666666666"
+                identity_key = "MIGRATION-020-EDITION"
                 plugin_ids = [
                     "logos",
                     "academic-journal",
@@ -275,6 +277,20 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                             "decode(repeat('00', 32), 'hex'), 'test', '1')"
                         ),
                         {"id": document_id},
+                    )
+                    await conn.execute(
+                        sa.text(
+                            "INSERT INTO core.documents "
+                            "(id, document_type, source, content_hash, parser, "
+                            "parser_version, metadata) "
+                            "VALUES (:id, 'generic', 'identity-fixture', "
+                            "decode(repeat('01', 32), 'hex'), 'test', '1', "
+                            "CAST(:metadata AS json))"
+                        ),
+                        {
+                            "id": identity_document_id,
+                            "metadata": json.dumps({"edition_key": identity_key}),
+                        },
                     )
                     await conn.execute(
                         sa.text(
@@ -367,6 +383,41 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                         ).scalar_one()
                     return columns, index_count, fk_count
 
+                async def document_edition_schema() -> tuple[set[str], int, int]:
+                    async with engine.connect() as conn:
+                        columns = {
+                            row[0]
+                            for row in (
+                                await conn.execute(
+                                    sa.text(
+                                        "SELECT column_name "
+                                        "FROM information_schema.columns "
+                                        "WHERE table_schema = 'core' "
+                                        "AND table_name = 'documents'"
+                                    )
+                                )
+                            ).all()
+                        }
+                        index_count = (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT count(*) FROM pg_indexes "
+                                    "WHERE schemaname = 'core' "
+                                    "AND indexname = 'documents_edition_idx'"
+                                )
+                            )
+                        ).scalar_one()
+                        fk_count = (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT count(*) FROM pg_constraint "
+                                    "WHERE conname = 'documents_edition_id_fk' "
+                                    "AND conrelid = 'core.documents'::regclass"
+                                )
+                            )
+                        ).scalar_one()
+                    return columns, index_count, fk_count
+
                 async def assert_upgraded() -> None:
                     columns, index_count, fk_count = await anchor_schema()
                     assert "edition_id" in columns
@@ -384,6 +435,23 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                             )
                         ).scalar_one()
                     assert str(stored) == edition_id
+                    columns, index_count, fk_count = await document_edition_schema()
+                    assert "edition_id" in columns
+                    assert index_count == 1
+                    assert fk_count == 1
+                    async with engine.connect() as conn:
+                        linked_key = (
+                            await conn.execute(
+                                sa.text(
+                                    "SELECT e.edition_key "
+                                    "FROM core.documents d "
+                                    "JOIN bibliography.editions e ON e.id = d.edition_id "
+                                    "WHERE d.id = :id"
+                                ),
+                                {"id": identity_document_id},
+                            )
+                        ).scalar_one()
+                    assert linked_key == identity_key
                     async with engine.connect() as conn:
                         plugin_rows = (
                             await conn.execute(
@@ -413,6 +481,12 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                     assert "edition_id" not in columns
                     assert index_count == 0
                     assert fk_count == 0
+                    document_columns, document_index, document_fk = (
+                        await document_edition_schema()
+                    )
+                    assert "edition_id" not in document_columns
+                    assert document_index == 0
+                    assert document_fk == 0
                     async with engine.connect() as conn:
                         plugin_rows = (
                             await conn.execute(
@@ -442,6 +516,15 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                                 "DELETE FROM bibliography.editions WHERE id = :id"
                             ),
                             {"id": edition_id},
+                        )
+                with pytest.raises(IntegrityError):
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            sa.text(
+                                "DELETE FROM bibliography.editions "
+                                "WHERE edition_key = :edition_key"
+                            ),
+                            {"edition_key": identity_key},
                         )
 
                 await asyncio.to_thread(
