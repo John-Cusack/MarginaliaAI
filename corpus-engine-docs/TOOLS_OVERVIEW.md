@@ -7,8 +7,8 @@ The Corpus Engine (project name: MarginaliaAI / `marginalia-ai`) is a personal l
 The system has three layers:
 
 1. **Core engine** — hybrid search (keyword + vector + reranking), entity resolution, event store, knowledge graph, structured LLM extraction, and a pluggable ingestion pipeline.
-2. **Plugin SDK** — plugins declare tools, document types, chunkers, and ingestion modules via a `pack.yaml` manifest. The engine injects protocol-based clients (corpus, entity, event, extraction, ingestion, LLM, HTTP) with permission gating.
-3. **Plugins** — three installed: Logos Bible Software, Academic Journal, and Kindle.
+2. **Plugin SDK** — plugins publish a schema-v2 `plugin.yaml` manifest through the `research_engine.plugins` entry-point group. The engine validates it without importing plugin code, then injects protocol-based clients (corpus, entity, event, extraction, ingestion, LLM, HTTP) with permission gating after explicit approval.
+3. **Plugins** — four public distributions currently target core/SDK `0.6.x`: history, Logos, academic-journal, and YourCloudLibrary. Kindle is not published.
 
 All tools are exposed as MCP tools through a single server (`research-engine serve`).
 
@@ -65,128 +65,141 @@ All tools are exposed as MCP tools through a single server (`research-engine ser
 
 ---
 
-## Logos Bible Software Plugin (25 tools)
+## Published Plugin Tools
 
-Integrates with the Logos web app API (`app.logos.com`). Provides full access to Bible study resources, commentaries, original-language tools, and a two-phase book ingestion pipeline with verse-boundary chunking.
+Plugin manifests and the live MCP tool catalogue are authoritative. The lists
+below identify the main workflows, not a second frozen copy of every input
+schema. An agent should read the description and schema supplied by MCP before
+calling a tool.
 
-**Auth**: Cookie-based via Playwright login flow, stored at `~/.logos-mcp/cookies.json`.
+Install and approve plugins using the
+[published-plugin guide](../README.md#published-plugins), then restart
+`research-engine serve`. A wheel being installed does not make its tools
+available until the exact artifact has been audited and enabled.
 
-### Bible Text & Passage Resolution
+### History Plugin (`history`, 2 tools)
 
-| Tool | What it does |
-|------|-------------|
-| `logos.passage_text` | Get Bible passage text. Input: `reference` (Logos format or natural language like "John 3:16"), `versions` (array, default `["LEB"]`). |
-| `logos.resolve_passage` | Resolve a natural-language Bible reference to Logos canonical form. Input: `query` (e.g. "John 3:16"). |
-| `logos.passage_suggestions` | Typeahead suggestions for partial passage input. Input: `input` (partial text). |
-
-### Study & Exegetical Tools
-
-| Tool | What it does |
-|------|-------------|
-| `logos.passage_guide` | Comprehensive passage guide — aggregates commentaries, cross-refs, parallels, and study resources for a reference. |
-| `logos.exegetical_guide` | Original-language exegetical analysis for a passage. Input: `reference`. |
-| `logos.word_study` | Hebrew/Greek word study. Input: `word`. |
-| `logos.commentary` | Fetch commentary entries for a passage. Filter by `resource_sets`: BibleCommentaries, StudyBibles, TextualCommentaries, etc. `character_limit` controls response size (default 5000). |
-| `logos.cross_references` | Cross-references for a passage. |
-| `logos.parallel_passages` | Synoptic and thematic parallels. |
-| `logos.relations` | People, places, and things related to a passage. |
-| `logos.factbook` | Factbook report for a topic (e.g. "Jesus", "Jerusalem", "Baptism"). |
-
-### Search & Library
+Adds correspondence analysis plus historical document, entity, event,
+relationship, and extraction-schema contributions.
 
 | Tool | What it does |
 |------|-------------|
-| `logos.search` | Full-text search across all Logos books. Inputs: `query`, optional `scope` (resource ID), `limit`. |
-| `logos.library` | Search user's Logos library metadata. Filter by `type` (commentary, dictionary, bible). `include_unlicensed` to see unowned resources. |
-| `logos.toc` | Get table of contents for a resource. Input: `resource_id`. |
+| `history.find_missing_letters` | Detect likely missing letters between two correspondents. |
+| `history.correspondence_cadence` | Analyze correspondence density and cadence between two entities. |
 
-### AI & Notes
+### Logos Bible Software Plugin (`logos`, 28 tools)
 
-| Tool | What it does |
-|------|-------------|
-| `logos.study_assistant` | Logos AI study assistant (streaming). Input: `message`, optional `conversation_id` for multi-turn. |
-| `logos.ai_synopsis` | AI-generated synopsis of search results. Input: `query`. |
-| `logos.notes` | Get user notes and highlights for a reference. |
-
-### System
+Provides Logos passage, study, library, lexicon, search, authentication, and
+licensed-book ingestion workflows. It requires a licensed Logos account for
+protected resources. Browser authentication is explicit through `logos-login`;
+state lives under the plugin data directory, not inside site-packages.
 
 | Tool | What it does |
 |------|-------------|
-| `logos.credits` | Check feature credit usage (Logos AI credits etc). |
-| `logos.auth_status` | Check authentication status. |
-| `logos.workflows` | List available workflow templates. |
+| `logos.passage_text` | Fetch Bible passage text in one or more translations. |
+| `logos.passage_guide` | Retrieve passage-guide material including commentary and cross-references. |
+| `logos.word_study` | Run a Hebrew or Greek word study. |
+| `logos.get_entry` | Retrieve the full verbatim text of a lexicon or dictionary entry. |
+| `logos.search` | Full-text search across the authenticated Logos library. |
+| `logos.library` | Search library metadata and obtain resource IDs. |
+| `logos.ingest_book` | Ingest a licensed Logos resource resumably into the corpus. |
+| `logos.auth_status` | Report whether the saved Logos session is usable. |
 
-### Ingestion
+Use the other `logos.*` tools advertised by MCP for reference resolution,
+commentary, parallels, Factbook, notes, ingestion status, diagnostics, and
+scholar-authority workflows.
+
+### Academic Journal Plugin (`academic-journal`, 9 tools)
+
+Discovers papers through OpenAlex, Semantic Scholar, and Crossref; resolves
+legal open-access copies; ingests them; extracts bibliographies; and records
+citation edges. Its staged workers and plugin-owned database must be migrated
+before use.
 
 | Tool | What it does |
 |------|-------------|
-| `logos.ingest_book` | Ingest a Logos book into the corpus. Two-phase pipeline: (1) walk the article chain via Logos API, chunk with verse-boundary chunker, checkpoint to plugin DB — resumable from any crash; (2) store to corpus with adaptive batch-halving retry on embedding failures. Inputs: `resource_id`, `max_articles` (0 = all). Passage metadata includes `scripture_refs`, `page_start`, `page_end`, `page_refs`, `volume`, `author`, `heading_path`. |
-| `logos.ingest_pdf` | Ingest a local PDF with verse-boundary chunking. Inputs: `path`, `document_type` (default "logos_book"). |
+| `academic-journal.discover_papers` | Search configured scholarly metadata providers by query. |
+| `academic-journal.discover_by_doi` | Resolve one paper by DOI. |
+| `academic-journal.discover_by_author` | Discover papers by author name or OpenAlex ID. |
+| `academic-journal.search_papers` | Search papers already ingested into the corpus. |
+| `academic-journal.import_manual_pdf` | Import a PDF the operator acquired legally. |
+| `academic-journal.pipeline_status` | Report paper stages, queue depth, provider health, and workers. |
+| `academic-journal.retry_failed` | Requeue failed pipeline work. |
+| `academic-journal.start_workers` | Start the in-process acquisition and ingestion workers. |
+| `academic-journal.stop_workers` | Stop those workers. |
 
-### Scholar Authority Tracking
+The plugin also contributes the `acad` live source-search provider,
+`academic_paper` filtering, bibliography extraction, and citation hooks.
+
+### YourCloudLibrary Plugin (`yourcloudlibrary`, 10 tools)
+
+Searches a participating library's catalog and ingests books the user is
+authorized to borrow. Run `research-engine-ycl-login` and install its matching
+Playwright Chromium build before authenticated use.
 
 | Tool | What it does |
 |------|-------------|
-| `logos.search_scholars` | Search scholar authority records. Filter by `name`, `field` (e.g. "New Testament"), `passage_book` (e.g. "Romans"). |
-| `logos.gap_analysis` | Analyze gaps between known scholars and owned resources for a biblical book. Input: `passage_book`. |
-| `logos.record_authority` | Record a scholar's authority score for a passage range. Fields: `scholar_name`, `passage_book`, `passage_start/end`, `authority_score` (0-1), `score_reasons`, `work_title`, `series_name`, `series_tier` (1-5). |
+| `yourcloudlibrary.auth_status` | Report whether the saved library session can search and read. |
+| `yourcloudlibrary.search_catalog` | Search the whole catalog with live availability. |
+| `yourcloudlibrary.acquire_and_ingest` | Borrow, scrape, ingest, and optionally return a catalog book safely. |
+| `yourcloudlibrary.ingest_book` | Ingest a book that is already on loan. |
+| `yourcloudlibrary.sync_loans` | Synchronize active loans and their due dates. |
+| `yourcloudlibrary.list_books` | List known active or historical loans. |
+
+The remaining `yourcloudlibrary.*` tools advertised by MCP inspect, scrape,
+record, or forget individual books. The plugin also contributes a live
+source-search provider and the `ycl_book` document type.
+
+Kindle is deliberately absent from this catalogue because it has no public
+PyPI release.
 
 ---
 
-## Academic Journal Plugin (8 tools)
+## Plugin Document Types and Extraction Schemas
 
-Discovers, acquires, and ingests academic papers from OpenAlex, Semantic Scholar, and Crossref. Runs a 5-stage background pipeline: discovered → resolved → acquired → ingested → citations_extracted → complete.
+These are the contributions relevant when filtering or extracting from
+plugin-ingested material:
 
-**Infrastructure**: Rate-limited HTTP with circuit breakers, PostgreSQL job queue (SELECT FOR UPDATE SKIP LOCKED), acquisition module system with priority-based dispatch.
-
-| Tool | What it does |
-|------|-------------|
-| `acad.discover_papers` | Search for papers by query. Inputs: `query`, `max_papers` (default 200), `sources` (openalex / semantic_scholar / crossref). |
-| `acad.discover_by_doi` | Look up a single paper by DOI. Input: `doi` (e.g. "10.1038/s41586-021-03819-2"). |
-| `acad.discover_by_author` | Find papers by author. Inputs: `author_name`, `openalex_author_id`, `max_papers`. |
-| `acad.pipeline_status` | Show pipeline status: papers by stage, queue depths, recent errors, API health, worker status. |
-| `acad.search_papers` | Search already-ingested papers. Filter by `year_min`, `year_max`, `venue`. |
-| `acad.retry_failed` | Re-enqueue failed jobs. Inputs: `stage` (resolved/acquired/ingested/citations_extracted), `error_pattern`. |
-| `acad.import_manual_pdf` | Import a manually downloaded PDF for a known paper. Inputs: `file_path`, `paper_id` or `doi`, `title`. |
-| `acad.start_workers` | Launch background pipeline workers to process the job queue. |
-
----
-
-## Kindle Plugin (1 tool)
-
-Scrapes book text from Kindle Cloud Reader via Playwright.
-
-| Tool | What it does |
-|------|-------------|
-| `kindle.scrape_book` | Scrape full text of a Kindle book by ASIN. Opens a headless browser, authenticates with Amazon, navigates pages with randomized delays, extracts text. Inputs: `book_asin`, `force_reauth`, `page_delay_min/max`, `max_pages`. Output saved to `~/.marginalia/plugins/kindle/extracted/{asin}.txt`. |
-
----
-
-## Document Types in the Corpus
-
-| Type | Source | Chunker |
-|------|--------|---------|
-| `logos_book` | Logos plugin | `verse_boundary` — splits on verse reference boundaries, extracts scripture_refs into metadata |
-| `kindle_book` | Kindle plugin | `prose_window` — sliding window chunker for prose |
-| Academic papers | Academic plugin | Default core chunker |
-
-## Extraction Schemas
-
-| Schema | Plugin | What it extracts |
-|--------|--------|-----------------|
-| `scripture_cross_refs:1` | Logos | Scripture cross-references from passage text |
-| `bibliography_references:1` | Academic | Bibliography references from paper text |
+| Kind | ID | Plugin | Purpose |
+|------|----|--------|---------|
+| Document type | `letter` | History | Historical correspondence |
+| Document type | `logos_book` | Logos | Licensed Logos resources with scripture-aware chunking |
+| Document type | `ycl_book` | YourCloudLibrary | Borrowed ebooks chunked as prose |
+| Paper filter | `academic_paper` | Academic journal | Filter papers by year, venue, citation count, or open-access state |
+| Extraction schema | `epistolary_references:1` | History | Correspondence references |
+| Extraction schema | `claims:1` | History | Claims and their evidence |
+| Extraction schema | `scripture_cross_refs:1` | Logos | Scripture cross-references |
+| Extraction schema | `bibliography_references:1` | Academic journal | Bibliography references |
 
 ---
 
 ## Key Patterns for Using These Tools
 
-**Finding content**: Start with `find_passages` for broad search, `similar_to` for "more like this", or `logos.search` / `acad.search_papers` for source-specific search. Use `get_passage_context` to expand around hits.
+**Finding content**: Start with `find_passages` for corpus search and
+`similar_to` for "more like this." Use `logos.search`,
+`academic-journal.search_papers`, or `yourcloudlibrary.search_catalog` when the
+source-specific service is the authority. Use `get_passage_context` around
+corpus hits.
 
-**Studying a Bible passage**: Use `logos.passage_text` for the text, `logos.exegetical_guide` for original-language analysis, `logos.commentary` for scholarly commentary, and `logos.cross_references` / `logos.parallel_passages` for related texts.
+**Studying a Bible passage**: Use `logos.passage_text` for the text,
+`logos.exegetical_guide` for original-language analysis,
+`logos.commentary` for scholarly commentary, and
+`logos.cross_references` or `logos.parallel_passages` for related texts.
 
-**Building knowledge**: Use `upsert_entity` to track people/places/concepts, `upsert_event` for temporal events, and `upsert_edge` for relationships. Use `extract` with schemas to pull structured data from passages at scale.
+**Building knowledge**: Use `upsert_entity` to track
+people/places/concepts, `upsert_event` for temporal events, and `upsert_edge`
+for relationships. Use `extract` with schemas to pull structured data from
+passages at scale.
 
-**Ingesting new content**: Use `logos.ingest_book` with a resource ID (find it via `logos.library`), `acad.discover_papers` + `acad.start_workers` for papers, or `kindle.scrape_book` for Kindle books.
+**Ingesting new content**: Use `logos.library` followed by
+`logos.ingest_book`; use `academic-journal.discover_papers`,
+`academic-journal.start_workers`, and
+`academic-journal.pipeline_status` for papers; or use
+`yourcloudlibrary.search_catalog` followed by
+`yourcloudlibrary.acquire_and_ingest` for an authorized library loan.
+
+**Correspondence gaps**: Use `history.find_missing_letters` and
+`history.correspondence_cadence` after correspondence entities and events have
+been extracted.
 
 **Provenance**: Every extraction record, mention, and event can be traced back to its source passage and document via `provenance_of`.

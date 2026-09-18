@@ -27,6 +27,60 @@ Local inference and Docling may download multi-gigabyte models and can require s
 RAM, and GPU capacity. A standard PyPI install does not select PyTorch's alternate CPU wheel
 index; follow PyTorch's CPU installation instructions first when required.
 
+## Published plugins
+
+Plugins are separate distributions installed into the same environment as
+`marginalia-ai`. The currently published `0.6.x` plugin family is:
+
+| Distribution | Plugin ID | Purpose |
+|--------------|-----------|---------|
+| [`marginalia-ai-plugin-history`](https://pypi.org/project/marginalia-ai-plugin-history/) `0.2.0` | `history` | Correspondence schemas and analysis tools |
+| [`marginalia-ai-plugin-logos`](https://pypi.org/project/marginalia-ai-plugin-logos/) `0.2.0` | `logos` | Logos search, reference tools, and licensed-book ingestion |
+| [`marginalia-ai-plugin-academic-journal`](https://pypi.org/project/marginalia-ai-plugin-academic-journal/) `0.2.0` | `academic-journal` | Scholarly discovery, acquisition, search, and citation graphs |
+| [`marginalia-ai-plugin-yourcloudlibrary`](https://pypi.org/project/marginalia-ai-plugin-yourcloudlibrary/) `0.3.0` | `yourcloudlibrary` | Library catalog search and borrowed-book ingestion |
+
+Kindle is not published on PyPI. Install any subset, or all published plugins:
+
+```bash
+python -m pip install \
+  marginalia-ai-plugin-history \
+  "marginalia-ai-plugin-logos[auth]" \
+  marginalia-ai-plugin-academic-journal \
+  marginalia-ai-plugin-yourcloudlibrary
+# Needed only for Logos sign-in and YourCloudLibrary:
+python -m playwright install chromium
+```
+
+Provider authentication is a separate, explicit step:
+
+```bash
+logos-login
+research-engine-ycl-login
+```
+
+Installation makes static manifests discoverable but imports no plugin code.
+Audit and enable the exact installed artifacts, migrate the two plugins that
+own database tables, then restart the MCP server:
+
+```bash
+research-engine plugin list
+research-engine plugin audit history
+research-engine plugin audit logos
+research-engine plugin audit academic-journal
+research-engine plugin audit yourcloudlibrary
+research-engine plugin enable history
+research-engine plugin enable logos
+research-engine plugin enable academic-journal
+research-engine plugin enable yourcloudlibrary
+research-engine plugin migrate logos
+research-engine plugin migrate academic-journal
+research-engine plugin doctor
+```
+
+Enabled tools are advertised to MCP clients from each static manifest. Agents
+should follow those tool descriptions instead of guessing parameters. See the
+[complete plugin lifecycle and pipx instructions](https://github.com/John-Cusack/MarginaliaAI#published-plugins).
+
 ## Database
 
 Use PostgreSQL 15 or newer with `vector`, `pg_trgm`, and `ltree` available. Creating extensions
