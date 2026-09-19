@@ -37,3 +37,12 @@ def test_boundary_dtos_validate_consumer_visible_fields(tmp_path: Path) -> None:
         distribution_version="1.2.3",
     )
     assert context.data_dir == tmp_path
+    assert context.database_url is None
+
+    with_database = PluginContext(
+        **context.model_dump(exclude={"database_url"}),
+        database_url="postgresql+asyncpg://user:secret@db/research",
+    )
+    assert with_database.database_url is not None
+    assert with_database.database_url.get_secret_value().endswith("@db/research")
+    assert "secret" not in repr(with_database)

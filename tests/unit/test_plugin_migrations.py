@@ -161,6 +161,7 @@ async def test_pending_migration_blocks_load_then_records_explicit_upgrade(
     upgrade_call = next(call for call in module.calls if call[0] == "upgrade")
     assert upgrade_call[1].plugin_id == plugin.plugin_id
     assert upgrade_call[1].data_dir == (tmp_path / "data" / plugin.plugin_id).resolve()
+    assert upgrade_call[1].database_url.get_secret_value() == upgrade_call[2]
     assert upgrade_call[2] == "postgresql+asyncpg://migration-test"
 
 

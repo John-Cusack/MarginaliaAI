@@ -24,6 +24,8 @@ import httpx
 import structlog
 
 from research_engine.adapters.embedding.wire import (
+    RETRY_SMALLER_BATCH_HEADER,
+    RETRY_SMALLER_BATCH_VALUE,
     EmbedRequest,
     EmbedResponse,
     HealthResponse,
@@ -112,13 +114,30 @@ class RemoteEmbeddingClient:
             resp.raise_for_status()
         except httpx.TransportError as exc:
             # Never reached the server, so batch size had nothing to do with it.
-            # Translated here, at the layer that knows about transports, so the
-            # caller can tell "the box is off" from "that batch was too big".
             self._consecutive_failures += 1
             raise EmbeddingUnavailable(
                 f"Cannot reach the embedding server at {self._base_url}: "
                 f"{describe_exception(exc)}"
             ) from exc
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 409:
+                raise ModelMismatch(
+                    self._model_name,
+                    exc.response.text,
+                ) from exc
+            may_retry_smaller = (
+                exc.response.headers.get(RETRY_SMALLER_BATCH_HEADER)
+                == RETRY_SMALLER_BATCH_VALUE
+            )
+            if may_retry_smaller:
+                raise
+            self._consecutive_failures += 1
+            if exc.response.status_code in {408, 429, 502, 503, 504}:
+                raise EmbeddingUnavailable(
+                    f"Embedding server {self._base_url} returned "
+                    f"{exc.response.status_code}: {exc.response.text[:200]}"
+                ) from exc
+            raise
         except Exception:
             self._consecutive_failures += 1
             raise
@@ -163,15 +182,19 @@ class RemoteEmbeddingClient:
             try:
                 health = await self.health()
             except httpx.TransportError as exc:
-                # The handshake is the *first* call a run makes, so an
+                # The handshake is the first call a run makes, so an
                 # unreachable host fails here rather than in `embed_batch`.
-                # Untranslated it surfaced as a bare ConnectTimeout and was
-                # mistaken for a batch that needed halving.
                 self._consecutive_failures += 1
                 raise EmbeddingUnavailable(
                     f"Cannot reach the embedding server at {self._base_url}: "
                     f"{describe_exception(exc)}. Check the host is powered on "
                     f"and `research-engine embed-server` is running."
+                ) from exc
+            except httpx.HTTPStatusError as exc:
+                self._consecutive_failures += 1
+                raise EmbeddingUnavailable(
+                    f"Embedding server {self._base_url} health check returned "
+                    f"{exc.response.status_code}: {exc.response.text[:200]}"
                 ) from exc
             self._assert_matches(health.model_name, health.model_version, health.dim)
             self._verified = True

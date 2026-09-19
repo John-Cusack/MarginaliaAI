@@ -505,6 +505,7 @@ async def build_container(settings: Settings) -> Container:
         plugin_activations=plugin_activations_repo,
         registry=registry,
         plugin_data_dir=settings.data_dir / "plugin-data",
+        database_url=settings.db_url,
         llm=llm,
         http=http,
         search=search_service,

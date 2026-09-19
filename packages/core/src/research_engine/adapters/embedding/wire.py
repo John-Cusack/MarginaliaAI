@@ -21,6 +21,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+RETRY_SMALLER_BATCH_HEADER = "X-Research-Engine-Retry"
+RETRY_SMALLER_BATCH_VALUE = "smaller-batch"
+
 
 class HealthResponse(BaseModel):
     """``GET /health`` — identity and readiness of the served models."""

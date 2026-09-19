@@ -5,6 +5,7 @@ from __future__ import annotations
 from research_engine.domain.errors import (
     ConfigurationError,
     DispatchMiss,
+    EmbeddingUnavailable,
     EvidenceNotFound,
     LLMError,
     LLMProviderDown,
@@ -16,6 +17,7 @@ from research_engine.domain.errors import (
     ResearchEngineError,
     UnknownType,
 )
+from research_engine_sdk import EmbeddingUnavailable as SDKEmbeddingUnavailable
 
 
 def test_hierarchy():
@@ -25,6 +27,7 @@ def test_hierarchy():
     assert issubclass(LLMRateLimited, LLMError)
     assert issubclass(PluginLoadError, ResearchEngineError)
     assert issubclass(PluginConflict, ResearchEngineError)
+    assert issubclass(EmbeddingUnavailable, SDKEmbeddingUnavailable)
 
 
 def test_dispatch_miss_message():
