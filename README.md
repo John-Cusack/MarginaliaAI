@@ -135,8 +135,8 @@ name used by pip is not necessarily the GitHub repository name.
 | Distribution | Current release | Plugin ID | What it adds | Setup |
 |--------------|-----------------|-----------|--------------|-------|
 | [`marginalia-ai-plugin-history`](https://pypi.org/project/marginalia-ai-plugin-history/) | `0.2.0` | `history` | Correspondence schemas plus `history.find_missing_letters` and `history.correspondence_cadence` | None |
-| [`marginalia-ai-plugin-logos`](https://pypi.org/project/marginalia-ai-plugin-logos/) | `0.2.0` | `logos` | Logos library search, passage and lexicon access, and licensed-book ingestion | [`auth` extra, Chromium, and Logos sign-in](https://github.com/John-Cusack/marginalia-plugin-logos#install) |
-| [`marginalia-ai-plugin-academic-journal`](https://pypi.org/project/marginalia-ai-plugin-academic-journal/) | `0.2.0` | `academic-journal` | Scholarly discovery, open-access acquisition, paper search, and citation graphs | [Provider configuration and database migration](https://github.com/John-Cusack/marginalia-plugin-academic-journal#install) |
+| [`marginalia-ai-plugin-logos`](https://pypi.org/project/marginalia-ai-plugin-logos/) | `0.2.1` | `logos` | Logos library search, passage and lexicon access, and licensed-book ingestion | [`auth` extra, Chromium, and Logos sign-in](https://github.com/John-Cusack/marginalia-plugin-logos#install) |
+| [`marginalia-ai-plugin-academic-journal`](https://pypi.org/project/marginalia-ai-plugin-academic-journal/) | `0.2.1` | `academic-journal` | Scholarly discovery, open-access acquisition, paper search, and citation graphs | [Provider configuration and database migration](https://github.com/John-Cusack/marginalia-plugin-academic-journal#install) |
 | [`marginalia-ai-plugin-yourcloudlibrary`](https://pypi.org/project/marginalia-ai-plugin-yourcloudlibrary/) | `0.3.0` | `yourcloudlibrary` | Library catalog search and borrowed-book acquisition and ingestion | [Chromium and library sign-in](https://github.com/John-Cusack/marginalia-plugin-yourcloudlibrary#install) |
 
 Kindle is intentionally not published on PyPI. Do not infer that

@@ -50,8 +50,8 @@ Plugins are separate distributions installed into the same environment as
 | Distribution | Plugin ID | Purpose |
 |--------------|-----------|---------|
 | [`marginalia-ai-plugin-history`](https://pypi.org/project/marginalia-ai-plugin-history/) `0.2.0` | `history` | Correspondence schemas and analysis tools |
-| [`marginalia-ai-plugin-logos`](https://pypi.org/project/marginalia-ai-plugin-logos/) `0.2.0` | `logos` | Logos search, reference tools, and licensed-book ingestion |
-| [`marginalia-ai-plugin-academic-journal`](https://pypi.org/project/marginalia-ai-plugin-academic-journal/) `0.2.0` | `academic-journal` | Scholarly discovery, acquisition, search, and citation graphs |
+| [`marginalia-ai-plugin-logos`](https://pypi.org/project/marginalia-ai-plugin-logos/) `0.2.1` | `logos` | Logos search, reference tools, and licensed-book ingestion |
+| [`marginalia-ai-plugin-academic-journal`](https://pypi.org/project/marginalia-ai-plugin-academic-journal/) `0.2.1` | `academic-journal` | Scholarly discovery, acquisition, search, and citation graphs |
 | [`marginalia-ai-plugin-yourcloudlibrary`](https://pypi.org/project/marginalia-ai-plugin-yourcloudlibrary/) `0.3.0` | `yourcloudlibrary` | Library catalog search and borrowed-book ingestion |
 
 Kindle is not published on PyPI. Install any subset, or all published plugins:
