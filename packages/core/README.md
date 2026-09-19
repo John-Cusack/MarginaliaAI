@@ -1,11 +1,26 @@
-# Research Engine
+# MarginaliaAI
 
-Research Engine builds a searchable, citable research corpus and exposes it to MCP clients.
-The base package includes the CLI, PostgreSQL schema/migrations, MCP server, remote inference
-clients, lightweight text ingestion, extraction, entity/event services, and plugin host.
+**Give AI agents access to the books and papers you trust—not just what they
+remember.**
 
-It does not install PostgreSQL, database extensions, local ML models, Docling, GPU drivers, or
-third-party plugins.
+Much of the information researchers rely on lives outside the open web: in
+books, journals, archives, scans, research collections, and licensed databases.
+MarginaliaAI turns sources you are authorized to use into a searchable, citable
+corpus exposed through the Model Context Protocol (MCP). Agents can search the
+actual sources, inspect relevant passages, and cite exact locations in the
+canonical document.
+
+The `marginalia-ai` distribution includes the CLI, PostgreSQL schema and
+migrations, MCP server, remote inference clients, lightweight text ingestion,
+extraction, entity and event services, and plugin host.
+
+> **Developer preview:** MarginaliaAI requires PostgreSQL 15 or newer. Plugins
+> are installed separately and must be explicitly audited and enabled.
+> Integrations use accounts you are authorized to access; MarginaliaAI does not
+> redistribute licensed source content.
+
+The base distribution does not install PostgreSQL, database extensions, local
+ML models, Docling, GPU drivers, or third-party plugins.
 
 ## Install
 

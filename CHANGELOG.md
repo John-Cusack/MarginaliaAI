@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-09-18
 
 ### Shared vocabulary and documents keep stable identity
 

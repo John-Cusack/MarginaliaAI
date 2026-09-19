@@ -4,7 +4,7 @@ import sys
 
 import structlog
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 # structlog's unconfigured default prints to stdout, and under `serve` stdout *is*
 # the MCP stdio transport. Anything logged before `runtime.configure_logging` runs
