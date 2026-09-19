@@ -107,8 +107,7 @@ jobs:
       ((github.event_name == 'push' && startsWith(github.ref_name, 'core-v')) ||
       (github.event_name == 'push' && startsWith(github.ref_name, 'v') &&
       needs.publish-sdk.result == 'success') ||
-      (github.event_name == 'workflow_dispatch' && inputs.package == 'core') ||
-      needs.publish-sdk-testpypi.result == 'success')
+      (github.event_name == 'workflow_dispatch' && inputs.package == 'core'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
