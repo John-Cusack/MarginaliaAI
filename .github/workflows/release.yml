@@ -8,20 +8,21 @@ name: Release
 #   marginalia-ai                 John-Cusack   MarginaliaAI  release.yml  pypi-core
 #   marginalia-ai-plugin-history  John-Cusack   MarginaliaAI  release.yml  pypi-history
 #
-# TestPyPI uses the same publisher tuples and environment names. A manual run
-# publishes SDK, core, then history to TestPyPI; a version tag continues to
-# publish the same sequence to production PyPI.
+# Manual dispatch publishes one selected distribution to TestPyPI. A coordinated
+# `v*` tag publishes SDK, core, then history; a `core-v*` tag publishes only
+# core, so an immutable SDK/history version is never retried.
 
 on:
   push:
     tags:
       - "v*"
+      - "core-v*"
   workflow_dispatch:
     inputs:
-      start_at:
-        description: First distribution to publish (use core to resume after SDK)
+      package:
+        description: Distribution to build and publish
         required: true
-        default: sdk
+        default: core
         type: choice
         options:
           - sdk
@@ -32,7 +33,9 @@ permissions:
 
 jobs:
   build-sdk:
-    if: github.event_name == 'push' || inputs.start_at == 'sdk'
+    if: >-
+      (github.event_name == 'push' && !startsWith(github.ref_name, 'core-v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.package == 'sdk')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +56,10 @@ jobs:
 
   publish-sdk:
     needs: build-sdk
-    if: github.event_name == 'push' && needs.build-sdk.result == 'success'
+    if: >-
+      github.event_name == 'push' &&
+      !startsWith(github.ref_name, 'core-v') &&
+      needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-sdk
     permissions:
@@ -69,7 +75,10 @@ jobs:
 
   publish-sdk-testpypi:
     needs: build-sdk
-    if: github.event_name == 'workflow_dispatch' && inputs.start_at == 'sdk'
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.package == 'sdk' &&
+      needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-sdk
     permissions:
@@ -88,7 +97,8 @@ jobs:
     needs: [publish-sdk, publish-sdk-testpypi]
     if: >-
       always() &&
-      ((github.event_name == 'workflow_dispatch' && inputs.start_at == 'core') ||
+      ((github.event_name == 'push' && startsWith(github.ref_name, 'core-v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.package == 'core') ||
       needs.publish-sdk.result == 'success' ||
       needs.publish-sdk-testpypi.result == 'success')
     runs-on: ubuntu-latest
@@ -97,6 +107,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.11
       - run: uv sync --group dev
+      - name: Verify package-specific tag
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'core-v')
+        run: >-
+          test "core-v$(uv run python -c
+          'import research_engine; print(research_engine.__version__)')"
+          = "$GITHUB_REF_NAME"
       - run: uv run ruff check packages/ tests/
       - run: uv run pytest tests/unit -q
       - run: uv build --package marginalia-ai --out-dir dist/core
@@ -104,7 +120,7 @@ jobs:
       - name: Smoke lightweight base artifact
         run: |
           uv venv --seed /tmp/re-base
-          uv pip install --python /tmp/re-base/bin/python marginalia-ai-sdk==0.6.0 dist/core/marginalia_ai-0.6.0-py3-none-any.whl
+          uv pip install --python /tmp/re-base/bin/python marginalia-ai-sdk==0.6.0 dist/core/marginalia_ai-0.6.1-py3-none-any.whl
           /tmp/re-base/bin/python -c 'from importlib.util import find_spec; assert find_spec("torch") is None; assert find_spec("docling") is None; assert find_spec("sentence_transformers") is None'
           /tmp/re-base/bin/research-engine --help
           /tmp/re-base/bin/research-engine config --help
@@ -116,7 +132,6 @@ jobs:
   publish-core:
     needs: build-core
     if: >-
-      always() &&
       github.event_name == 'push' &&
       needs.build-core.result == 'success'
     runs-on: ubuntu-latest
@@ -135,9 +150,8 @@ jobs:
   publish-core-testpypi:
     needs: build-core
     if: >-
-      always() &&
       github.event_name == 'workflow_dispatch' &&
-      inputs.start_at != 'history' &&
+      inputs.package == 'core' &&
       needs.build-core.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-core
@@ -157,9 +171,10 @@ jobs:
     needs: [publish-core, publish-core-testpypi]
     if: >-
       always() &&
-      ((github.event_name == 'workflow_dispatch' && inputs.start_at == 'history') ||
-      needs.publish-core.result == 'success' ||
-      needs.publish-core-testpypi.result == 'success')
+      ((github.event_name == 'workflow_dispatch' && inputs.package == 'history') ||
+      (github.event_name == 'push' &&
+      !startsWith(github.ref_name, 'core-v') &&
+      needs.publish-core.result == 'success'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -172,7 +187,7 @@ jobs:
       - name: Smoke production SDK/core/history artifacts
         run: |
           uv venv --seed /tmp/re-history
-          uv pip install --python /tmp/re-history/bin/python marginalia-ai-sdk==0.6.0 marginalia-ai==0.6.0 dist/history/marginalia_ai_plugin_history-0.2.0-py3-none-any.whl
+          uv pip install --python /tmp/re-history/bin/python marginalia-ai-sdk==0.6.0 marginalia-ai==0.6.1 dist/history/marginalia_ai_plugin_history-0.2.0-py3-none-any.whl
           /tmp/re-history/bin/python -c 'from research_engine.plugins.discovery import discover_plugins; p=discover_plugins(); assert [x.plugin_id for x in p] == ["history"]'
       - uses: actions/upload-artifact@v4
         with:
@@ -182,8 +197,8 @@ jobs:
   publish-history:
     needs: build-history
     if: >-
-      always() &&
       github.event_name == 'push' &&
+      !startsWith(github.ref_name, 'core-v') &&
       needs.build-history.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-history
@@ -201,8 +216,8 @@ jobs:
   publish-history-testpypi:
     needs: build-history
     if: >-
-      always() &&
       github.event_name == 'workflow_dispatch' &&
+      inputs.package == 'history' &&
       needs.build-history.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-history
