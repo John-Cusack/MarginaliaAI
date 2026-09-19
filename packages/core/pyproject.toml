@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Text Processing :: Indexing",
 ]
 dependencies = [
-    "marginalia-ai-sdk>=0.6,<0.7",
+    "marginalia-ai-sdk>=0.6.1,<0.7",
     "pydantic>=2.5,<3",
     "pydantic-settings>=2.1,<3",
     "sqlalchemy[asyncio]>=2.0,<3",

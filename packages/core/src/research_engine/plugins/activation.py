@@ -241,7 +241,7 @@ class PluginActivationManager:
                 f"plugin {plugin_id!r} declares no database migration"
             )
 
-        context = self._plugin_context(plugin, data_root)
+        context = self._plugin_context(plugin, data_root, database_url)
         try:
             status_entry = self._load_approved_entry(
                 plugin, declaration.status_entry
@@ -316,6 +316,7 @@ class PluginActivationManager:
     def _plugin_context(
         plugin: DiscoveredPlugin,
         data_root: Path,
+        database_url: str | None = None,
     ):
         from research_engine_sdk import PluginContext
 
@@ -326,6 +327,7 @@ class PluginActivationManager:
             data_dir=data_dir,
             distribution_name=plugin.distribution_name,
             distribution_version=plugin.distribution_version,
+            database_url=database_url,
         )
 
     @staticmethod

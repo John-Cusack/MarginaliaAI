@@ -175,6 +175,36 @@ async def test_a_transport_failure_is_fatal_on_the_first_call() -> None:
     finally:
         await client.close()
 
+async def test_an_upstream_503_is_unavailable_not_a_smaller_batch_signal() -> None:
+    async def unavailable(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"detail": "model host is offline"})
+
+    client = RemoteEmbeddingClient("http://test", MODEL, DIM)
+    client._client = httpx.AsyncClient(  # noqa: SLF001
+        transport=httpx.MockTransport(unavailable), base_url="http://test"
+    )
+    client._verified = True  # noqa: SLF001 - exercise the embedding endpoint
+    try:
+        with pytest.raises(EmbeddingUnavailable, match="returned 503"):
+            await client.embed_batch(["x"])
+    finally:
+        await client.close()
+
+
+async def test_a_health_503_is_unavailable_on_the_first_call() -> None:
+    async def unavailable(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"detail": "model is loading"})
+
+    client = RemoteEmbeddingClient("http://test", MODEL, DIM)
+    client._client = httpx.AsyncClient(  # noqa: SLF001
+        transport=httpx.MockTransport(unavailable), base_url="http://test"
+    )
+    try:
+        with pytest.raises(EmbeddingUnavailable, match="health check returned 503"):
+            await client.embed_batch(["x"])
+    finally:
+        await client.close()
+
 
 async def test_the_circuit_still_opens_for_failures_that_retrying_could_have_fixed() -> None:
     """A server that answers badly is different from one that does not answer.
@@ -223,6 +253,25 @@ async def test_server_reports_memory_pressure_as_retryable(server) -> None:
         with pytest.raises(httpx.HTTPStatusError) as exc:
             await client.embed_batch(["alpha"])
         assert exc.value.response.status_code == 503
+        assert (
+            exc.value.response.headers["X-Research-Engine-Retry"]
+            == "smaller-batch"
+        )
+        assert client._consecutive_failures == 0  # noqa: SLF001
+    finally:
+        await client.close()
+
+async def test_server_does_not_mark_an_unrelated_failure_as_batch_pressure(
+    server,
+) -> None:
+    app, backend = server
+    backend.fail_with = ValueError("model output is malformed")
+    client = client_for(app)
+    try:
+        with pytest.raises(httpx.HTTPStatusError) as exc:
+            await client.embed_batch(["alpha"])
+        assert exc.value.response.status_code == 500
+        assert "X-Research-Engine-Retry" not in exc.value.response.headers
     finally:
         await client.close()
 

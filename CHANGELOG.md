@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2 — 2026-09-19
 
 ### Backups and status are safe to operate
 
@@ -13,6 +13,19 @@ A guarded maintenance script can recover DOI and JSTOR identity from stored
 first-page text without re-ingestion or re-embedding. Dry-run is the default,
 ISBN candidates remain report-only, and safe application refuses existing or
 duplicate edition keys.
+
+### Inference and plugin runtime failures are explicit
+
+Core's `EmbeddingUnavailable` now derives from the SDK's public error, so
+plugins can catch the documented contract without class-name compatibility
+logic. Remote embedding HTTP 408, 429, 502, 503, and 504 responses stop bulk
+ingestion immediately; the bundled server marks only genuine memory pressure as
+safe for adaptive batch reduction.
+
+`marginalia-ai-sdk 0.6.1` adds the core-configured database URL to
+`PluginContext` as a redacted `SecretStr`. Database-backed plugin tools
+therefore use the same connection as core even when `RE_DB_URL` came from
+core's `.env` rather than the process environment.
 
 ## 0.6.1 — 2026-09-18
 
@@ -1068,12 +1081,14 @@ Implements P0 and P1 of `docs/design/research-workflow-implementation.md`.
 ## 0.2.0 — 2026-05-05
 
 ### Added
+
 - `IngestionClient.find_existing(source=..., source_pattern=...)` — plugins can now look
   up already-ingested documents by exact source path or substring match without reaching
   into the corpus schema. Backed by `IngestionOrchestrator.find_existing` and stubbed in
   `DeniedIngestionClient` so denied callers fail loudly with `PermissionDenied`.
 
 ### Notes
+
 - `IngestionClient` is a `Protocol`; adding a method is technically a breaking change for
   any out-of-tree implementations. Bundled implementations are updated.
 - Plugins relying on the new method should declare `requires.core_api: ">=0.2.0,<1.0.0"`

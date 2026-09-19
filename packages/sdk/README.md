@@ -47,6 +47,11 @@ the supported API boundary, not a security sandbox; install and enable only trus
 API compatibility follows the core minor release through `0.x`. A plugin supporting core
 `0.6.x` should depend on `marginalia-ai-sdk>=0.6,<0.7`.
 
+Core supplies each handler a `PluginContext` with its plugin data directory and
+the configured database URL. The URL is a Pydantic `SecretStr`: database-backed
+plugins call `context.database_url.get_secret_value()` at the connection
+boundary and must not log or serialize that value.
+
 See the [architecture](https://github.com/John-Cusack/MarginaliaAI/blob/main/docs/design/pypi-plugin-distribution-architecture.md),
 [changelog](https://github.com/John-Cusack/MarginaliaAI/blob/main/CHANGELOG.md), and
 [issue tracker](https://github.com/John-Cusack/MarginaliaAI/issues). Licensed under

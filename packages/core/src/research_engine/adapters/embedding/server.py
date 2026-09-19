@@ -36,6 +36,8 @@ from typing import Any
 import structlog
 
 from research_engine.adapters.embedding.wire import (
+    RETRY_SMALLER_BATCH_HEADER,
+    RETRY_SMALLER_BATCH_VALUE,
     EmbedRequest,
     EmbedResponse,
     HealthResponse,
@@ -179,9 +181,18 @@ def create_app(
                     size=len(request.texts),
                     error=str(exc),
                 )
-                # 503 rather than 500: the client's halving retry is the right
-                # response to memory pressure, and a smaller batch may succeed.
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
+                detail = str(exc)
+                if isinstance(exc, RuntimeError) and "out of memory" in detail.lower():
+                    # Batch pressure is the one 503 this protocol asks the client
+                    # to retry at a smaller size.
+                    raise HTTPException(
+                        status_code=503,
+                        detail=detail,
+                        headers={
+                            RETRY_SMALLER_BATCH_HEADER: RETRY_SMALLER_BATCH_VALUE,
+                        },
+                    ) from exc
+                raise HTTPException(status_code=500, detail=detail) from exc
 
         if not state["warm"]:
             state["warm"] = True

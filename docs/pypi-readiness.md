@@ -373,8 +373,9 @@ Implement:
 - Update all migration-head claims to `018` or, better, derive/display the head instead of
   copying it into prose.
 - Tag policy is explicit: coordinated `v*` tags publish SDK, core, and history
-  in dependency order; package-specific `core-v*` tags publish only core.
-  Manual dispatch publishes one selected distribution to TestPyPI.
+  in dependency order; package-specific `sdk-v*` and `core-v*` tags publish only
+  their named distribution. Manual dispatch publishes one selected distribution
+  to TestPyPI.
 - Verify tag, package metadata, runtime version, and changelog version are identical before
   building.
 - Document that PyPI files are immutable. A bad release is yanked and followed by a higher

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from research_engine_sdk import PermissionDenied as PermissionDenied
+from research_engine_sdk import (
+    EmbeddingUnavailable as SDKEmbeddingUnavailable,
+)
+from research_engine_sdk import (
+    PermissionDenied as PermissionDenied,
+)
 
 
 class ResearchEngineError(Exception):
@@ -187,7 +192,7 @@ def describe_exception(exc: BaseException) -> str:
 # --- Embedding ---
 
 
-class EmbeddingUnavailable(ResearchEngineError):
+class EmbeddingUnavailable(SDKEmbeddingUnavailable, ResearchEngineError):
     """The embedding backend cannot be reached, and a smaller batch will not help.
 
     Distinct from an ordinary batch failure, which is usually accelerator memory

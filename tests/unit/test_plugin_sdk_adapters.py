@@ -98,7 +98,12 @@ async def test_event_query_accepts_and_returns_sdk_dtos() -> None:
 
 def test_loader_injects_distribution_context(tmp_path) -> None:
     registry = PluginRegistry()
-    loader = PluginLoader(AsyncMock(), registry, tmp_path / "plugin-data")
+    loader = PluginLoader(
+        AsyncMock(),
+        registry,
+        tmp_path / "plugin-data",
+        database_url="postgresql+asyncpg://user:secret@db/research",
+    )
     manifest = SimpleNamespace(permissions=PluginPermissions())
     discovery = SimpleNamespace(
         manifest=manifest,
@@ -115,3 +120,7 @@ def test_loader_injects_distribution_context(tmp_path) -> None:
     assert clients["context"].distribution_version == "1.2.3"
     assert clients["context"].data_dir == (tmp_path / "plugin-data" / "sample").resolve()
     assert clients["context"].data_dir.is_dir()
+    database_url = clients["context"].database_url
+    assert database_url is not None
+    assert database_url.get_secret_value().endswith("@db/research")
+    assert "secret" not in repr(clients["context"])

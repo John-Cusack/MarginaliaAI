@@ -8,7 +8,7 @@ from pathlib import Path  # noqa: TC003 - Pydantic resolves this at runtime
 from typing import Any, Literal
 from uuid import UUID  # noqa: TC003 - Pydantic resolves this at runtime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 
 class DatePrecision(enum.StrEnum):
@@ -142,6 +142,7 @@ class PluginContext(BaseModel):
     data_dir: Path
     distribution_name: str
     distribution_version: str
+    database_url: SecretStr | None = None
 
 
 class FuzzyDate(BaseModel):

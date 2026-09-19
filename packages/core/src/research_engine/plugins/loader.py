@@ -50,6 +50,7 @@ class PluginLoader:
         plugin_data_dir: Path,
         llm: Any = None,
         http: Any = None,
+        database_url: str | None = None,
         **services: Any,
     ) -> None:
         self._activations = plugin_activations
@@ -57,6 +58,7 @@ class PluginLoader:
         self._plugin_data_dir = plugin_data_dir
         self._llm = llm
         self._http = http
+        self._database_url = database_url
         self._services = services
         self._loaded: dict[str, LoadedPlugin] = {}
         self.on_tools_changed: Callable[[], None] | None = None
@@ -372,6 +374,7 @@ class PluginLoader:
                 data_dir=data_dir,
                 distribution_name=discovered.distribution_name,
                 distribution_version=discovered.distribution_version,
+                database_url=self._database_url,
             ),
             "corpus": corpus_client,
             "entity": self._services.get("entity"),
