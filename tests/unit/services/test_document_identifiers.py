@@ -5,12 +5,11 @@ from __future__ import annotations
 import pytest
 
 from research_engine.services.ingestion.identifiers import (
+    first_page_text,
     normalize_doi,
     normalize_isbn,
     with_first_page_identity,
 )
-
-pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize(
@@ -81,3 +80,17 @@ def test_unlabeled_numbers_do_not_become_an_isbn() -> None:
     metadata = with_first_page_identity({}, "The serial number is 9780306406157.")
 
     assert "edition_key" not in metadata
+
+
+def test_page_boundaries_limit_identity_to_the_first_page() -> None:
+    text = "DOI: 10.1000/own\n\nReferences DOI: 10.1000/cited"
+    pages = [
+        {"char_start": 0, "page": 1},
+        {"char_start": text.index("References"), "page": 2},
+    ]
+
+    assert first_page_text(text, pages) == "DOI: 10.1000/own\n\n"
+
+
+def test_missing_page_boundaries_use_a_bounded_prefix() -> None:
+    assert first_page_text("abcdefgh", None, fallback_chars=4) == "abcd"

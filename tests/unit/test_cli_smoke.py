@@ -20,7 +20,7 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from research_engine.cli.main import app
+from research_engine.cli.main import _display_db_url, app
 
 runner = CliRunner()
 
@@ -50,4 +50,15 @@ def test_each_command_group_builds(group: str) -> None:
     result = runner.invoke(app, [group, "--help"])
     assert result.exit_code == 0, (
         f"`research-engine {group} --help` exited {result.exit_code}.\n{result.output}"
+    )
+
+
+def test_status_redacts_the_database_password() -> None:
+    rendered = _display_db_url(
+        "postgresql+asyncpg://researcher:do-not-print@db.example/research"
+    )
+
+    assert "do-not-print" not in rendered
+    assert rendered == (
+        "postgresql+asyncpg://researcher:***@db.example/research"
     )

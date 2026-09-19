@@ -28,12 +28,14 @@ async def _backup(output: Path):
     from research_engine.config import load_settings
 
     settings = load_settings()
-    # Extract connection details from URL
+    # A corpus spans core, bibliography, evidence, argument, authored, and
+    # plugin-owned schemas. A core-only archive restores only when the omitted
+    # schemas happen to survive in the target database; it is not a backup.
     db_url = settings.db_url.replace("postgresql+asyncpg://", "postgresql://")
     console.print(f"Backing up to {output}...")
 
     proc = subprocess.run(
-        ["pg_dump", db_url, "--schema=core", "-Fc", f"--file={output}"],
+        ["pg_dump", db_url, "-Fc", f"--file={output}"],
         capture_output=True,
         text=True,
     )

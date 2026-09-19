@@ -14,7 +14,10 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import structlog
 
 from research_engine.domain.errors import describe_exception
-from research_engine.services.ingestion.identifiers import with_first_page_identity
+from research_engine.services.ingestion.identifiers import (
+    first_page_text,
+    with_first_page_identity,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1092,7 +1095,8 @@ class DoclingModule:
 
         # Remove empty values
         metadata = {k: v for k, v in metadata.items() if v not in ("", None)}
-        first_page_end = pages[1]["char_start"] if len(pages) > 1 else len(full_text)
-        metadata = with_first_page_identity(metadata, full_text[:first_page_end])
+        metadata = with_first_page_identity(
+            metadata, first_page_text(full_text, pages)
+        )
 
         return full_text, title, metadata
