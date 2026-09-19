@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from sqlalchemy.engine import make_url
 
 app = typer.Typer(
     name="research-engine",
@@ -47,6 +48,11 @@ app.add_typer(reindex_app, name="reindex", help="Re-chunk and re-anchor the corp
 app.add_typer(extraction_app, name="extraction", help="Register extraction schemas.")
 
 
+
+def _display_db_url(value: str) -> str:
+    """Render connection identity without exposing its credential."""
+    return make_url(value).render_as_string(hide_password=True)
+
 @app.command()
 def status():
     """Show engine status and statistics."""
@@ -70,7 +76,7 @@ async def _status():
         typer.echo(f"Entities:   {entity_count}")
         typer.echo(f"LLM model:  {settings.default_llm_model}")
         typer.echo(f"Embedding:  {settings.embedding_model}")
-        typer.echo(f"Database:   {settings.db_url}")
+        typer.echo(f"Database:   {_display_db_url(settings.db_url)}")
 
         plugins = container.plugin_loader.loaded_plugins
         if plugins:

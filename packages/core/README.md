@@ -110,7 +110,13 @@ research-engine doctor
 Runtime commands refuse an outdated schema and report the exact upgrade command;
 they never migrate the database implicitly.
 
-`pg_dump` and `pg_restore` are external requirements for backup commands.
+`pg_dump` and `pg_restore` are external requirements. Backups include every
+database schema:
+
+```bash
+research-engine backup create corpus.dump
+research-engine backup restore corpus.dump
+```
 
 ## Run over MCP
 

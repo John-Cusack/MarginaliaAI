@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Backups and status are safe to operate
+
+`research-engine backup create` now archives the complete database rather than
+only `core`; fresh restores therefore include bibliography, evidence, argument,
+authored, Alembic, and plugin-owned schemas. `research-engine status` masks the
+database password instead of printing the raw connection URL.
+
+A guarded maintenance script can recover DOI and JSTOR identity from stored
+first-page text without re-ingestion or re-embedding. Dry-run is the default,
+ISBN candidates remain report-only, and safe application refuses existing or
+duplicate edition keys.
+
 ## 0.6.1 — 2026-09-18
 
 ### Shared vocabulary and documents keep stable identity

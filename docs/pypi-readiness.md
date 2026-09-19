@@ -539,6 +539,10 @@ dependency resolution works.
 - [ ] No P0 item remains.
 - [ ] Changelog has the release version and date.
 - [ ] Package/runtime versions match the planned tag.
+- [ ] Reinstall an editable package after changing its version
+  (`uv sync --reinstall-package marginalia-ai`), then confirm
+  `importlib.metadata.version("marginalia-ai")` matches
+  `research_engine.__version__`.
 - [ ] Pack `core_api` ranges are correct.
 - [ ] Documentation shows the version's actual commands and migration head.
 - [ ] PyPI names and Trusted Publisher configuration are valid.

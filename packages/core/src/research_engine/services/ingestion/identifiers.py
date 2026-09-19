@@ -67,6 +67,22 @@ def _clean_jstor_identifier(value: str) -> str:
     return identifier
 
 
+def first_page_text(
+    full_text: str,
+    pages: object,
+    *,
+    fallback_chars: int = 12_000,
+) -> str:
+    """Slice the parser's first page, or a bounded prefix without page metadata."""
+    if isinstance(pages, list) and len(pages) > 1:
+        boundary = pages[1]
+        if isinstance(boundary, dict):
+            end = boundary.get("char_start")
+            if isinstance(end, int) and 0 < end <= len(full_text):
+                return full_text[:end]
+    return full_text[:fallback_chars]
+
+
 def with_first_page_identity(
     metadata: dict[str, Any], first_page_text: str
 ) -> dict[str, Any]:
