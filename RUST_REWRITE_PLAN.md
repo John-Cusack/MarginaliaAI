@@ -946,3 +946,36 @@ corrupt-both-raise, gate-hidden, no-wheel fallback). SDK+packs 47; ruff
 clean; 4 extensions discover. Artifacts rebuilt, twine 6/6.
 Compiler-less containers: pure fallback + accelerated formats (with no
 [documents] installed) + rollback proven. CI rust job extended both ways.
+
+## Phase 3 cutover — pdf detect + parse stays Python (done 2026-09-22)
+
+`marginalia_rs.parse.detect_pdf_magic` (5-byte head in, `(score, reason)`
+out; the adapter passes the exact 5-byte read so the crate's prefix check
+and the module's exact-equality check agree). The module's suffix + MIME
+branches stay caller-side ordered ahead.
+
+HALT REPORT (parity gap, not routed around): `PDFTextModule.parse` does
+NOT cut over and MUST NOT until a versioned re-ingest migration exists.
+Page text is engine output — fitz wraps long lines and trims page edges
+where the Rust port's pdf-extract does neither (3 fixtures evidenced in
+the original findings) — so routing parse through `marginalia_rs` would
+change extracted text on real PDFs: a byte-identity violation. Triggering
+inputs: any PDF with long lines or edge content. Disposition: keep-Python
+pinned by `TestPDFParseStaysPython` (source inspection: no `rust_parse`
+may route into `parse`) and a code comment at the decision site; the
+tracked follow-up (pdf 1.1 + identifiers + orchestrator rework) owns any
+future engine change. `detect` parity is unaffected and shipped.
+
+Evidence: seam crate 31 Rust tests, `llvm-cov -p marginalia-py`
+100/100/100 from clean; workspace 1086 green excl ret; clippy zero; fmt
+clean. `pytest tests/unit` 1777 + 1 skipped under BOTH backends (new
+permanent `test_pdf_rust_parity.py`: 9 — backend-forced detect matrix,
+no-wheel fallback, keep-Python pin). SDK+packs 47; ruff clean; 4
+extensions discover. Artifacts rebuilt, twine 6/6. Compiler-less
+containers: pure fallback + accelerated detect + rollback proven. CI rust
+job extended both ways.
+
+Phase 3 is COMPLETE modulo the documented keep-Python: plain_text,
+markdown, html, epub, tei cut over; pdf detect cut over, pdf parse stays
+(first HALT item, reported not routed around). `docling_converter` and
+`scrape_kindle` untouched per original scope.

@@ -72,6 +72,7 @@ pub fn register_parse(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(detect_html_content, m).expect("function name is a unique literal"),
         wrap_pyfunction!(detect_epub_magic, m).expect("function name is a unique literal"),
         wrap_pyfunction!(detect_tei_content, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(detect_pdf_magic, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -152,12 +153,24 @@ fn detect_epub_magic(head: &[u8]) -> (f64, String) {
 fn detect_tei_content(head: &str) -> (f64, String) {
     tei::detect("probe.xml", Some(head))
 }
+/// The magic-bytes branch of PDF detection.
+///
+/// Answers `(0.9, …)` for `%PDF-` heads, `(0.0, …)` otherwise. Suffix and
+/// MIME stay caller-side, ordered ahead exactly as the module orders them.
+/// The adapter always passes the 5-byte read the module takes, so the
+/// crate's prefix check and the module's exact-equality check agree.
+#[pyfunction]
+fn detect_pdf_magic(head: &[u8]) -> (f64, String) {
+    // Suffix-proof probe runs the magic branch only.
+    marginalia_parse::pdf::detect("probe", head)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        detect_epub_magic, detect_html_content, detect_markdown_content, detect_plain_text_content,
-        detect_tei_content, parse_epub, parse_html, parse_markdown, parse_plain_text, parse_tei,
-        register_parse,
+        detect_epub_magic, detect_html_content, detect_markdown_content, detect_pdf_magic,
+        detect_plain_text_content, detect_tei_content, parse_epub, parse_html, parse_markdown,
+        parse_plain_text, parse_tei, register_parse,
     };
     use marginalia_parse::{epub, html, markdown, plain_text, tei};
     use pyo3::prelude::*;
@@ -255,6 +268,7 @@ mod tests {
                 "detect_html_content",
                 "detect_epub_magic",
                 "detect_tei_content",
+                "detect_pdf_magic",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }
@@ -374,6 +388,26 @@ mod tests {
         assert_eq!(
             detect_tei_content("plain"),
             (0.0, "not detected as TEI XML".to_owned())
+        );
+    }
+
+    #[test]
+    fn detect_pdf_magic_matches_crate() {
+        assert_eq!(
+            detect_pdf_magic(b"%PDF-1.7"),
+            (0.9, "file starts with PDF magic bytes".to_owned())
+        );
+        assert_eq!(
+            detect_pdf_magic(b"nope"),
+            (0.0, "not detected as PDF".to_owned())
+        );
+        assert_eq!(
+            detect_pdf_magic(b""),
+            (0.0, "not detected as PDF".to_owned())
+        );
+        assert_eq!(
+            detect_pdf_magic(b"%PDF-"),
+            (0.9, "file starts with PDF magic bytes".to_owned())
         );
     }
 }

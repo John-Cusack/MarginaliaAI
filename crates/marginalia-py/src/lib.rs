@@ -161,6 +161,13 @@ mod tests {
                 "parse_markdown",
                 "detect_plain_text_content",
                 "detect_markdown_content",
+                "parse_html",
+                "parse_epub",
+                "parse_tei",
+                "detect_html_content",
+                "detect_epub_magic",
+                "detect_tei_content",
+                "detect_pdf_magic",
             ] {
                 assert!(parse.hasattr(name).unwrap(), "missing {name}");
             }
