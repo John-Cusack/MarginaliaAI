@@ -63,3 +63,63 @@ jobs:
 # the whole runtime. Making them CI-worthy means giving them their own
 # fixture-built corpus, which is real work and belongs in its own change.
 # Until then: `make test-integration` locally, against a real database.
+
+  rust:
+    name: rust seam and accelerator
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Set up Rust
+        run: |
+          rustup set profile minimal
+          rustup update stable
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --locked --version 0.6
+
+      # PyO3 links the test binaries against libpython, which lives outside
+      # the loader's default search path for a uv-managed interpreter.
+      - name: Point PyO3 at the project interpreter
+        run: |
+          PY="$(uv python find 3.11)"
+          echo "PYO3_PYTHON=$PY" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$("$PY" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Rust tests
+        run: cargo test --workspace --exclude marginalia-ret
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Seam coverage
+        run: cargo llvm-cov --lib --tests -p marginalia-py --fail-under-lines 100 --fail-under-functions 100 --fail-under-regions 100
+
+      # Mirrors the end-user install: a prebuilt wheel, no Rust involved.
+      - name: Build accelerator wheel
+        run: uvx --from 'maturin>=1.15,<2' maturin build -i "$PYO3_PYTHON" --manifest-path crates/marginalia-py/Cargo.toml --out dist/accel
+
+      - name: Cut-over suites against the Rust backend
+        run: |
+          uv pip install dist/accel/*.whl
+          RE_RUST_BACKEND=rust uv run pytest tests/unit/services/test_text_rust_parity.py tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py -q
+
+      - name: Rollback check
+        run: RE_RUST_BACKEND=python uv run pytest tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py -q

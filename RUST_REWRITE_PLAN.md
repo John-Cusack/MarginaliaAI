@@ -620,3 +620,106 @@ by a permanent test; the throwaway differentials that proved them are gone.
 - Playwright / Chromium flows (`scrape_kindle.py`, Logos/YCL logins) — browser automation, no Rust win.
 - Alembic migrations (`adapters/storage/postgres/migrations/versions/*`) — history; new Rust migrations only for new schema.
 - `sentence-transformers` inference weights — process boundary, not a port.
+
+## Step 0 — Packaging (decided 2026-09-22, no approval stop needed)
+
+Decision: core (`marginalia-ai`) and SDK (`marginalia-ai-sdk`) stay
+Hatchling pure-Python `py3-none-any` wheels, exactly as today. Rust ships
+as a separate optional distribution, `marginalia-ai-accelerator`, built
+with `maturin` (pyo3 bindings, `abi3-py311`, one wheel per platform for
+all Python 3.11+), exposing the single top-level extension
+`marginalia_rs` with one submodule per phase (`text`, `chunk`, …).
+Core gains an `[accelerated]` extra
+(`marginalia-ai-accelerator>=0.6,<0.7`, same-minor tracking like the SDK
+policy) and selects the backend at runtime via `RE_RUST_BACKEND`
+(`auto` default: Rust when importable, else Python; `rust` forces and
+fails loudly when absent; `python` forces the pure-Python path and is
+the bisection/rollback switch). Every cut-over caller keeps its Python
+implementation as the permanent fallback — it doubles as the
+differential oracle — so the fallback can never rot.
+
+Wheel matrix: `py3-none-any` for core/SDK (unchanged, installs with no
+toolchain); `cp311-abi3` platform wheels for the accelerator on linux
+x86_64+aarch64, macOS arm64+x86_64, Windows x64 (maturin-action), plus
+its sdist (building that sdist into a wheel needs Rust — acceptable,
+because nothing requires the accelerator). The accelerator crate
+(`crates/marginalia-py`) is NOT a `uv` workspace member, so `uv sync`
+on a compiler-less machine never invokes cargo; release builds it
+explicitly (`uv build crates/marginalia-py` / maturin-action).
+
+Alternatives rejected: a single maturin build for core (its sdist would
+need cargo at install time, and releases would gate on every platform
+wheel existing — breaks the no-compiler install story on exotic arches);
+setuptools-rust (same fallback defect, weaker cross-build story than
+maturin-action); scikit-build-core/CMake (no C++ here, pure overhead).
+
+Fallback proof (done 2026-09-22, pre-Rust baseline): `uv build` both
+distributions, `twine check --strict` 4/4 PASSED, and a `pip install`
+inside `python:3.11-slim` with no cargo/rustc/cc/gcc on PATH yields a
+working install (`import research_engine` 0.6.2, `research-engine
+--help`, lean base with no torch/docling/sentence-transformers).
+Per-phase re-proof is mandatory: the same container install plus
+`RE_RUST_BACKEND=python` rollback (exact old behavior) and the
+extension discovery smoke (`history`, `logos`, `ycl`, `acad`) gate
+every phase. External extension suites live in their own repos; locally
+they gate via entry-point discovery + SDK contract checks + the
+in-tree history pack suite (`pytest packages/plugins`).
+
+## Phase 1 cutover — text seam (done 2026-09-22)
+
+`marginalia_rs.text` (new crate `marginalia-py`, maturin `marginalia-ai-accelerator`
+0.6.2, `abi3-py311`) exposes `normalize`, `normalize_whitespace`,
+`normalize_with_map`, `normalize_for_matching`, `NORMALIZATION_VERSION` with
+signatures identical to `services/text/normalize.py`. Caller cut over:
+`services/verification/quote.py` (`verify` stored/match forms,
+`_locate_normalized` source-continues fold, `_find_folded`) behind
+`RE_RUST_BACKEND` (`research_engine/_rust.py`: `auto`/`rust`/`python`);
+the Python implementations stay as the permanent fallback and oracle.
+Core gains an `[accelerated]` extra
+(`marginalia-ai-accelerator>=0.6,<0.7`); the seam crate is NOT a `uv`
+workspace member, and the root pins a path source for it so `uv lock`
+resolves without the registry (wheels carry no `uv.sources`, so end-user
+pip is unaffected).
+
+Evidence: `cargo test --workspace --exclude marginalia-ret` 1053 green
+(1051 + 2 new seam); `cargo llvm-cov -p marginalia-py` 100%
+lines/functions/regions; clippy zero; fmt clean. `pytest tests/unit`
+1619 + 1 skipped under BOTH `RE_RUST_BACKEND=rust` and `=python`
+(incl. permanent `tests/unit/services/test_text_rust_parity.py`: 42 —
+backend-forced fold/map/tier matrix incl. non-ASCII-before-match anchors,
+rollback pin, switch-semantics tests).
+`pytest packages/sdk/tests packages/plugins` 47 green; ruff clean;
+all four extensions discover (`academic-journal`, `history`, `logos`,
+`yourcloudlibrary`); SDK 82 exports intact. `uv build` core+sdk+maturin
+sdist, `twine check --strict` 6/6 PASSED. Compiler-less
+`python:3.11-slim` container: pure wheels install and run with no
+toolchain (auto selects python); with the `cp311-abi3` wheel added, auto
+selects rust, `=python` rolls back, CLI lean in both. External extension
+suites live in their own repos (not checkouts here); they gate locally
+via discovery + SDK contract + the in-tree history pack suite.
+Automation: CI `rust` job (workspace tests, clippy `-D warnings`, fmt,
+seam coverage gates at 100, wheel build + rust-backend suites + rollback);
+release `build-accelerator*`/`publish-accelerator*` (3-platform matrix +
+sdist + TestPyPI dispatch, `pypi-accelerator` env, `accel-v*` tags).
+
+New load-bearing findings: (1) `uv` resolves ALL extras universally, so an
+extra depending on an unpublished distribution breaks `uv lock` for the
+whole workspace — the committed path source is the bridge until the
+first accelerator publish, and the extra must land only together with it.
+(2) PyO3 test binaries link libpython: builds need `PYO3_PYTHON` pointed
+at the project interpreter (NOT `python3` from PATH), and running them
+needs its `LIBDIR` on the loader path when it is uv-managed (system
+pythons are already on the default path) — CI sets both from
+`uv python find`. (3) `?` in `#[pymodule]` init leaves countable
+Err-return regions; the proven-infallible `expect` form (same class as
+the `LazyLock` `unwrap`s) keeps 100% — `unwrap` panic arms do not count
+on this toolchain. (4) The wheel matrix ships 3 platforms + sdist;
+linux-aarch64 + macOS-x64 fall back to pure Python (compliant by
+design), tracked for 0.7.
+
+Phases 2–7 (chunk → parse → works → ret → io → framework/history seams)
+follow this exact machinery: extend `marginalia_rs.*` one submodule at a
+time, cut one caller behind the same flag, extend the parity suite, and
+re-run this battery. The async-boundary phases (ret/io) are the known
+hard part (tokio-vs-asyncio at the repo/HTTP-client boundary) and are
+still ahead — no seam exists for them yet.

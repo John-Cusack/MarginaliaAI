@@ -1,0 +1,16 @@
+[package]
+name = "marginalia-py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "marginalia_rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+marginalia-text = { path = "../marginalia-text" }
+pyo3 = { version = "0.24", features = ["abi3-py311"] }

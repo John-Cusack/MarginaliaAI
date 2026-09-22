@@ -6,7 +6,7 @@ name: Release
 #   Project name                  Owner         Repository    Workflow     Environment
 #   marginalia-ai-sdk             John-Cusack   MarginaliaAI  release.yml  pypi-sdk
 #   marginalia-ai                 John-Cusack   MarginaliaAI  release.yml  pypi-core
-#   marginalia-ai-plugin-history  John-Cusack   MarginaliaAI  release.yml  pypi-history
+#   marginalia-ai-accelerator     John-Cusack   MarginaliaAI  release.yml  pypi-accelerator
 #
 # Manual dispatch publishes one selected distribution to TestPyPI. A coordinated
 # `v*` tag publishes SDK, core, then history; `sdk-v*` and `core-v*` tags publish
@@ -18,6 +18,7 @@ on:
       - "v*"
       - "core-v*"
       - "sdk-v*"
+      - "accel-v*"
   workflow_dispatch:
     inputs:
       package:
@@ -29,6 +30,7 @@ on:
           - sdk
           - core
           - history
+          - accelerator
 permissions:
   contents: read
 
@@ -98,6 +100,93 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/sdk/
+          repository-url: https://test.pypi.org/legacy/
+
+  build-accelerator:
+    # Independent of the SDK -> core -> history chain: nothing depends on it
+    # and it depends on nothing. The pure-Python fallback means platforms
+    # without a prebuilt wheel still install and work, so the matrix grows
+    # without ever gating a release.
+    if: >-
+      (github.event_name == 'push' && (startsWith(github.ref_name, 'v') || startsWith(github.ref_name, 'accel-v'))) ||
+      (github.event_name == 'workflow_dispatch' && inputs.package == 'accelerator')
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist/accel -i python3.11
+          working-directory: crates/marginalia-py
+      - name: Smoke the wheel without Rust
+        run: |
+          uv run --isolated --no-project --with dist/accel/marginalia_ai_accelerator-*.whl python -c 'import marginalia_rs; assert marginalia_rs.text.normalize("fis-\ncal") == "fiscal"'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: accelerator-distributions-${{ matrix.os }}
+          path: dist/accel/
+
+  build-accelerator-sdist:
+    if: >-
+      (github.event_name == 'push' && (startsWith(github.ref_name, 'v') || startsWith(github.ref_name, 'accel-v'))) ||
+      (github.event_name == 'workflow_dispatch' && inputs.package == 'accelerator')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx --from 'maturin>=1.15,<2' maturin sdist --manifest-path crates/marginalia-py/Cargo.toml --out dist/accel
+      - run: uvx --from twine twine check --strict dist/accel/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: accelerator-sdist
+          path: dist/accel/
+
+  publish-accelerator:
+    needs: [build-accelerator, build-accelerator-sdist]
+    if: >-
+      github.event_name == 'push' &&
+      needs.build-accelerator.result == 'success' &&
+      needs.build-accelerator-sdist.result == 'success'
+    runs-on: ubuntu-latest
+    environment: pypi-accelerator
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: accelerator-*
+          path: dist/accel
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/accel/
+
+  publish-accelerator-testpypi:
+    needs: [build-accelerator, build-accelerator-sdist]
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.package == 'accelerator' &&
+      needs.build-accelerator.result == 'success' &&
+      needs.build-accelerator-sdist.result == 'success'
+    runs-on: ubuntu-latest
+    environment: pypi-accelerator
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: accelerator-*
+          path: dist/accel
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/accel/
           repository-url: https://test.pypi.org/legacy/
 
   build-core:

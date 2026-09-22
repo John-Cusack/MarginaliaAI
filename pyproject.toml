@@ -36,3 +36,4 @@ members = ["packages/core", "packages/sdk", "packages/plugins/history"]
 marginalia-ai = { workspace = true }
 marginalia-ai-sdk = { workspace = true }
 marginalia-ai-plugin-history = { workspace = true }
+marginalia-ai-accelerator = { path = "crates/marginalia-py" }

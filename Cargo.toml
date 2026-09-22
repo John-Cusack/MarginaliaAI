@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/marginalia-types", "crates/marginalia-text", "crates/marginalia-chunk", "crates/marginalia-parse", "crates/marginalia-works", "crates/marginalia-ret", "crates/marginalia-io", "crates/marginalia-history"]
+members = ["crates/marginalia-types", "crates/marginalia-text", "crates/marginalia-chunk", "crates/marginalia-parse", "crates/marginalia-works", "crates/marginalia-ret", "crates/marginalia-io", "crates/marginalia-history", "crates/marginalia-py"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
