@@ -1,0 +1,11 @@
+[package]
+name = "marginalia-history"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marginalia-text = { path = "../marginalia-text" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }

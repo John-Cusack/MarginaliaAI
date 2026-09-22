@@ -1,0 +1,21 @@
+[package]
+name = "marginalia-ret"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marginalia-types = { path = "../marginalia-types" }
+marginalia-text = { path = "../marginalia-text" }
+marginalia-chunk = { path = "../marginalia-chunk" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+regex = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

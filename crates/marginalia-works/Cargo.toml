@@ -1,0 +1,18 @@
+[package]
+name = "marginalia-works"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marginalia-types = { path = "../marginalia-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+chrono = { workspace = true }
+regex = "1"
+ryu = "1"
+sha2 = "0.10"
+serde_yaml = "0.9"
+
+[dev-dependencies]
+tempfile = "3"

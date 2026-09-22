@@ -1,0 +1,18 @@
+[package]
+name = "marginalia-parse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marginalia-types = { path = "../marginalia-types" }
+marginalia-text = { path = "../marginalia-text" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = "1"
+scraper = "0.27"
+quick-xml = "0.39"
+zip = "2"
+encoding_rs = "0.8"
+pdf-extract = "0.12"
+lopdf = "0.42"
+unicode-normalization = "0.1"

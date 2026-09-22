@@ -1,0 +1,13 @@
+[package]
+name = "marginalia-text"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marginalia-types = { path = "../marginalia-types" }
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+unicode-normalization = "0.1"
+uuid = { workspace = true }
+chrono = { workspace = true }

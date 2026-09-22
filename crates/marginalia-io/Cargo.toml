@@ -1,0 +1,19 @@
+[package]
+name = "marginalia-io"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Minimal verified set: json bodies plus rustls TLS, no default features.
+# (reqwest 0.13 renamed the 0.12 `rustls-tls` feature to `rustls`.)
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+# rt-multi-thread + macros is the spec'd set; net + time are for the
+# embed-server sibling sharing this manifest.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+regex = "1"
+serde_yaml = "0.9"
