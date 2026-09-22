@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy as sa
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.adapters.storage.postgres.schema import (
     documents,
@@ -147,6 +148,14 @@ def _output_is_identical(old_passages: Sequence[Any], new_drafts: Sequence[Any])
         and old.text == draft.text
         for old, draft in zip(old_passages, new_drafts, strict=True)
     )
+
+
+def _pg_config(iso):
+    """`pg_config`, via the Rust backend when selected (see `research_engine._rust`)."""
+    rs = _rust_backend.rust_chunk()
+    if rs is not None:
+        return rs.pg_config(iso)
+    return pg_config(iso)
 
 
 class ReindexService:
@@ -499,7 +508,7 @@ class ReindexService:
             )
 
         language = await self._document_language(document_id)
-        await self._passages.index_fts(tx, ids, texts, pg_config(language))
+        await self._passages.index_fts(tx, ids, texts, _pg_config(language))
 
     async def _document_language(self, document_id: UUID) -> str | None:
         async with self._engine.connect() as conn:

@@ -11,6 +11,7 @@ use pyo3::prelude::*;
 
 mod chunk;
 mod chunkers;
+mod langconfig;
 mod windows;
 
 /// Fold away the differences that separate a quotation from its source.

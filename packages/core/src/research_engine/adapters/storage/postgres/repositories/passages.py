@@ -11,6 +11,7 @@ import structlog
 from sqlalchemy.dialects.postgresql import JSONB
 from uuid_utils import uuid7
 
+from research_engine import _rust as _rust_backend
 from research_engine.adapters.storage.postgres.schema import (
     documents,
     entities,
@@ -165,7 +166,7 @@ def build_keyword_search_sql(configs: list[str]) -> str:
     """
     if not configs:
         raise ValueError("build_keyword_search_sql requires at least one config")
-    if bad := [c for c in configs if not is_known_config(c)]:
+    if bad := [c for c in configs if not _is_known_config(c)]:
         raise ValueError(f"refusing to interpolate unvalidated regconfig(s): {bad}")
 
     branches = [
@@ -191,6 +192,14 @@ def _name_matches(column: Any, names: list[str]) -> sa.ColumnElement[bool]:
         return sa.false()
     text_col = sa.func.lower(column.as_string())
     return sa.or_(*[text_col.contains(name.lower()) for name in names])
+
+
+def _is_known_config(config):
+    """`is_known_config`, via the Rust backend when selected (see `research_engine._rust`)."""
+    rs = _rust_backend.rust_chunk()
+    if rs is not None:
+        return rs.is_known_config(config)
+    return is_known_config(config)
 
 
 class PGPassageRepo:
@@ -491,7 +500,7 @@ class PGPassageRepo:
         it is ``None`` the search spans every language present in the corpus.
         """
         if lang is not None:
-            configs = [lang] if is_known_config(lang) else []
+            configs = [lang] if _is_known_config(lang) else []
         else:
             configs = await self._distinct_lang_configs()
 
@@ -528,14 +537,14 @@ class PGPassageRepo:
             )
             configs = [row.cfg for row in rows]
 
-        unknown = [c for c in configs if not is_known_config(c)]
+        unknown = [c for c in configs if not _is_known_config(c)]
         if unknown:
             # Someone indexed under a config this build does not vouch for.
             # Skipping it loses recall for that language; interpolating it into
             # SQL is worse.
             logger.warning("unknown_lang_config_skipped", configs=unknown)
 
-        self._lang_cache = sorted(c for c in configs if is_known_config(c))
+        self._lang_cache = sorted(c for c in configs if _is_known_config(c))
         self._lang_cache_expires = now + _LANG_CACHE_TTL_SECONDS
         return self._lang_cache
 
@@ -568,7 +577,7 @@ class PGPassageRepo:
         vector would leave the column describing a stemming that no longer
         applies, and ``keyword_search`` routes on that column.
         """
-        if not is_known_config(lang):
+        if not _is_known_config(lang):
             raise ValueError(f"Unknown text-search config: {lang!r}")
 
         for pid, text in zip(passage_ids, texts, strict=False):

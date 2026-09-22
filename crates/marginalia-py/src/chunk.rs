@@ -161,6 +161,7 @@ pub fn chunk_module(py: Python<'_>) -> Bound<'_, PyModule> {
         .expect("module attribute assignment");
     super::windows::register_windows(&m);
     super::chunkers::register_chunkers(&m);
+    super::langconfig::register_langconfig(&m);
     m
 }
 

@@ -843,3 +843,40 @@ before/after this slice — proven via isolated worktree): pre-existing
 coverage-model drift, not a regression; the 100% bars hold per the CI-era
 model and every line touched here is covered. Trivial follow-up if the
 letter must hold here: 5 fake-call lines.
+
+## Phase 2 cutover — langconfig (done 2026-09-22; Phase 2 complete)
+
+`marginalia_rs.chunk.pg_config` / `.is_known_config` / `DEFAULT_CONFIG` /
+`KNOWN_CONFIGS` (`crates/marginalia-py/src/langconfig.rs`): pure table
+lookup, signature-identical, strings in/out (`KNOWN_CONFIGS` crosses as a
+real frozenset). Callers migrated: `hybrid.py` (search language),
+`reindex.py` + `orchestrator.py` (2 sites, ingest FTS indexing), and all
+five `is_known_config` sites in `adapters/.../repositories/passages.py`
+(SQL-literal validation — a deliberate early touch of a Phase-5-owned
+file: the swap is behavior-neutral, recorded here so Phase 5 knows it
+landed). `hybrid.py` orchestration still stays Python per scope.
+
+Learning: `Option<&str>` params do NOT default to `None` in pyo3 0.24 —
+`#[pyo3(signature = (iso = None))]` is required (caught by the seam's own
+registration test). Version-skew note: a stale accelerator wheel fails
+LOUDLY (`AttributeError` on the missing submodule) rather than falling
+back — correct, since `auto` means "Rust when importable" and the module
+imports; post-release, additive submodules require an accelerator version
+bump + extra-floor raise. All slices ship together in 0.6.2, so no skew
+exists yet.
+
+Evidence: seam crate 21 Rust tests, `llvm-cov -p marginalia-py`
+100/100/100; workspace 1074 green excl ret; clippy zero; fmt clean.
+`pytest tests/unit` 1709 + 1 skipped under BOTH backends (new permanent
+`test_langconfig_rust_parity.py`: backend-forced matrix incl. locales,
+case, whitespace, unknowns, constant/type surface, no-wheel fallback).
+SDK+packs 47; ruff clean; 4 extensions discover. Artifacts rebuilt, twine
+6/6. Compiler-less containers: pure fallback + accelerated langconfig +
+rollback proven. CI rust job extended both ways.
+
+Phase 2 is COMPLETE: fusion (2a) + windows (2b) + chunkers (2c) +
+langconfig (2d) all cut over, every caller migrated, `hybrid.py`
+orchestration left Python per scope. `offsets.py` needs no seam
+(`CanonicalIndex::find` + `collapse_whitespace` already cover it),
+`hit_source.py` has no portable predicate, `filter_extensions.py`
+`build_clause` is SQLAlchemy (Phase 5) — all per the original scoping.

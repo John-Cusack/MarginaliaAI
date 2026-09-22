@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.domain.documents import DocumentDraft
 from research_engine.domain.errors import IngestionError
@@ -35,6 +36,14 @@ if TYPE_CHECKING:
     from research_engine.services.ingestion.dispatch import ModuleDispatcher
 
 logger = structlog.get_logger()
+
+
+def _pg_config(iso):
+    """`pg_config`, via the Rust backend when selected (see `research_engine._rust`)."""
+    rs = _rust_backend.rust_chunk()
+    if rs is not None:
+        return rs.pg_config(iso)
+    return pg_config(iso)
 
 
 class IngestionOrchestrator:
@@ -278,7 +287,7 @@ class IngestionOrchestrator:
             except ImportError:
                 pass
 
-            await self._passages.index_fts(tx, passage_ids, texts, pg_config(language))
+            await self._passages.index_fts(tx, passage_ids, texts, _pg_config(language))
 
         logger.info(
             "ingest_drafts_ok",
@@ -350,7 +359,7 @@ class IngestionOrchestrator:
                 )
 
             await self._passages.index_fts(
-                tx, passage_ids, texts, pg_config(language)
+                tx, passage_ids, texts, _pg_config(language)
             )
         return doc, saved_passages, False
 

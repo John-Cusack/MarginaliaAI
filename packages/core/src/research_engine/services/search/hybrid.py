@@ -50,6 +50,14 @@ def _weighted_fuse(vec_hits, kw_hits, alpha=0.5):
     return weighted_fuse(vec_hits, kw_hits, alpha=alpha)
 
 
+def _pg_config(iso):
+    """`pg_config`, via the Rust backend when selected."""
+    rs = _rust_backend.rust_chunk()
+    if rs is not None:
+        return rs.pg_config(iso)
+    return pg_config(iso)
+
+
 class HybridSearchService:
     def __init__(
         self,
@@ -82,7 +90,7 @@ class HybridSearchService:
         # one, keyword_search spans every language present in the corpus. Never
         # assume English — the corpus is multilingual and bge-m3 is too.
         lang_config = (
-            pg_config(query.filters.language)
+            _pg_config(query.filters.language)
             if query.filters and query.filters.language
             else None
         )
