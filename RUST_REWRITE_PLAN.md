@@ -759,3 +759,32 @@ Remaining Phase 2 slices (same machinery): read windows
 (`choose_window` + callers), chunkers (fixed/prose/structural/whole +
 ingest callers), `langconfig.pg_config`. `hybrid.py` orchestration stays
 Python through Phase 5 per scope.
+
+## Phase 2 cutover — windows (done 2026-09-22; chunkers/langconfig remain)
+
+`marginalia_rs.chunk.choose_window` / `.build_window`
+(`crates/marginalia-py/src/windows.rs`) with the seam contract: nodes cross
+as `DocumentNode` JSON into the real structs (no fabricated fields),
+spans as `(start, end)` pairs, budgets as `i64`; results return as plain
+tuples and the adapters in `services/search/windows.py`
+(`_choose_window_rs`, `_build_window_rs`) reattach the original `Span` /
+`WindowPlan` / node objects, so `plan.node is` the input ancestor on
+either backend. `choose_window` / `_build_window` keep identical
+signatures and branch internally; `PassageWindowReader.read` is untouched.
+
+Seam specifics (pinned): negative coordinates clamp to 0 at the `usize`
+boundary (malformed-input deviation — storage validates non-negative);
+malformed node JSON / plan source / node id answer `ValueError`; metadata
+floats (incl. a 17-digit battery value) ride along unread and unreturned;
+`WindowSource` round-trips through all four variants.
+
+Evidence: seam crate 12 Rust tests, `llvm-cov -p marginalia-py` still
+100/100/100; workspace 1063 green excl ret; clippy zero; fmt clean.
+`pytest tests/unit` 1657 + 1 skipped under BOTH backends (new permanent
+`test_windows_rust_parity.py`: 21 — backend-forced plan/window matrix over
+the Louw-Nida/marginal-Jew/degenerate vectors + Hebrew titles + negative
+budgets, bound-object identity, reader end-to-end, seam-contract
+`ValueError`s, clamp + metadata pins, no-wheel fallback). SDK+packs 47;
+ruff clean; 4 extensions discover. Artifacts rebuilt, twine 6/6.
+Compiler-less containers: pure fallback + accelerated windows + rollback
+proven. CI rust job extended with the windows suites both ways.

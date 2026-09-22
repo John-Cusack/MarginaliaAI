@@ -159,6 +159,7 @@ pub fn chunk_module(py: Python<'_>) -> Bound<'_, PyModule> {
         .expect("module attribute assignment");
     m.add("RRF_K", chunk_fusion::RRF_K)
         .expect("module attribute assignment");
+    super::windows::register_windows(&m);
     m
 }
 

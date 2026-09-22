@@ -10,6 +10,7 @@ use marginalia_text::normalize as text_normalize;
 use pyo3::prelude::*;
 
 mod chunk;
+mod windows;
 
 /// Fold away the differences that separate a quotation from its source.
 ///
