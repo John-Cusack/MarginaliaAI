@@ -27,6 +27,7 @@ import yaml
 from pydantic import BaseModel, Field
 from uuid_utils import uuid7
 
+from research_engine import _rust as _rust_backend
 from research_engine.domain.errors import NotFoundError
 from research_engine.domain.works import WorkBlockDraft
 from research_engine.services.works.assembly import assemble_revision
@@ -234,7 +235,7 @@ class WorkExportService:
         }
 
         for index, block in enumerate(parsed):
-            keys, invalid = find_markers(block.body)
+            keys, invalid = _find_markers(block.body)
             if invalid:
                 raise ImportRefused(
                     "AUTH_CITATION_MARKER_DANGLING",
@@ -398,7 +399,7 @@ def render_markdown(view: AssembledRevision) -> str:
         for entry in item.citations:
             if entry.occurrence.placement.value != "block_end":
                 continue
-            marker = format_marker(entry.occurrence.citation_key)
+            marker = _format_marker(entry.occurrence.citation_key)
             if marker not in (block.body_markdown or ""):
                 parts.append(marker)
         parts.append("")
@@ -536,3 +537,20 @@ def parse_markdown(markdown: str) -> tuple[dict[str, Any], list[_ParsedBlock]]:
         index += 1
     flush_paragraph()
     return front, parsed
+
+
+def _find_markers(text):
+    """`find_markers`, via the Rust backend when selected (see `research_engine._rust`)."""
+    rs = _rust_backend.rust_works()
+    if rs is not None:
+        keys, invalid = rs.find_markers(text or "")
+        return set(keys), list(invalid)
+    return find_markers(text)
+
+
+def _format_marker(citation_key):
+    """`format_marker`, via the Rust backend when selected."""
+    rs = _rust_backend.rust_works()
+    if rs is not None:
+        return rs.format_marker(str(citation_key))
+    return format_marker(citation_key)

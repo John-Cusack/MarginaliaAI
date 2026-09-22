@@ -20,6 +20,7 @@ from uuid import UUID  # noqa: TC003 - pydantic needs it at runtime
 import structlog
 from pydantic import BaseModel, Field
 
+from research_engine import _rust as _rust_backend
 from research_engine.domain.errors import NotFoundError
 from research_engine.services.works.assembly import (
     AssembledRevision,
@@ -396,7 +397,7 @@ class _Checker:
         view: AssembledRevision,
     ) -> dict[str, tuple[set[str], list[str]]]:
         return {
-            str(item.block.block_key): find_markers(item.block.body_markdown or "")
+            str(item.block.block_key): _find_markers(item.block.body_markdown or "")
             for item in view.blocks
         }
 
@@ -661,3 +662,12 @@ def _citation_checks(
                 )
             )
     return checks
+
+
+def _find_markers(text):
+    """`find_markers`, via the Rust backend when selected (see `research_engine._rust`)."""
+    rs = _rust_backend.rust_works()
+    if rs is not None:
+        keys, invalid = rs.find_markers(text or "")
+        return set(keys), list(invalid)
+    return find_markers(text)

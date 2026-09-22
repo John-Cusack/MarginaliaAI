@@ -8,10 +8,13 @@ it so the five callers cannot disagree about what a revision contains.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID  # noqa: TC003 - pydantic needs it at runtime
 
 from pydantic import BaseModel, Field
+
+from research_engine import _rust as _rust_backend
 
 # noqa TC001 below: pydantic resolves the annotations at model definition,
 # so these are runtime imports despite looking annotation-only.
@@ -115,7 +118,26 @@ def hash_assembled(view: AssembledRevision) -> bytes:
         for item in view.blocks
         for link in (item.links.entities if item.links else [])
     ]
+    rs = _rust_backend.rust_works()
+    if rs is not None:
+        return _hash_assembled_rs(rs, blocks, citations, source_links, entity_links)
     return compute_content_hash(blocks, citations, source_links, entity_links)
+
+
+def _hash_assembled_rs(rs, blocks, citations, source_links, entity_links):
+    """`hash_assembled` rows via the Rust backend (see `research_engine._rust`).
+
+    Rows cross as JSON (ids pre-stringified, exactly as the Python path
+    consumes them); the digest crosses as bytes.
+    """
+    return bytes(
+        rs.compute_content_hash(
+            json.dumps(blocks),
+            json.dumps(citations),
+            json.dumps(source_links),
+            json.dumps(entity_links),
+        )
+    )
 
 
 async def assemble_revision(

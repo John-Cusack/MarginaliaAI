@@ -979,3 +979,32 @@ Phase 3 is COMPLETE modulo the documented keep-Python: plain_text,
 markdown, html, epub, tei cut over; pdf detect cut over, pdf parse stays
 (first HALT item, reported not routed around). `docling_converter` and
 `scrape_kindle` untouched per original scope.
+
+## Phase 4 cutover — hashing + markers (done 2026-09-22; works rules follow)
+
+`marginalia_rs.works` (new crate module `crates/marginalia-py/src/works.rs`):
+`compute_content_hash` (four row tables as JSON in, digest bytes out),
+`find_markers` (text in, `(keys, invalid)` out), `format_marker`
+(canonical key string in, marker out). Callers migrated: `assembly.py`
+(`hash_assembled`), `attach.py` + `drafting.py` (format), `validate.py` +
+`drafting.py` (find). All keep identical signatures and branch internally.
+
+Seam specifics (pinned): rows cross dumped with plain `json.dumps` (ids
+pre-stringified by callers, exactly as the Python path consumes them);
+floats round-trip bit-exactly via the workspace `float_roundtrip` flag;
+non-finite floats are outside the contract; missing row keys read `null`
+where Python raises `KeyError` (rows complete by construction —
+typed-boundary deviation); unparseable keys/tables answer `ValueError`.
+Metadata identity holds by reattachment (text chunkers) or exact rebuild
+(structural section_meta from the original mapping plus the draft's own
+heading).
+
+Evidence: seam crate 35 Rust tests, `llvm-cov -p marginalia-py`
+100/100/100 from clean; workspace 1090 green excl ret; clippy zero; fmt
+clean. `pytest tests/unit` 1792 + 1 skipped under BOTH backends (new
+permanent `test_works_rust_parity.py`: 15 — backend-forced digests over
+realistic views incl. unicode, marker matrices incl. misplaced hyphens,
+render end-to-end exercising drafting's format path, no-wheel fallback).
+SDK+packs 47; ruff clean; 4 extensions discover. Artifacts rebuilt, twine
+6/6. Compiler-less containers: pure fallback + accelerated works +
+rollback proven. CI rust job extended both ways.

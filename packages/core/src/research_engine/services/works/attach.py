@@ -21,6 +21,7 @@ import structlog
 from pydantic import BaseModel, Field
 from uuid_utils import uuid7
 
+from research_engine import _rust as _rust_backend
 from research_engine.domain.citations import CitationItemDraft, OccurrenceDraft
 from research_engine.domain.errors import FrozenRevisionError, NotFoundError
 from research_engine.domain.works import Placement
@@ -266,7 +267,7 @@ class CitationService:
         return CitationAttached(
             occurrence_id=occurrence.id,
             citation_key=key,
-            marker=format_marker(key),
+            marker=_format_marker(key),
             item=AttachedItem(
                 source_span_id=span_id,
                 char_start=char_start,
@@ -310,3 +311,11 @@ class CitationService:
             passage.char_start == char_start and passage.char_end == char_end
             for passage in covering
         )
+
+
+def _format_marker(citation_key):
+    """`format_marker`, via the Rust backend when selected (see `research_engine._rust`)."""
+    rs = _rust_backend.rust_works()
+    if rs is not None:
+        return rs.format_marker(str(citation_key))
+    return format_marker(citation_key)

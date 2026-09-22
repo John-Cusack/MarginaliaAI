@@ -14,6 +14,7 @@ mod chunkers;
 mod langconfig;
 mod parse;
 mod windows;
+mod works;
 
 /// Fold away the differences that separate a quotation from its source.
 ///
@@ -75,6 +76,8 @@ fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&chunk::chunk_module(py))
         .expect("submodule name is unique");
     m.add_submodule(&parse::parse_module(py))
+        .expect("submodule name is unique");
+    m.add_submodule(&works::works_module(py))
         .expect("submodule name is unique");
     Ok(())
 }
@@ -170,6 +173,10 @@ mod tests {
                 "detect_pdf_magic",
             ] {
                 assert!(parse.hasattr(name).unwrap(), "missing {name}");
+            }
+            let works = root.getattr("works").unwrap();
+            for name in ["compute_content_hash", "find_markers", "format_marker"] {
+                assert!(works.hasattr(name).unwrap(), "missing {name}");
             }
         });
     }

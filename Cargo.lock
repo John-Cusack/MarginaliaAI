@@ -1492,6 +1492,7 @@ dependencies = [
  "marginalia-parse",
  "marginalia-text",
  "marginalia-types",
+ "marginalia-works",
  "pyo3",
  "serde_json",
  "uuid",
