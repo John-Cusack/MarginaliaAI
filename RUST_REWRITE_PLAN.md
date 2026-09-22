@@ -880,3 +880,31 @@ orchestration left Python per scope. `offsets.py` needs no seam
 (`CanonicalIndex::find` + `collapse_whitespace` already cover it),
 `hit_source.py` has no portable predicate, `filter_extensions.py`
 `build_clause` is SQLAlchemy (Phase 5) — all per the original scoping.
+
+## Phase 3 cutover — plain_text + markdown (done 2026-09-22; html/epub/tei/pdf remain)
+
+`marginalia_rs.parse` (new crate module `crates/marginalia-py/src/parse.rs`):
+`parse_plain_text` / `parse_markdown` (decoded text + file name in,
+`ParsedDocument` JSON out) and `detect_plain_text_content` /
+`detect_markdown_content` (newline-normalized head bytes in, `(score,
+reason)` out). Adapters in `modules/plain_text.py` + `modules/markdown.py`
+branch internally: reads/decoding stay caller-side (strict UTF-8 and
+universal newlines surface exactly, including `UnicodeDecodeError`), the
+suffix + `mimetypes` detect branches stay caller-side ordered ahead (the OS
+table is not portable), and parse triples are reassembled from the JSON
+(markdown maps the `sections` field back under `metadata["sections"]` —
+the same contract the pipeline reads).
+
+Seam specifics (pinned): scores cross as binary `f64`; titles/texts/counts
+and section tables are strings and integers — no float crosses; heads are
+newline-normalized adapter-side so lone-CR files peek identically.
+
+Evidence: seam crate 25 Rust tests, `llvm-cov -p marginalia-py`
+100/100/100 from clean; workspace 1078 green excl ret; clippy zero; fmt
+clean. `pytest tests/unit` 1735 + 1 skipped under BOTH backends (new
+permanent `test_parse_rust_parity.py`: 26 — backend-forced parse/detect
+matrices incl. unicode, empty, CRLF, code fences, bad bytes raising
+`UnicodeDecodeError` either way, section-shape pin, no-wheel fallback).
+SDK+packs 47; ruff clean; 4 extensions discover. Artifacts rebuilt, twine
+6/6. Compiler-less containers: pure fallback + accelerated parse +
+rollback proven. CI rust job extended both ways.

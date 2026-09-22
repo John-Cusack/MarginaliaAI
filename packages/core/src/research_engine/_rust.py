@@ -83,3 +83,17 @@ def rust_chunk() -> Any:
     import marginalia_rs
 
     return marginalia_rs.chunk
+
+
+def rust_parse() -> Any:
+    """The ``marginalia_rs.parse`` module when the Rust backend is active.
+
+    Returns ``None`` on the Python path. Parser modules branch on this
+    rather than importing ``marginalia_rs`` themselves, so every seam
+    shares one switch.
+    """
+    if backend() != "rust":
+        return None
+    import marginalia_rs
+
+    return marginalia_rs.parse

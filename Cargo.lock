@@ -1489,6 +1489,7 @@ name = "marginalia-py"
 version = "0.1.0"
 dependencies = [
  "marginalia-chunk",
+ "marginalia-parse",
  "marginalia-text",
  "marginalia-types",
  "pyo3",

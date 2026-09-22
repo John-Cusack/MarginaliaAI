@@ -12,6 +12,7 @@ use pyo3::prelude::*;
 mod chunk;
 mod chunkers;
 mod langconfig;
+mod parse;
 mod windows;
 
 /// Fold away the differences that separate a quotation from its source.
@@ -72,6 +73,8 @@ fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&text_module(py))
         .expect("submodule name is unique");
     m.add_submodule(&chunk::chunk_module(py))
+        .expect("submodule name is unique");
+    m.add_submodule(&parse::parse_module(py))
         .expect("submodule name is unique");
     Ok(())
 }
@@ -151,6 +154,15 @@ mod tests {
             );
             for name in ["rrf_fuse", "weighted_fuse"] {
                 assert!(chunk.hasattr(name).unwrap(), "missing {name}");
+            }
+            let parse = root.getattr("parse").unwrap();
+            for name in [
+                "parse_plain_text",
+                "parse_markdown",
+                "detect_plain_text_content",
+                "detect_markdown_content",
+            ] {
+                assert!(parse.hasattr(name).unwrap(), "missing {name}");
             }
         });
     }
