@@ -395,8 +395,16 @@ fn html_entities_matrix() {
 }
 
 #[test]
-fn html_malformed_references_fail() {
-    assert!(html::parse_bytes("<p>A&#38b</p>".as_bytes(), "c.html").is_err());
+fn html_decimal_chased_by_letter_substitutes() {
+    // `&#[0-9]+[a-f]` without a semicolon gets the semicolon spelled in,
+    // so each side decodes the run and rescans from the chaser
+    // (missing-semicolon parse error, not failure). Erroring here dropped
+    // whole documents the module parses — proven by the seam differential
+    // on `&#38b`.
+    let doc = html::parse_bytes("<p>A&#38b C</p>".as_bytes(), "c.html").unwrap();
+    assert_eq!(doc.text, "A&b C");
+    let doc = html::parse_bytes("<p>&#65D &#12ab</p>".as_bytes(), "c.html").unwrap();
+    assert_eq!(doc.text, "AD \x0cab");
 }
 
 #[test]
@@ -1174,8 +1182,11 @@ fn entities_legacy_prefixes_are_blocked() {
 }
 
 #[test]
-fn entities_malformed_references_fail() {
-    assert!(normalize_entities("<p>A&#38b</p>").is_err());
+fn entities_decimal_chased_by_letter_gains_a_semicolon() {
+    assert_eq!(
+        normalize_entities("<p>A&#38b</p>").unwrap(),
+        "<p>A&#38;b</p>"
+    );
     assert_eq!(normalize_entities("<p>&#x4z</p>").unwrap(), "<p>&#x4z</p>");
 }
 
@@ -2221,20 +2232,19 @@ fn epub_error_matrix() {
         ),
         "cannot find EPUB/c1.xhtml in archive"
     );
-    // A chapter whose markup carries a dying reference fails in place.
+    // A chapter whose markup carries a chased decimal reference substitutes
+    // per the missing-semicolon rule instead of failing the chapter.
     let crash = b"<html><body><p>A&#38b</p></body></html>";
-    let msg = parse_err(
+    let doc = epub::parse_bytes(
         &raw_epub(
             CONTAINER,
             &opf(item, "<itemref idref=\"c1\"/>"),
             &[("EPUB/c1.xhtml", crash)],
         ),
         "t.epub",
-    );
-    assert!(
-        msg.starts_with("malformed character reference at byte"),
-        "{msg}"
-    );
+    )
+    .unwrap();
+    assert_eq!(doc.text, "A&b");
     // Corrupt entry data fails the read, not the lookup.
     let mut bytes = raw_epub(
         CONTAINER,
@@ -2422,20 +2432,19 @@ fn epub_each_failure_fails_at_its_own_site() {
         ),
         "cannot find EPUB/toc.ncx in archive"
     );
-    // A crash reference inside a chapter fails the chapter.
+    // A chased decimal reference inside a chapter substitutes instead of
+    // failing the chapter.
     let crash = b"<html><body><p>A&#38b</p></body></html>";
-    let msg = parse_err(
+    let doc = epub::parse_bytes(
         &raw_epub(
             CONTAINER,
             &opf(item, "<itemref idref=\"c1\"/>"),
             &[("EPUB/c1.xhtml", crash)],
         ),
         "t.epub",
-    );
-    assert!(
-        msg.starts_with("malformed character reference at byte"),
-        "{msg}"
-    );
+    )
+    .unwrap();
+    assert_eq!(doc.text, "A&b");
 }
 
 #[test]
@@ -2581,18 +2590,19 @@ fn epub_whitespace_between_blocks_reads_clean() {
 }
 
 #[test]
-fn html_whitespace_and_title_crash() {
+fn html_whitespace_and_title_reference() {
     // Whitespace-only runs between blocks never reach the text: the module's
     // strip-and-skip drops them before joining.
     let doc = parse_html("<body><h1>H</h1>   <p>B</p></body>", "w.html");
     assert_eq!(doc.text, "H\nB");
-    // A malformed character reference in the title fails the parse: the
-    // builder raises on it before any text is read.
-    assert!(html::parse_text(
+    // A decimal reference chased by a letter in the title gains its
+    // semicolon and decodes, like everywhere else.
+    let doc = html::parse_text(
         "<html><head><title>&#38b</title></head><body><p>x</p></body></html>",
         "t.html",
     )
-    .is_err());
+    .unwrap();
+    assert_eq!(doc.title.as_deref(), Some("&b"));
 }
 
 #[test]

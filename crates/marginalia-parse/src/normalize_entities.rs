@@ -9,8 +9,9 @@ use crate::html_entities::{html5_entity, html_entity};
 /// chapters pass through libxml2's rebuild, which parses them as bogus
 /// comments too.
 /// Rewrite `source` so html5ever decodes its entities exactly the way
-/// `html.parser` does. Returns [`Error::Parse`] where `html.parser`
-/// raises (`ValueError` on malformed numeric references).
+/// `html.parser` does. Infallible: every reference shape resolves to a
+/// spelling (malformed numerics gain their semicolon), so the `Result`
+/// exists for signature stability and is always `Ok`.
 pub fn normalize_entities(source: &str) -> Result<String, Error> {
     let bytes = source.as_bytes();
     let len = bytes.len();
@@ -19,12 +20,14 @@ pub fn normalize_entities(source: &str) -> Result<String, Error> {
     while i < len {
         match bytes[i] {
             b'&' => {
-                let (replacement, next) = text_reference(source, i)?;
+                let (replacement, next) = text_reference(source, i)
+                    .expect("references resolve infallibly: no Err arm remains");
                 out.push_str(&replacement);
                 i = next;
             }
             b'<' => {
-                i = copy_markup(source, bytes, i, &mut out)?;
+                i = copy_markup(source, bytes, i, &mut out)
+                    .expect("markup copies infallibly: no Err arm remains");
             }
             _ => {
                 let ch = source[i..].chars().next().unwrap_or('\u{FFFD}');
@@ -241,7 +244,8 @@ fn copy_raw_text(
             return Ok(end);
         }
         if decode_entities && bytes[i] == b'&' {
-            let (replacement, next) = text_reference(source, i)?;
+            let (replacement, next) = text_reference(source, i)
+                .expect("references resolve infallibly: no Err arm remains");
             out.push_str(&replacement);
             i = next;
         } else {
@@ -345,14 +349,16 @@ pub(crate) fn longest_legacy_prefix(name: &str) -> Option<String> {
     best
 }
 
-/// One `&#`-sequence in text: decoded where valid, an error where
-/// `html.parser` raises, literal where it goes literal.
+/// One `&#`-sequence in text: decoded where valid, literal where the
+/// tokenizers go literal.
 ///
 /// Valid digits plus a semicolon, a non-hex-digit, or the end of input
 /// decode on both sides with the spelling unchanged. Digits chased by a
-/// hex digit can never terminate, and at the end of input the whole rest
-/// goes to `int()` — which raises. Anything else (`&#;`, `&#x`, a bare
-/// `&#`) is literal `&#` with the scan resuming past it.
+/// hex digit get their missing semicolon spelled in: both tokenizers
+/// decode a numeric run on a missing semicolon (noted parse error, not
+/// failure), so `&#38b` reads `&` plus `b` on each side. Erroring here
+/// dropped whole documents the module parses. Anything else (`&#;`,
+/// `&#x`, a bare `&#`) is literal `&#` with the scan resuming past it.
 fn char_reference(source: &str, i: usize) -> Result<(String, usize), Error> {
     let bytes = source.as_bytes();
     let len = bytes.len();
@@ -379,9 +385,12 @@ fn char_reference(source: &str, i: usize) -> Result<(String, usize), Error> {
         Some(b';') => Ok((source[i..j + 1].to_owned(), j + 1)),
         None => Ok((source[i..j].to_owned(), j)),
         Some(b) if !((*b as char).is_ascii_hexdigit()) => Ok((source[i..j].to_owned(), j)),
-        _ => Err(Error::Parse(format!(
-            "malformed character reference at byte {i}"
-        ))),
+        // Decimal digits chased by a-f: spell the missing semicolon in.
+        // Both tokenizers decode a numeric run on a missing semicolon
+        // (noted parse error, not failure), so `&#38b` reads `&` plus `b`
+        // on each side. Erroring here dropped whole documents the module
+        // parses; emitting bare `&` would double-decode through html5ever.
+        Some(_) => Ok((format!("{};", &source[i..j]), j)),
     }
 }
 

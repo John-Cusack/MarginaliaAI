@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import mimetypes
 from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.services.ingestion.chunking.fixed_window import trim_span
 
 if TYPE_CHECKING:
@@ -36,6 +38,11 @@ class HTMLModule:
             return 0.8, f"MIME type '{mime}' matches HTML"
 
         # Peek at content for HTML indicators
+        rs = _rust_backend.rust_parse()
+        if rs is not None:
+            loop = asyncio.get_event_loop()
+            head = await loop.run_in_executor(None, self._read_head, source_path)
+            return rs.detect_html_content(head)
         try:
             loop = asyncio.get_event_loop()
             head = await loop.run_in_executor(None, self._read_head, source_path)
@@ -49,6 +56,11 @@ class HTMLModule:
 
     async def parse(self, source_path: Path) -> tuple[str, str, dict]:
         """Extract text from an HTML file."""
+        rs = _rust_backend.rust_parse()
+        if rs is not None:
+            loop = asyncio.get_event_loop()
+            raw = await loop.run_in_executor(None, source_path.read_bytes)
+            return _parse_html_rs(rs, raw, source_path)
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._extract, source_path)
 
@@ -188,3 +200,18 @@ def _text_and_sections(target) -> tuple[str, list[dict]]:
             continue
         sections.append({**mark, "char_start": start, "char_end": end})
     return full_text, sections
+
+
+def _parse_html_rs(rs, raw, source_path):
+    """`HTMLModule.parse` via the Rust backend (see `research_engine._rust`).
+
+    Raw bytes cross (replace-mode decoding lives in the crate, exactly like
+    the module's `errors="replace"` read); the triple is reassembled from
+    `ParsedDocument` JSON with the section table mapped back under
+    `metadata["sections"]`. Needs no BeautifulSoup: the missing-`bs4` gate
+    stays on the Python path only.
+    """
+    doc = json.loads(rs.parse_html(raw, source_path.name))
+    metadata = dict(doc["metadata"])
+    metadata["sections"] = doc["sections"]
+    return doc["text"], doc["title"], metadata

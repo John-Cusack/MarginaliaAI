@@ -908,3 +908,41 @@ matrices incl. unicode, empty, CRLF, code fences, bad bytes raising
 SDK+packs 47; ruff clean; 4 extensions discover. Artifacts rebuilt, twine
 6/6. Compiler-less containers: pure fallback + accelerated parse +
 rollback proven. CI rust job extended both ways.
+
+## Phase 3 cutover — html/epub/tei (done 2026-09-22; pdf remains)
+
+`marginalia_rs.parse.parse_html/parse_epub/parse_tei` (raw bytes in,
+`ParsedDocument` JSON out) plus `detect_html_content` (decoded head),
+`detect_epub_magic` (4 head bytes), `detect_tei_content` (decoded head).
+Adapters in the three modules branch internally: suffix (+mime where the
+module has one) stays caller-side ordered ahead; reads stay caller-side
+(bytes for epub/tei/html-parse, decoded heads for html/tei peeks —
+marker substrings are newline-invariant); triples reassembled with the
+section table mapped back under `metadata["sections"]`. Corrupt inputs
+answer `ValueError` with the crate's message (Python raises engine-native
+errors; callers catch `Exception`). The missing-dependency gates stay on
+the Python path only — the Rust backend parses with no
+`bs4`/`ebooklib`/`lxml` installed (pinned; proven in lean containers too).
+
+Parity gap found AND closed: the crate errored on `&#[0-9]+[a-f]`
+without `;` (`&#38b`) where both tokenizers decode with a noted parse
+error — erroring dropped whole documents the modules parse. Fix: spell
+the missing semicolon in (`normalize_entities.rs`), three vestigial `?`
+converted to proven `expect`s, four crate tests rewritten to
+substitution asserts. Differential battery kept permanent
+(`tests/entity_battery.rs`: 11 equality incl. clamps/legacy/CJK, 3
+poison pins). One accepted residual, pinned: the same inputs corrupt
+html.parser's tag state (following markup leaks as text —
+version-fragile, probed); the crate decodes cleanly per the rule instead.
+`&#38`+non-hex and all other shapes agree byte-identically.
+
+Evidence: seam crate 30 Rust tests, `llvm-cov -p marginalia-py` and
+`-p marginalia-parse` (bins excluded by design) 100/100/100 from clean;
+workspace 1085 green excl ret; clippy zero; fmt clean. `pytest
+tests/unit` 1768 + 1 skipped under BOTH backends (new permanent
+`test_parse_formats_rust_parity.py`: 33 — backend-forced parse/detect
+matrices incl. entities, shuffled-spine EPUB, namespaced/bare TEI,
+corrupt-both-raise, gate-hidden, no-wheel fallback). SDK+packs 47; ruff
+clean; 4 extensions discover. Artifacts rebuilt, twine 6/6.
+Compiler-less containers: pure fallback + accelerated formats (with no
+[documents] installed) + rollback proven. CI rust job extended both ways.

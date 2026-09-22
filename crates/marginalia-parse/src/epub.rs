@@ -124,8 +124,10 @@ pub fn parse_bytes(raw: &[u8], file_name: &str) -> Result<ParsedDocument> {
             continue;
         }
         // One evaluation serves the text and the heading fallback below: a
-        // second call could never fail where this one succeeded.
-        let source = html_source(&decode_replace(&item.content))?;
+        // second call could never fail where this one succeeded. The
+        // reconciler is infallible, so this unwraps rather than propagates.
+        let source = html_source(&decode_replace(&item.content))
+            .expect("entity reconciliation is infallible");
         let text = chapter_text(&source);
         if marginalia_text::chars::strip(&text).is_empty() {
             continue;

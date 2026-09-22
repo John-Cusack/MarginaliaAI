@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import mimetypes
 from typing import TYPE_CHECKING
 
 import structlog
+
+from research_engine import _rust as _rust_backend
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,6 +39,12 @@ class EPUBModule:
         if mime in self.supported_mime_types:
             return 0.8, f"MIME type '{mime}' matches EPUB"
 
+        rs = _rust_backend.rust_parse()
+        if rs is not None:
+            loop = asyncio.get_event_loop()
+            header = await loop.run_in_executor(None, self._read_bytes, source_path, 4)
+            return rs.detect_epub_magic(header)
+
         # EPUB is a ZIP with specific first bytes
         try:
             loop = asyncio.get_event_loop()
@@ -50,6 +59,11 @@ class EPUBModule:
 
     async def parse(self, source_path: Path) -> tuple[str, str, dict]:
         """Extract text from an EPUB file."""
+        rs = _rust_backend.rust_parse()
+        if rs is not None:
+            loop = asyncio.get_event_loop()
+            raw = await loop.run_in_executor(None, source_path.read_bytes)
+            return _parse_epub_rs(rs, raw, source_path)
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._extract, source_path)
 
@@ -197,3 +211,18 @@ def _heading_from_markup(soup: BeautifulSoup) -> tuple[str | None, int | None]:
         if element is not None and (text := element.get_text(strip=True)):
             return text, level
     return None, None
+
+
+def _parse_epub_rs(rs, raw, source_path):
+    """`EPUBModule.parse` via the Rust backend (see `research_engine._rust`).
+
+    Raw bytes cross (ZIP walk, entity reconciliation, and section table all
+    live in the crate); the triple is reassembled from `ParsedDocument`
+    JSON with the section table mapped back under `metadata["sections"]`.
+    Needs neither ebooklib nor BeautifulSoup: the missing-dependency gate
+    stays on the Python path only.
+    """
+    doc = json.loads(rs.parse_epub(raw, source_path.name))
+    metadata = dict(doc["metadata"])
+    metadata["sections"] = doc["sections"]
+    return doc["text"], doc["title"], metadata

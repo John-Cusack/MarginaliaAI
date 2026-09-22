@@ -292,8 +292,10 @@ fn walk(
 /// Parse already-decoded text.
 pub fn parse_text(text: &str, file_name: &str) -> Result<ParsedDocument, marginalia_types::Error> {
     // Entity spellings the two tokenizers read differently are normalized
-    // first; malformed references fail here, the way `parse` fails there.
-    let normalized = crate::normalize_entities::normalize_entities(text)?;
+    // first. The reconciler is infallible (every shape resolves to a
+    // spelling), so this unwraps rather than propagates.
+    let normalized = crate::normalize_entities::normalize_entities(text)
+        .expect("entity reconciliation is infallible");
     let text = normalized.as_str();
     let html = Html::parse_document(text);
     let title_selector = Selector::parse("title").unwrap();
