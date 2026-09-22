@@ -13,4 +13,6 @@ extension-module = ["pyo3/extension-module"]
 
 [dependencies]
 marginalia-text = { path = "../marginalia-text" }
+marginalia-chunk = { path = "../marginalia-chunk" }
 pyo3 = { version = "0.24", features = ["abi3-py311"] }
+uuid = { workspace = true }

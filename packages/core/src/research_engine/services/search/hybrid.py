@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.domain.common import FusionMode
 from research_engine.domain.errors import RerankUnavailable
 from research_engine.domain.passages import (
@@ -31,6 +32,22 @@ if TYPE_CHECKING:
     from research_engine.services.search.windows import PassageWindowReader
 
 logger = structlog.get_logger()
+
+
+def _rrf_fuse(*ranked_lists, k=60):
+    """`rrf_fuse`, via the Rust backend when selected (see `research_engine._rust`)."""
+    rs = _rust_backend.rust_chunk()
+    if rs is not None:
+        return rs.rrf_fuse(*ranked_lists, k=k)
+    return rrf_fuse(*ranked_lists, k=k)
+
+
+def _weighted_fuse(vec_hits, kw_hits, alpha=0.5):
+    """`weighted_fuse`, via the Rust backend when selected."""
+    rs = _rust_backend.rust_chunk()
+    if rs is not None:
+        return rs.weighted_fuse(vec_hits, kw_hits, alpha=alpha)
+    return weighted_fuse(vec_hits, kw_hits, alpha=alpha)
 
 
 class HybridSearchService:
@@ -122,9 +139,9 @@ class HybridSearchService:
 
             # Stage 3: Fusion
             if query.fusion_mode == FusionMode.weighted:
-                fused = weighted_fuse(vec_hits, kw_hits, alpha=query.alpha)
+                fused = _weighted_fuse(vec_hits, kw_hits, alpha=query.alpha)
             else:
-                fused = rrf_fuse(vec_hits, kw_hits)
+                fused = _rrf_fuse(vec_hits, kw_hits)
 
         # Stage 4: Optional rerank
         top_n = fused[:query.rerank_n] if query.rerank else fused[:query.k]

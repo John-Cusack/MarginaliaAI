@@ -119,7 +119,7 @@ jobs:
       - name: Cut-over suites against the Rust backend
         run: |
           uv pip install dist/accel/*.whl
-          RE_RUST_BACKEND=rust uv run pytest tests/unit/services/test_text_rust_parity.py tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py -q
+          RE_RUST_BACKEND=rust uv run pytest tests/unit/services/test_text_rust_parity.py tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py tests/unit/services/test_fusion_rust_parity.py tests/unit/services/test_fusion.py -q
 
       - name: Rollback check
-        run: RE_RUST_BACKEND=python uv run pytest tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py -q
+        run: RE_RUST_BACKEND=python uv run pytest tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py tests/unit/services/test_fusion.py -q

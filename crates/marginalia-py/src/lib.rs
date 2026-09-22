@@ -9,6 +9,8 @@
 use marginalia_text::normalize as text_normalize;
 use pyo3::prelude::*;
 
+mod chunk;
+
 /// Fold away the differences that separate a quotation from its source.
 ///
 /// Mirrors `services/text/normalize.py::normalize` exactly.
@@ -65,6 +67,8 @@ fn text_module(py: Python<'_>) -> Bound<'_, PyModule> {
 #[pymodule]
 fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&text_module(py))
+        .expect("submodule name is unique");
+    m.add_submodule(&chunk::chunk_module(py))
         .expect("submodule name is unique");
     Ok(())
 }
@@ -137,6 +141,14 @@ mod tests {
                 .unwrap();
             assert_eq!(via_module, "hi");
             let _ = text_module(py);
+            let chunk = root.getattr("chunk").unwrap();
+            assert_eq!(
+                chunk.getattr("RRF_K").unwrap().extract::<f64>().unwrap(),
+                60.0
+            );
+            for name in ["rrf_fuse", "weighted_fuse"] {
+                assert!(chunk.hasattr(name).unwrap(), "missing {name}");
+            }
         });
     }
 }

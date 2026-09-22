@@ -723,3 +723,39 @@ time, cut one caller behind the same flag, extend the parity suite, and
 re-run this battery. The async-boundary phases (ret/io) are the known
 hard part (tokio-vs-asyncio at the repo/HTTP-client boundary) and are
 still ahead — no seam exists for them yet.
+
+## Phase 2 cutover — fusion (done 2026-09-22; windows/chunkers/langconfig follow)
+
+`marginalia_rs.chunk` (`crates/marginalia-py/src/chunk.rs`) exposes
+`rrf_fuse(*ranked_lists, k=60)`, `weighted_fuse(vec, kw, alpha=0.5)`,
+`RRF_K` with signatures identical to `services/search/fusion.py`. Caller
+cut over: `services/search/hybrid.py` Stage 3 (`_rrf_fuse`,
+`_weighted_fuse`) behind the same `RE_RUST_BACKEND` switch (new
+`research_engine._rust.rust_chunk()` accessor).
+
+Seam specifics (pinned): rows return the *original* pid objects (downstream
+`loaded[pid]` / `get_many` / rerank dict keys cannot tell the backend);
+`k` accepted-and-ignored (the divisor is `RRF_K` — the plan's "kept
+parameter" note now lives at the seam, since the crate itself dropped it);
+breakdown keys emit in ascending list order; pids must be UUIDs
+(`ValueError` otherwise — upstream accepts any hashable, every call site
+is typed `UUID`); weighted exact ties compare per-id (upstream iterates a
+`set`); NaN scores outside the proven domain (as in the crate
+differential); floats cross as binary f64 (never decimals), UUIDs as
+objects — the 1-ulp JSON finding cannot fire here.
+
+Evidence: seam crate 7 Rust tests, `llvm-cov -p marginalia-py` still
+100/100/100; workspace 1058 green excl ret; clippy zero; fmt clean.
+`pytest tests/unit` 1636 + 1 skipped under BOTH backends (new permanent
+`test_fusion_rust_parity.py`: 17 — backend-forced bit-exact matrix incl.
+`k=7`, alpha sweep, 17-digit scores as hex bit patterns, ties per-id,
+object identity, hybrid end-to-end `find_passages` for rrf+weighted ×
+rerank on/off via `model_dump`). SDK+packs 47; ruff clean; 4 extensions
+discover. Artifacts rebuilt, twine 6/6. Compiler-less containers: pure
+install auto-selects python; with the abi3 wheel fusion runs on rust with
+identity intact, `=python` rolls back.
+
+Remaining Phase 2 slices (same machinery): read windows
+(`choose_window` + callers), chunkers (fixed/prose/structural/whole +
+ingest callers), `langconfig.pg_config`. `hybrid.py` orchestration stays
+Python through Phase 5 per scope.
