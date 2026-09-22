@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from research_engine import _rust as _rust_backend
 from research_engine_sdk import PassageDraft
 from research_engine_sdk.chunking import (
     approx_tokens,
@@ -58,6 +59,10 @@ class ProseWindowChunker:
 
     async def chunk(self, text: str, metadata: dict | None = None) -> list[PassageDraft]:
         """Split text into overlapping chunks at sentence boundaries."""
+        rs = _rust_backend.rust_chunk()
+        if rs is not None:
+            return _chunk_prose_rs(rs, self, text, metadata)
+
         if not text.strip():
             return []
 
@@ -157,3 +162,15 @@ class ProseWindowChunker:
     @staticmethod
     def _span_tokens(text: str, span: tuple[int, int], rate: float) -> int:
         return approx_tokens(text[span[0] : span[1]], rate)
+
+
+def _chunk_prose_rs(rs, chunker, text, metadata):
+    """`ProseWindowChunker.chunk` via the Rust backend (see `research_engine._rust`).
+
+    Drafts cross as JSON without metadata (the crate never reads it); the
+    original mapping is reattached here, so identity holds on either backend.
+    """
+    return [
+        PassageDraft.model_validate_json(raw).model_copy(update={"metadata": metadata or {}})
+        for raw in rs.chunk_prose(text, chunker._max_tokens, chunker._overlap_tokens)
+    ]

@@ -27,8 +27,8 @@ use marginalia_types::works_ports::{TxFactory, VerifyPort, VerifyTier};
 use marginalia_types::{Error, Result};
 
 use crate::markers::format_marker;
-use crate::py_repr_str;
 use crate::verify::MAX_QUOTE_CHARS;
+use marginalia_text::repr::py_repr_str;
 
 /// The citation was refused with nothing written; the tool reports the rule.
 #[derive(Debug, Clone, PartialEq)]

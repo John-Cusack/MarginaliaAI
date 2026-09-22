@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 marginalia-types = { path = "../marginalia-types" }
+marginalia-text = { path = "../marginalia-text" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }

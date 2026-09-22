@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Regenerate printable_table.rs from the running Python's unicodedata.
+"""Regenerate repr_table.rs from the running Python's unicodedata.
 
-CPython's str repr() escapes a char iff it is not \"printable\":
+CPython's str repr() escapes a char iff it is not "printable":
 ``unicodedata.category(ch)`` in Cc/Cf/Cs/Co/Cn/Zl/Zp/Zs, except U+0020 SPACE
 which repr passes through raw. The rule is data (Unicode version), not logic:
 this script dumps the UNPRINTABLE ranges (minus U+0020) so
-``marginalia_works::is_py_printable`` needs no per-version tables by hand.
+``marginalia_text::repr::is_py_printable`` needs no per-version tables by hand.
 
 Regenerate only on Python/Unicode-data upgrades; any range-count change
-fails the pinned count test in lib.rs. Mirrors etc/gen_word_table.py
-(marginalia-text) for the ``re \\w`` classes.
+fails the pinned count test in `repr.rs`. Mirrors etc/gen_word_table.py
+for the ``re \\w`` classes.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def main() -> None:
     lines.extend(f"    (0x{lo:04X}, 0x{hi:04X})," for lo, hi in ranges)
     lines.append("];")
     print(f"{len(ranges)} ranges")
-    with open("crates/marginalia-works/src/printable_table.rs", "w", encoding="utf-8") as handle:
+    with open("crates/marginalia-text/src/repr_table.rs", "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
 
 

@@ -880,6 +880,37 @@ fn structural_rejects_bad_spans() {
 }
 
 #[test]
+fn structural_not_found_quotes_like_python_repr() {
+    // The head renders with CPython `repr` quoting (single preferred), not
+    // Rust `Debug`: pinned here because the seam differential caught `{:?}`
+    // emitting doubles on plain section text.
+    let sections = vec![SectionInput {
+        text: Some("It's \"quoted\".".to_owned()),
+        ..Default::default()
+    }];
+    let err = StructuralChunker::default()
+        .chunk(&sections, None, Some("Present text here."))
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "chunking a document failed: Section text not found in the document: \
+         'It\\'s \"quoted\".'"
+    );
+    let sections = vec![SectionInput {
+        text: Some("line one\nline two".to_owned()),
+        ..Default::default()
+    }];
+    let err = StructuralChunker::default()
+        .chunk(&sections, None, Some("Present text here."))
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "chunking a document failed: Section text not found in the document: \
+         'line one\\nline two'"
+    );
+}
+
+#[test]
 fn structural_boundary_read_past_the_edge_is_skipped() {
     // Offsets the document cannot honour read back as "" and skip.
     let sections = vec![

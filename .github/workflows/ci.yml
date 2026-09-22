@@ -89,16 +89,18 @@ jobs:
           rustup component add llvm-tools-preview
           cargo install cargo-llvm-cov --locked --version 0.6
 
-      # PyO3 links the test binaries against libpython, which lives outside
-      # the loader's default search path for a uv-managed interpreter.
-      - name: Point PyO3 at the project interpreter
-        run: |
-          PY="$(uv python find 3.11)"
-          echo "PYO3_PYTHON=$PY" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$("$PY" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')" >> "$GITHUB_ENV"
-
       - name: Install dependencies
         run: uv sync --group dev
+
+      # PyO3 links the test binaries against libpython, which lives outside
+      # the loader's default search path for a uv-managed interpreter. The
+      # venv interpreter is also the only one whose in-process sys.path sees
+      # the project (the seam's error tests import the real core modules).
+      - name: Point PyO3 at the project interpreter
+        run: |
+          echo "PYO3_PYTHON=$PWD/.venv/bin/python" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$($PWD/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')" >> "$GITHUB_ENV"
+
 
       - name: Rust tests
         run: cargo test --workspace --exclude marginalia-ret
@@ -119,7 +121,7 @@ jobs:
       - name: Cut-over suites against the Rust backend
         run: |
           uv pip install dist/accel/*.whl
-          RE_RUST_BACKEND=rust uv run pytest tests/unit/services/test_text_rust_parity.py tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py tests/unit/services/test_fusion_rust_parity.py tests/unit/services/test_fusion.py tests/unit/services/test_windows_rust_parity.py tests/unit/services/test_search_windows.py -q
+          RE_RUST_BACKEND=rust uv run pytest tests/unit/services/test_text_rust_parity.py tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py tests/unit/services/test_fusion_rust_parity.py tests/unit/services/test_fusion.py tests/unit/services/test_windows_rust_parity.py tests/unit/services/test_search_windows.py tests/unit/services/test_chunkers_rust_parity.py tests/unit/services/test_chunking.py tests/unit/services/test_structural_chunker.py tests/unit/services/test_chunker_contract.py -q
 
       - name: Rollback check
-        run: RE_RUST_BACKEND=python uv run pytest tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py tests/unit/services/test_fusion.py tests/unit/services/test_search_windows.py -q
+        run: RE_RUST_BACKEND=python uv run pytest tests/unit/services/test_quote_verification.py tests/unit/services/test_normalize_map.py tests/unit/services/test_fusion.py tests/unit/services/test_search_windows.py tests/unit/services/test_chunking.py tests/unit/services/test_structural_chunker.py tests/unit/services/test_chunker_contract.py -q

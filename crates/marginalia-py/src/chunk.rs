@@ -160,6 +160,7 @@ pub fn chunk_module(py: Python<'_>) -> Bound<'_, PyModule> {
     m.add("RRF_K", chunk_fusion::RRF_K)
         .expect("module attribute assignment");
     super::windows::register_windows(&m);
+    super::chunkers::register_chunkers(&m);
     m
 }
 

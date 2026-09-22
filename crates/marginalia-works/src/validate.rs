@@ -28,8 +28,8 @@ use marginalia_types::{Error, Result};
 use crate::assembly::{assemble_revision, hash_assembled, AssembledRevision};
 use crate::markers::find_markers;
 use crate::publication::{ValidationGateReport, ValidationPort};
-use crate::py_repr_str;
 use crate::verify::{intent_value, MAX_QUOTE_CHARS};
+use marginalia_text::repr::py_repr_str;
 
 /// Validation gates. Unlike `verify`'s review gate, revisions freeze.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -9,6 +9,8 @@ pub mod anchoring;
 pub mod chars;
 pub mod normalize;
 pub mod quote;
+pub mod repr;
+pub(crate) mod repr_table;
 pub mod sections;
 pub mod spans;
 pub mod tokens;

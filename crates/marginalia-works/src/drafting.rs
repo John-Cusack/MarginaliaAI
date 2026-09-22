@@ -36,7 +36,7 @@ use marginalia_types::{Error, Result};
 
 use crate::assembly::{assemble_revision, AssembledRevision};
 use crate::markers::{find_markers, format_marker};
-use crate::py_repr_str;
+use marginalia_text::repr::py_repr_str;
 
 /// Python `\s` for `str` patterns: Unicode whitespace plus U+001C-U+001F
 /// (which `str.strip`/`isspace` honor but `\p{White_Space}` omits). Every

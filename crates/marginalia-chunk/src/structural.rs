@@ -246,8 +246,11 @@ fn locate(
     let found = index_of(doc, raw, cursor).or_else(|| index_of(doc, raw, 0));
     let Some(at) = found else {
         let head: String = raw.chars().take(80).collect();
+        // Python `{raw[:80]!r}`: `{:?}` quotes double where CPython prefers
+        // single (proven by the seam differential on plain section text).
+        let head = marginalia_text::repr::py_repr_str(&head);
         return Err(Error::Chunking(format!(
-            "Section text not found in the document: {head:?}"
+            "Section text not found in the document: {head}"
         )));
     };
     let (s, e) = marginalia_text::spans::trim_span(doc.chars(), at, at + raw.chars().count());

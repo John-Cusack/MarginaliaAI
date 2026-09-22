@@ -1488,8 +1488,12 @@ dependencies = [
 name = "marginalia-py"
 version = "0.1.0"
 dependencies = [
+ "marginalia-chunk",
  "marginalia-text",
+ "marginalia-types",
  "pyo3",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -1539,6 +1543,7 @@ name = "marginalia-works"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "marginalia-text",
  "marginalia-types",
  "regex",
  "ryu",

@@ -17,7 +17,9 @@ use sha2::{Digest, Sha256};
 
 use marginalia_types::works_files::{CitationEntry, EntryError, WorkFile, WorkFrontMatter};
 
-use crate::{py_repr_str, py_repr_str_list};
+use marginalia_text::repr::py_repr_str;
+
+use crate::py_repr_str_list;
 
 /// A work file cannot be parsed — bad fences, bad YAML, or a bad header.
 ///

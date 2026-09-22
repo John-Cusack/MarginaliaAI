@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+
+from research_engine import _rust as _rust_backend
 from research_engine.domain.errors import ChunkingError
 from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
 from research_engine_sdk import PassageDraft
@@ -57,6 +60,9 @@ class StructuralChunker:
                 "Pass sections_from_markdown(text) with full_text=text, or use "
                 "a text chunker."
             )
+        rs = _rust_backend.rust_chunk()
+        if rs is not None:
+            return _chunk_structural_rs(rs, self, sections, metadata, full_text)
 
         chunks: list[PassageDraft] = []
         cursor = 0
@@ -186,3 +192,23 @@ class StructuralChunker:
             )
         start, end = trim_span(full_text, found, found + len(raw))
         return start, end, full_text[start:end]
+
+
+def _chunk_structural_rs(rs, chunker, sections, metadata, full_text):
+    """`StructuralChunker.chunk` via the Rust backend (see `research_engine._rust`).
+
+    Drafts cross as JSON with an empty metadata copy (the crate never reads
+    it); the original mapping is rebuilt here with the draft's own heading,
+    exactly as the Python path assembles it.
+    """
+    base = dict(metadata or {})
+    drafts = []
+    for raw in rs.chunk_structural(
+        json.dumps(sections), full_text, chunker._max_tokens, chunker._windows._overlap_tokens
+    ):
+        draft = PassageDraft.model_validate_json(raw)
+        section_meta = dict(base)
+        if heading := draft.locator.get("heading"):
+            section_meta["section_heading"] = heading
+        drafts.append(draft.model_copy(update={"metadata": section_meta}))
+    return drafts

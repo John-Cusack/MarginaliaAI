@@ -788,3 +788,58 @@ budgets, bound-object identity, reader end-to-end, seam-contract
 ruff clean; 4 extensions discover. Artifacts rebuilt, twine 6/6.
 Compiler-less containers: pure fallback + accelerated windows + rollback
 proven. CI rust job extended with the windows suites both ways.
+
+## Phase 2 cutover — chunkers (done 2026-09-22; langconfig remains)
+
+`marginalia_rs.chunk.chunk_fixed/prose/whole/structural`
+(`crates/marginalia-py/src/chunkers.rs`) answer draft JSON built with
+`metadata: None` (the crates never read it). Adapters in the four
+`services/ingestion/chunking/*.py` reattach the original metadata mapping
+(`metadata or {}`, same expression — identity holds), rebuild structural
+`section_meta` from the original mapping plus the draft's own heading, and
+pass sections as strict JSON. All four `chunk()`s keep identical signatures
+and branch internally (structural keeps its `isinstance` guard first);
+`pipeline.py` and the parser modules are untouched.
+
+Seam specifics (pinned): prose `max_tokens < 1` re-raises `ValueError` with
+the identical text; structural locate failures raise the core
+`ChunkingError` with the identical message; malformed section tables answer
+`ValueError`; non-JSON-native section values fail the adapter's strict
+`json.dumps` with `TypeError` (upstream would carry the object); foreign
+error variants degrade to `RuntimeError` (fault tests pin both mappers).
+
+Parity gap found AND closed in this slice (not a HALT): the crate's
+not-found message used Rust `{:?}` (double quotes) where Python `!r`
+prefers single (`'Missing entirely'` vs `"Missing entirely"`, caught by
+the seam differential on plain section text). Fix: `py_repr_str` +
+printability table MOVED from `marginalia-works` (lib.rs +
+printable_table.rs + generator) to `marginalia-text::repr` (proven by a
+deleted 4,279-vector sweep vs CPython, permanent vectors kept); works
+rewired (`py_repr_str_list` rebased, attach/drafting/files/validate
+imports repointed, count test moved); chunk structural uses it. works
+gains a `marginalia-text` dep (DAG-safe: text depends on nothing new).
+New chunk test pins both quote styles; generator reproduces the table
+byte-identically (713 ranges).
+
+Evidence: seam crate 19 Rust tests, `llvm-cov -p marginalia-py` 100/100/100
+from clean; text+chunk+py 100/100/100 from clean (chunk message pin
+included); workspace 1072 green excl ret; clippy zero; fmt clean.
+`pytest tests/unit` 1693 + 1 skipped under BOTH backends (new permanent
+`test_chunkers_rust_parity.py`: 36 — backend-forced matrices, metadata
+identity incl. UUID/datetime/17-digit floats, ChunkingError type+message
+equality, non-JSON boundary, no-wheel fallback). SDK+packs 47; ruff clean;
+4 extensions discover. Artifacts rebuilt, twine 6/6. Compiler-less
+containers: pure fallback + accelerated chunkers + rollback proven.
+CI rust job extended with the chunker suites both ways, and its PyO3 step
+now points at the venv interpreter (the only one whose in-process sys.path
+sees the project — the seam's error tests import the real core modules).
+
+Load-bearing toolchain findings: (1) `cargo llvm-cov` WITHOUT `clean`
+accumulates stale profdata across `-p` selections and reports phantom
+misses from duplicate instantiations — gate measurements run from clean.
+(2) `marginalia-works` measures 99.88% on this toolchain (rustc 1.98)
+PRISTINE (38 regions in `find_by_edition_id` test fakes, identical counts
+before/after this slice — proven via isolated worktree): pre-existing
+coverage-model drift, not a regression; the 100% bars hold per the CI-era
+model and every line touched here is covered. Trivial follow-up if the
+letter must hold here: 5 fake-call lines.
