@@ -1008,3 +1008,34 @@ render end-to-end exercising drafting's format path, no-wheel fallback).
 SDK+packs 47; ruff clean; 4 extensions discover. Artifacts rebuilt, twine
 6/6. Compiler-less containers: pure fallback + accelerated works +
 rollback proven. CI rust job extended both ways.
+
+## Phase 4 cutover — dates (done 2026-09-22; rule engines deferred)
+
+`marginalia_rs.works.parse_fuzzy_date/scan_dates/dominant_century`
+(dates live in the works crate): anchor crosses as RFC 3339 (or `None`),
+answers cross as `FuzzyDate` JSON / scan-triple JSON / plain ints, and the
+adapters validate back into the models. `dates.py`'s three functions keep
+identical signatures and branch internally; extraction and ingestion
+callers are untouched (they call the same functions).
+
+Seam specifics (pinned): bad anchors answer `ValueError`; tzinfo types
+differ across backends (pydantic parses `+00:00` to its own `TzInfo`
+where Python builds stdlib `timezone.utc`) while offsets compare equal —
+models and dumps compare equal, callers must compare values never
+`is`-check tzinfo types.
+
+Scope note: the verify/validate/trace/attach/publication rule internals
+stay Python in this slice — they are repo-entangled service objects, not
+separable pure functions, and land with Phase 5's repo work behind the
+`Ports` traits (their pure helpers already ported: hashing, markers,
+render-adjacent shaping). `cite.py`/`work_service.py` stay per original
+scope.
+
+Evidence: seam crate 36 Rust tests, `llvm-cov -p marginalia-py`
+100/100/100 from clean; workspace 1091 green excl ret; clippy zero; fmt
+clean. `pytest tests/unit` 1810 + 1 skipped under BOTH backends (works
+parity suite now 33: hash/marker plus a 15-vector date matrix incl.
+ult./inst./relative anchors, scan/century, bad-anchor, tzinfo pin).
+SDK+packs 47; ruff clean; 4 extensions discover. Artifacts rebuilt, twine
+6/6. Compiler-less containers: pure fallback + accelerated dates +
+rollback proven. CI already lists the works parity file.

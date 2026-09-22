@@ -84,14 +84,67 @@ pub fn register_works(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(compute_content_hash, m).expect("function name is a unique literal"),
         wrap_pyfunction!(find_markers, m).expect("function name is a unique literal"),
         wrap_pyfunction!(format_marker, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(parse_fuzzy_date, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(scan_dates, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(dominant_century, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
 }
 
+/// Parse a written date into a `FuzzyDate`, or nothing.
+///
+/// Mirrors `services/text/dates.py::parse_fuzzy_date`: `relative_to` is an
+/// RFC 3339 timestamp (the document's date, for day-only forms) or `None`.
+/// Answers `FuzzyDate` JSON or `None`.
+///
+/// # Errors
+///
+/// Returns `ValueError` when the anchor is not a timestamp.
+#[pyfunction]
+#[pyo3(signature = (text, relative_to = None))]
+fn parse_fuzzy_date(text: &str, relative_to: Option<&str>) -> PyResult<Option<String>> {
+    let anchor = relative_to
+        .map(|s| {
+            s.parse::<chrono::DateTime<chrono::Utc>>().map_err(|_| {
+                PyValueError::new_err(format!(
+                    "marginalia_rs.works expects an RFC 3339 anchor, got {s:?}"
+                ))
+            })
+        })
+        .transpose()?;
+    Ok(marginalia_works::dates::parse_fuzzy_date(text, anchor)
+        .map(|date| serde_json::to_string(&date).expect("fuzzy dates are JSON-native")))
+}
+
+/// Every date a text states, as JSON `[[start, end, fuzzy], …]` in document
+/// order. Mirrors `services/text/dates.py::scan_dates` exactly.
+#[pyfunction]
+#[pyo3(signature = (text, century = None))]
+fn scan_dates(text: &str, century: Option<i64>) -> String {
+    let found = marginalia_works::dates::scan_dates(text, century);
+    serde_json::to_string(
+        &found
+            .iter()
+            .map(|(start, end, date)| (*start, *end, date))
+            .collect::<Vec<_>>(),
+    )
+    .expect("scan results are JSON-native")
+}
+
+/// The century a text is written about, from the years it spells out.
+/// Mirrors `services/text/dates.py::dominant_century` exactly.
+#[pyfunction]
+fn dominant_century(text: &str) -> Option<i64> {
+    marginalia_works::dates::dominant_century(text)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{compute_content_hash, find_markers, format_marker, register_works};
+    use super::{
+        compute_content_hash, dominant_century, find_markers, format_marker, parse_fuzzy_date,
+        register_works, scan_dates,
+    };
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
 
@@ -159,9 +212,58 @@ mod tests {
         Python::with_gil(|py| {
             let m = PyModule::new(py, "works").unwrap();
             register_works(&m);
-            for name in ["compute_content_hash", "find_markers", "format_marker"] {
+            for name in [
+                "compute_content_hash",
+                "find_markers",
+                "format_marker",
+                "parse_fuzzy_date",
+                "scan_dates",
+                "dominant_century",
+            ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }
         });
+    }
+    #[test]
+    fn dates_match_crate_on_forms_and_scans() {
+        let fuzzy = parse_fuzzy_date("March 24, 1862", None).unwrap().unwrap();
+        let want = marginalia_works::dates::parse_fuzzy_date("March 24, 1862", None).unwrap();
+        assert_eq!(fuzzy, serde_json::to_string(&want).unwrap());
+        assert!(parse_fuzzy_date("not a date", None).unwrap().is_none());
+        // Anchored day-only forms resolve; unanchored refuse.
+        let anchored = parse_fuzzy_date("the 15th ult.", Some("1862-03-20T00:00:00+00:00"))
+            .unwrap()
+            .unwrap();
+        let want_anchored = marginalia_works::dates::parse_fuzzy_date(
+            "the 15th ult.",
+            Some(
+                "1862-03-20T00:00:00+00:00"
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .unwrap(),
+            ),
+        )
+        .unwrap();
+        assert_eq!(anchored, serde_json::to_string(&want_anchored).unwrap());
+        // Scans cross as JSON triples; centuries as plain values.
+        let scan = scan_dates("Born March 24, 1862 in Ohio.", None);
+        let want_scan = marginalia_works::dates::scan_dates("Born March 24, 1862 in Ohio.", None);
+        assert_eq!(
+            scan,
+            serde_json::to_string(
+                &want_scan
+                    .iter()
+                    .map(|(s, e, d)| (*s, *e, d))
+                    .collect::<Vec<_>>()
+            )
+            .unwrap()
+        );
+        assert!(parse_fuzzy_date("the 15th", None).unwrap().is_none());
+        assert!(parse_fuzzy_date("x", Some("not-a-time")).is_err());
+        // Scans and centuries cross as plain values.
+        assert_eq!(
+            dominant_century("1801 1802 1803 1804 1805 1901"),
+            Some(1800)
+        );
+        assert_eq!(dominant_century("too few years 1801"), None);
     }
 }
