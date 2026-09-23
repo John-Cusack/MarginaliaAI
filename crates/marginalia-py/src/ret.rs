@@ -1,4 +1,4 @@
-//! Retrieval-evaluation bindings over `marginalia-ret`.
+//! Retrieval-evaluation and filter-SQL bindings over `marginalia-ret`.
 //!
 //! Crossing contract (all pinned by tests):
 //! - Passage ids cross as canonical UUID strings (parsed back with
@@ -13,10 +13,15 @@
 //!   the crate: it feeds comparisons, never truncation), so long gain
 //!   lists may differ by 1 ulp — the parity suite measures the boundary
 //!   rather than asserting blind bit-equality there.
+//! - Filter SQL crosses as plain strings. `build_keyword_search_sql` fails
+//!   only as `InvalidQuery`, whose `invalid query: ` Display prefix is
+//!   stripped so the Python `ValueError` text crosses verbatim.
+//! - `like_escape` is total: backslash, then `%`, then `_`, exactly like
+//!   the Python chained replaces.
 
 use marginalia_ret::eval as ret_eval;
+use marginalia_ret::filters as ret_filters;
 use pyo3::exceptions::PyValueError;
-
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use uuid::Uuid;
@@ -125,6 +130,32 @@ fn ndcg_at_k(retrieved: Vec<String>, relevant: Bound<'_, PyAny>, k: usize) -> Py
     }
 }
 
+/// One indexed keyword-search branch per language config, unioned.
+/// Mirrors `passages.py::build_keyword_search_sql` byte-for-byte, including
+/// the `ValueError` texts.
+///
+/// # Errors
+///
+/// Returns `ValueError` when `configs` is empty or holds an unvalidated
+/// regconfig. `Error::InvalidQuery` Displays as `invalid query: {msg}`;
+/// the prefix is stripped so the Python text crosses verbatim (the parity
+/// suite pins the exact strings; `unwrap_or` keeps a prefix-less future
+/// message readable instead of untranslatable).
+#[pyfunction]
+fn build_keyword_search_sql(configs: Vec<String>) -> PyResult<String> {
+    let refs: Vec<&str> = configs.iter().map(String::as_str).collect();
+    ret_filters::build_keyword_search_sql(&refs).map_err(|e| {
+        let text = e.to_string();
+        let msg = text.strip_prefix("invalid query: ").unwrap_or(&text);
+        PyValueError::new_err(msg.to_owned())
+    })
+}
+
+#[pyfunction]
+fn like_escape(value: &str) -> String {
+    ret_filters::like_escape(value)
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -138,6 +169,8 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(reciprocal_rank, m).expect("function name is a unique literal"),
         wrap_pyfunction!(dcg, m).expect("function name is a unique literal"),
         wrap_pyfunction!(ndcg_at_k, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(build_keyword_search_sql, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(like_escape, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -145,7 +178,10 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{dcg, ndcg_at_k, precision_at_k, recall_at_k, reciprocal_rank, register_ret};
+    use super::{
+        build_keyword_search_sql, dcg, like_escape, ndcg_at_k, precision_at_k, recall_at_k,
+        reciprocal_rank, register_ret,
+    };
     use pyo3::prelude::*;
     use pyo3::types::{PyDict, PyList};
 
@@ -261,6 +297,58 @@ mod tests {
     }
 
     #[test]
+    fn keyword_sql_matches_crate_byte_for_byte() {
+        pyo3::prepare_freethreaded_python();
+        // Rendering a `PyErr` needs the GIL even though no Python objects cross.
+        Python::with_gil(|_py| {
+            for configs in [
+                vec!["english".to_owned()],
+                vec!["english".to_owned(), "german".to_owned()],
+                vec!["english".to_owned(), "english".to_owned()],
+            ] {
+                let refs: Vec<&str> = configs.iter().map(String::as_str).collect();
+                assert_eq!(
+                    build_keyword_search_sql(configs.clone()).unwrap(),
+                    marginalia_ret::filters::build_keyword_search_sql(&refs).unwrap()
+                );
+            }
+            // Empty answers the Python `ValueError` text verbatim (no Display prefix).
+            // (`PyErr` display prepends the type name; the `str(exc)` the caller
+            // sees carries just the message.)
+            assert_eq!(
+                build_keyword_search_sql(vec![]).unwrap_err().to_string(),
+                "ValueError: build_keyword_search_sql requires at least one config"
+            );
+            // Unvalidated regconfigs render as a Python list repr.
+            let err = build_keyword_search_sql(vec!["english".to_owned(), "xx;q".to_owned()])
+                .unwrap_err()
+                .to_string();
+            assert_eq!(
+                err,
+                "ValueError: refusing to interpolate unvalidated regconfig(s): ['xx;q']"
+            );
+        });
+    }
+
+    #[test]
+    fn like_escape_matches_crate_on_metacharacters() {
+        for value in [
+            "",
+            "plain quote",
+            "100% coverage",
+            "snake_case_name",
+            "back\\slash",
+            "%_%\\ mixed",
+            "hébreu 100%_שלום",
+        ] {
+            assert_eq!(
+                like_escape(value),
+                marginalia_ret::filters::like_escape(value)
+            );
+        }
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -272,6 +360,8 @@ mod tests {
                 "reciprocal_rank",
                 "dcg",
                 "ndcg_at_k",
+                "build_keyword_search_sql",
+                "like_escape",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }

@@ -164,6 +164,10 @@ def build_keyword_search_sql(configs: list[str]) -> str:
     interpolated as SQL literals because Postgres requires a literal regconfig
     in ``plainto_tsquery``.
     """
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.build_keyword_search_sql(list(configs))
+
     if not configs:
         raise ValueError("build_keyword_search_sql requires at least one config")
     if bad := [c for c in configs if not _is_known_config(c)]:

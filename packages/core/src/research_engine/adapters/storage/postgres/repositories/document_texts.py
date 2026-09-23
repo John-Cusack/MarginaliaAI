@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from research_engine import _rust as _rust_backend
 from research_engine.adapters.storage.postgres.schema import document_texts
 from research_engine.domain.documents import DocumentText
 from research_engine.services.text.normalize import NORMALIZATION_VERSION, normalize
@@ -284,4 +285,8 @@ class PGDocumentTextRepo:
 
 def _like_escape(value: str) -> str:
     """Escape LIKE metacharacters so a quote containing % or _ still matches."""
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.like_escape(value)
+
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
