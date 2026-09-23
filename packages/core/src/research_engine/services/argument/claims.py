@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from research_engine import _rust as _rust_backend
 from research_engine.domain.claims import (
     AnchorDraft,
     AnchorRole,
@@ -41,6 +42,20 @@ class ClaimWriteRefused(ValueError):
         self.code = code
         self.message = message
         self.detail = detail or {}
+
+
+def _missing_target_refusal(target_ref: str) -> None:
+    """Refusal for an edge to a claim ref with no row (`code: "not_found"`)."""
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        # Always raises; the fallthrough below is the no-wheel path, kept
+        # so the refusal shape has a pure-Python definition of record.
+        rs.missing_target_refusal(target_ref)
+    raise ClaimWriteRefused(
+        "not_found",
+        f"Target claim {target_ref!r} does not exist.",
+        {"target_ref": target_ref},
+    )
 
 
 @dataclass(frozen=True)
@@ -84,11 +99,7 @@ class ClaimService:
         for edge in edges:
             target = await self._claims.get_by_ref(edge.target_ref)
             if target is None:
-                raise ClaimWriteRefused(
-                    "not_found",
-                    f"Target claim {edge.target_ref!r} does not exist.",
-                    {"target_ref": edge.target_ref},
-                )
+                _missing_target_refusal(edge.target_ref)
             targets[edge.target_ref] = target
 
         written_edges = []
@@ -146,6 +157,12 @@ class ClaimService:
 
     @staticmethod
     def _validate_edges(ref: str, edges: Sequence[ClaimEdgeDraft]) -> None:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.validate_claim_edges(
+                ref, [(edge.target_ref, edge.relation) for edge in edges]
+            )
+
         seen = set()
         for index, edge in enumerate(edges):
             key = (edge.target_ref, edge.relation)

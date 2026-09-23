@@ -29,6 +29,7 @@
 //!   (pinned typed boundary: the column is constrained to
 //!   `'full'`/`'partial'`).
 
+use marginalia_ret::argument as ret_argument;
 use marginalia_ret::eval as ret_eval;
 use marginalia_ret::filters as ret_filters;
 use marginalia_ret::words as ret_words;
@@ -322,6 +323,76 @@ fn qere_note(refs: Vec<String>) -> String {
     ret_words::qere_note(&refs)
 }
 
+/// Pure claim-edge check: duplicate (target, relation) pairs and self-edges
+/// refuse; anything else — including an empty edge list — passes. Mirrors
+/// `ClaimService._validate_edges`; target *existence* needs the database
+/// and raises via [`missing_target_refusal`].
+///
+/// The raised objects are the real `ClaimWriteRefused` class (imported from
+/// `services.argument.claims`, not re-implemented): code, message, and the
+/// `edge_index` detail are identical by construction. The import chain is
+/// `expect`ed in the proven-infallible class.
+///
+/// # Errors
+///
+/// Returns the constructed `ClaimWriteRefused`.
+#[pyfunction]
+fn validate_claim_edges(
+    py: Python<'_>,
+    own_ref: &str,
+    edges: Vec<(String, String)>,
+) -> PyResult<()> {
+    let drafts: Vec<ret_argument::ClaimEdgeDraft> = edges
+        .iter()
+        .map(|(target_ref, relation)| ret_argument::ClaimEdgeDraft {
+            target_ref: target_ref.clone(),
+            relation: relation.clone(),
+        })
+        .collect();
+    match ret_argument::validate_claim_edges(own_ref, &drafts) {
+        Ok(()) => Ok(()),
+        Err(refused) => Err(claim_refused(py, refused)),
+    }
+}
+
+/// Refusal for the target-existence branch of `ClaimService.upsert`
+/// (`code: "not_found"`); the lookup itself stays in Python and calls this
+/// to build the refusal it raises. Always fails — the success case is the
+/// caller finding the target.
+///
+/// # Errors
+///
+/// Always returns the constructed `ClaimWriteRefused`.
+#[pyfunction]
+fn missing_target_refusal(py: Python<'_>, target_ref: &str) -> PyResult<()> {
+    Err(claim_refused(
+        py,
+        ret_argument::missing_target_refusal(target_ref),
+    ))
+}
+
+/// Raise the real `services.argument.claims.ClaimWriteRefused` from a
+/// crate-side refusal: code and message cross as strings, the detail map
+/// crosses as JSON (total over every value shape — today `edge_index` ints
+/// and `target_ref` strs — so a new shape needs no seam change; refusals
+/// are rare, so the round-trip costs nothing hot).
+fn claim_refused(py: Python<'_>, refused: ret_argument::ClaimWriteRefused) -> PyErr {
+    let errors = PyModule::import(py, "research_engine.services.argument.claims")
+        .expect("claim service module is importable from the seam");
+    let cls = errors
+        .getattr("ClaimWriteRefused")
+        .expect("ClaimWriteRefused class exists");
+    let json = serde_json::to_string(&refused.detail).expect("detail map serializes");
+    let json_mod = PyModule::import(py, "json").expect("stdlib json is importable");
+    let detail = json_mod
+        .call_method1("loads", (json,))
+        .expect("seam-serialized JSON parses");
+    let instance = cls
+        .call1((refused.code, refused.message, detail))
+        .expect("ClaimWriteRefused __init__ signature matches");
+    PyErr::from_value(instance)
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -344,6 +415,8 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(over_limit_note, m).expect("function name is a unique literal"),
         wrap_pyfunction!(partials_note, m).expect("function name is a unique literal"),
         wrap_pyfunction!(qere_note, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(validate_claim_edges, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(missing_target_refusal, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -352,9 +425,10 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_keyword_search_sql, dcg, english_reference, like_escape, map_empty_note, ndcg_at_k,
-        over_limit_note, partials_note, precision_at_k, qere_note, recall_at_k, reciprocal_rank,
-        register_ret, validate_filters, zero_result_note,
+        build_keyword_search_sql, dcg, english_reference, like_escape, map_empty_note,
+        missing_target_refusal, ndcg_at_k, over_limit_note, partials_note, precision_at_k,
+        qere_note, recall_at_k, reciprocal_rank, register_ret, validate_claim_edges,
+        validate_filters, zero_result_note,
     };
     use pyo3::prelude::*;
     use pyo3::types::{PyDict, PyList};
@@ -698,6 +772,81 @@ mod tests {
     }
 
     #[test]
+    fn claim_edges_accept_clean_lists() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            assert!(validate_claim_edges(
+                py,
+                "C1",
+                vec![
+                    ("C2".to_owned(), "supports".to_owned()),
+                    ("C2".to_owned(), "contradicts".to_owned()),
+                    ("C3".to_owned(), "supports".to_owned()),
+                ],
+            )
+            .is_ok());
+            assert!(validate_claim_edges(py, "C1", vec![],).is_ok());
+        });
+    }
+
+    #[test]
+    fn claim_edges_raise_the_domain_refusal() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let claims = PyModule::import(py, "research_engine.services.argument.claims").unwrap();
+            let refused = claims.getattr("ClaimWriteRefused").unwrap();
+            // Duplicate (target, relation) refuses with the edge index.
+            let err = validate_claim_edges(
+                py,
+                "C1",
+                vec![
+                    ("C2".to_owned(), "supports".to_owned()),
+                    ("C2".to_owned(), "supports".to_owned()),
+                ],
+            )
+            .unwrap_err();
+            let value = err.value(py);
+            assert!(value.is_instance(&refused).unwrap());
+            assert_eq!(
+                value.getattr("code").unwrap().extract::<String>().unwrap(),
+                "invalid_input"
+            );
+            let detail: std::collections::HashMap<String, i64> =
+                value.getattr("detail").unwrap().extract().unwrap();
+            assert_eq!(detail.get("edge_index"), Some(&1));
+            assert!(err
+                .to_string()
+                .contains("Edge 1 duplicates an earlier target and relation."));
+            // Self-edges refuse with the quoted ref.
+            let err =
+                validate_claim_edges(py, "C1", vec![("C1".to_owned(), "supports".to_owned())])
+                    .unwrap_err();
+            assert!(err
+                .to_string()
+                .contains("Edge 0 points claim 'C1' at itself."));
+            // Missing targets refuse as not_found with the ref detail.
+            let err = missing_target_refusal(py, "C9").unwrap_err();
+            let value = err.value(py);
+            assert!(value.is_instance(&refused).unwrap());
+            assert_eq!(
+                value.getattr("code").unwrap().extract::<String>().unwrap(),
+                "not_found"
+            );
+            let target: String = value
+                .getattr("detail")
+                .unwrap()
+                .get_item("target_ref")
+                .unwrap()
+                .extract()
+                .unwrap();
+            assert_eq!(target, "C9");
+            assert!(err
+                .to_string()
+                .contains("Target claim 'C9' does not exist."));
+        });
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -718,6 +867,8 @@ mod tests {
                 "over_limit_note",
                 "partials_note",
                 "qere_note",
+                "validate_claim_edges",
+                "missing_target_refusal",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }
