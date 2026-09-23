@@ -28,6 +28,17 @@
 //!   schema forbids answers `ValueError` here where Python would echo it
 //!   (pinned typed boundary: the column is constrained to
 //!   `'full'`/`'partial'`).
+//! - Audit refs cross as string lists. `normalize_audit_refs` strips,
+//!   refuses empties, and dedupes in order; `first_missing_ref` answers
+//!   the first checked ref outside the known set (or null). Non-string
+//!   refs answer `TypeError` here where Python raises `ValueError`
+//!   (pinned typed boundary: the signature promises strings).
+//! - Context `slice_window` stays unseamed: it needs the full document
+//!   length, which `many_for_coordinates` never fetches (it assembles
+//!   `window_end` from the fetched slice instead) — a fetch-shape
+//!   mismatch, not a seam. The assembly stays Python.
+
+use std::collections::HashSet;
 
 use marginalia_ret::argument as ret_argument;
 use marginalia_ret::eval as ret_eval;
@@ -393,6 +404,32 @@ fn claim_refused(py: Python<'_>, refused: ret_argument::ClaimWriteRefused) -> Py
     PyErr::from_value(instance)
 }
 
+/// Normalise audit subjects: strip, refuse empties, dedupe preserving
+/// order. Mirrors the `refs` prelude of `ClaimAuditService.audit`
+/// (including the refusal text verbatim).
+///
+/// # Errors
+///
+/// Returns `ValueError` when a ref is empty after stripping.
+#[pyfunction]
+fn normalize_audit_refs(refs: Vec<String>) -> PyResult<Vec<String>> {
+    let candidates: Vec<&str> = refs.iter().map(String::as_str).collect();
+    ret_argument::normalize_audit_refs(&candidates).map_err(|e| {
+        let text = e.to_string();
+        let msg = text.strip_prefix("invalid query: ").unwrap_or(&text);
+        PyValueError::new_err(msg.to_owned())
+    })
+}
+
+/// First checked ref absent from the known set, or null when all resolve.
+/// Mirrors the `missing` branch of `ClaimAuditService.audit`; the adapter
+/// raises `NotFoundError` on a hit, exactly like the Python path.
+#[pyfunction]
+fn first_missing_ref(checked: Vec<String>, existing: Vec<String>) -> Option<String> {
+    let known: HashSet<String> = existing.into_iter().collect();
+    ret_argument::first_missing_ref(&checked, &known)
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -417,6 +454,8 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(qere_note, m).expect("function name is a unique literal"),
         wrap_pyfunction!(validate_claim_edges, m).expect("function name is a unique literal"),
         wrap_pyfunction!(missing_target_refusal, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(normalize_audit_refs, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(first_missing_ref, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -425,10 +464,10 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_keyword_search_sql, dcg, english_reference, like_escape, map_empty_note,
-        missing_target_refusal, ndcg_at_k, over_limit_note, partials_note, precision_at_k,
-        qere_note, recall_at_k, reciprocal_rank, register_ret, validate_claim_edges,
-        validate_filters, zero_result_note,
+        build_keyword_search_sql, dcg, english_reference, first_missing_ref, like_escape,
+        map_empty_note, missing_target_refusal, ndcg_at_k, normalize_audit_refs, over_limit_note,
+        partials_note, precision_at_k, qere_note, recall_at_k, reciprocal_rank, register_ret,
+        validate_claim_edges, validate_filters, zero_result_note,
     };
     use pyo3::prelude::*;
     use pyo3::types::{PyDict, PyList};
@@ -847,6 +886,37 @@ mod tests {
     }
 
     #[test]
+    fn audit_refs_normalize_and_resolve() {
+        // Strip, refuse empties, dedupe preserving order.
+        assert_eq!(
+            normalize_audit_refs(vec!["  C2  ".to_owned(), "C1".to_owned(), "C2".to_owned()])
+                .unwrap(),
+            vec!["C2".to_owned(), "C1".to_owned()]
+        );
+        assert_eq!(normalize_audit_refs(vec![]).unwrap(), Vec::<String>::new());
+        // Empty after stripping refuses with the audit text verbatim.
+        assert_eq!(
+            normalize_audit_refs(vec!["C1".to_owned(), "   ".to_owned()])
+                .unwrap_err()
+                .to_string(),
+            "ValueError: refs must contain non-empty claim refs"
+        );
+        // First miss wins; all-resolve answers null.
+        assert_eq!(
+            first_missing_ref(
+                vec!["C1".to_owned(), "C2".to_owned(), "C3".to_owned()],
+                vec!["C1".to_owned(), "C3".to_owned()],
+            ),
+            Some("C2".to_owned())
+        );
+        assert_eq!(
+            first_missing_ref(vec!["C1".to_owned()], vec!["C1".to_owned()],),
+            None
+        );
+        assert_eq!(first_missing_ref(vec![], vec!["C1".to_owned()],), None);
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -869,6 +939,8 @@ mod tests {
                 "qere_note",
                 "validate_claim_edges",
                 "missing_target_refusal",
+                "normalize_audit_refs",
+                "first_missing_ref",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }
