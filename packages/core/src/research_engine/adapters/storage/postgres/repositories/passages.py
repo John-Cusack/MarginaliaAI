@@ -70,6 +70,14 @@ def validate_filters(
         UnsupportedFilterError: a key has no branch in the repository.
         UnknownFilterExtension: an extension was requested but is not registered.
     """
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.validate_filters(
+            list(filters),
+            list(filters.get("extensions") or {}),
+            list(filter_extensions or {}),
+        )
+
     if unknown := sorted(set(filters) - SUPPORTED_FILTERS):
         raise UnsupportedFilterError(unknown, sorted(SUPPORTED_FILTERS))
 

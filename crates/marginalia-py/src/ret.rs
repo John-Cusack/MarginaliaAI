@@ -21,6 +21,7 @@
 
 use marginalia_ret::eval as ret_eval;
 use marginalia_ret::filters as ret_filters;
+use pyo3::call::PyCallArgs;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -156,6 +157,56 @@ fn like_escape(value: &str) -> String {
     ret_filters::like_escape(value)
 }
 
+/// Reject filter keys and extension ids that would otherwise be ignored.
+/// Mirrors `passages.py::validate_filters`: unknown keys raise with the
+/// sorted unknown list and the sorted supported list; a requested extension
+/// id missing from `available_extensions` raises with the sorted available
+/// list (or the no-registry hint when none exist).
+///
+/// The raised objects are the real `research_engine.domain.errors` classes
+/// (imported, not re-implemented), so type, attributes, and message text
+/// are identical by construction — there is no message rendering on this
+/// side to drift. The imports are `expect`ed in the proven-infallible
+/// class: the seam runs inside the package that owns those modules.
+///
+/// # Errors
+///
+/// Returns the constructed `UnsupportedFilterError` / `UnknownFilterExtension`.
+#[pyfunction]
+fn validate_filters(
+    py: Python<'_>,
+    filter_keys: Vec<String>,
+    extension_ids: Vec<String>,
+    available_extensions: Vec<String>,
+) -> PyResult<()> {
+    let keys: Vec<&str> = filter_keys.iter().map(String::as_str).collect();
+    let exts: Vec<&str> = extension_ids.iter().map(String::as_str).collect();
+    let available: Vec<&str> = available_extensions.iter().map(String::as_str).collect();
+    match ret_filters::validate_filters(&keys, &exts, &available) {
+        Ok(()) => Ok(()),
+        Err(ret_filters::FilterValidation::UnknownKeys { unknown, supported }) => Err(
+            domain_error(py, "UnsupportedFilterError", (unknown, supported)),
+        ),
+        Err(ret_filters::FilterValidation::UnknownExtension { id, available }) => {
+            Err(domain_error(py, "UnknownFilterExtension", (id, available)))
+        }
+    }
+}
+
+/// Construct a `research_engine.domain.errors` exception from its `__init__` args.
+fn domain_error<'py, A>(py: Python<'py>, class: &str, args: A) -> PyErr
+where
+    A: PyCallArgs<'py>,
+{
+    let errors = PyModule::import(py, "research_engine.domain.errors")
+        .expect("core errors module is importable from the seam");
+    let cls = errors.getattr(class).expect("domain error class exists");
+    let instance = cls
+        .call1(args)
+        .expect("domain error __init__ signature matches");
+    PyErr::from_value(instance)
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -171,6 +222,7 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(ndcg_at_k, m).expect("function name is a unique literal"),
         wrap_pyfunction!(build_keyword_search_sql, m).expect("function name is a unique literal"),
         wrap_pyfunction!(like_escape, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(validate_filters, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -180,7 +232,7 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
 mod tests {
     use super::{
         build_keyword_search_sql, dcg, like_escape, ndcg_at_k, precision_at_k, recall_at_k,
-        reciprocal_rank, register_ret,
+        reciprocal_rank, register_ret, validate_filters,
     };
     use pyo3::prelude::*;
     use pyo3::types::{PyDict, PyList};
@@ -349,6 +401,68 @@ mod tests {
     }
 
     #[test]
+    fn validation_accepts_known_keys() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            assert!(validate_filters(
+                py,
+                vec!["language".to_owned(), "extensions".to_owned()],
+                vec!["has_extraction".to_owned()],
+                vec!["has_extraction".to_owned()],
+            )
+            .is_ok());
+            assert!(validate_filters(py, vec![], vec![], vec![],).is_ok());
+        });
+    }
+
+    #[test]
+    fn validation_raises_the_domain_types() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let errors = PyModule::import(py, "research_engine.domain.errors").unwrap();
+            // Unknown keys: sorted, deduped, with the sorted supported list.
+            let err = validate_filters(
+                py,
+                vec!["zzz".to_owned(), "aaa".to_owned(), "zzz".to_owned()],
+                vec![],
+                vec![],
+            )
+            .unwrap_err();
+            let unsupported = errors.getattr("UnsupportedFilterError").unwrap();
+            let value = err.value(py);
+            assert!(value.is_instance(&unsupported).unwrap());
+            let unknown: Vec<String> = value.getattr("unknown").unwrap().extract().unwrap();
+            assert_eq!(unknown, vec!["aaa".to_owned(), "zzz".to_owned()]);
+            let supported: Vec<String> = value.getattr("supported").unwrap().extract().unwrap();
+            assert!(supported.contains(&"language".to_owned()));
+            // Unknown extension: id plus the sorted available list.
+            let err = validate_filters(
+                py,
+                vec!["extensions".to_owned()],
+                vec!["nope".to_owned()],
+                vec!["has_extraction".to_owned()],
+            )
+            .unwrap_err();
+            let unknown_ext = errors.getattr("UnknownFilterExtension").unwrap();
+            let value = err.value(py);
+            assert!(value.is_instance(&unknown_ext).unwrap());
+            let ext_id: String = value.getattr("extension_id").unwrap().extract().unwrap();
+            assert_eq!(ext_id, "nope");
+            // Empty registry selects the no-extensions hint branch.
+            let err = validate_filters(
+                py,
+                vec!["extensions".to_owned()],
+                vec!["nope".to_owned()],
+                vec![],
+            )
+            .unwrap_err();
+            assert!(err
+                .to_string()
+                .contains("No filter extensions are registered"));
+        });
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -362,6 +476,7 @@ mod tests {
                 "ndcg_at_k",
                 "build_keyword_search_sql",
                 "like_escape",
+                "validate_filters",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }
