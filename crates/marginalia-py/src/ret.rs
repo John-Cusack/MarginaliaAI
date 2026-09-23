@@ -1,4 +1,4 @@
-//! Retrieval-evaluation and filter-SQL bindings over `marginalia-ret`.
+//! Retrieval-evaluation, filter-SQL, and words-shaping bindings over `marginalia-ret`.
 //!
 //! Crossing contract (all pinned by tests):
 //! - Passage ids cross as canonical UUID strings (parsed back with
@@ -18,9 +18,20 @@
 //!   stripped so the Python `ValueError` text crosses verbatim.
 //! - `like_escape` is total: backslash, then `%`, then `_`, exactly like
 //!   the Python chained replaces.
+//! - `validate_filters` raises the real `research_engine.domain.errors`
+//!   classes (imported, not re-implemented): type, attributes, and message
+//!   identical by construction.
+//! - Words shaping crosses as plain strings. `english_reference` renders
+//!   the outcome dict with the same keys in the same order; its `mapping`
+//!   value is the lowercase outcome (`full`/`partial`/`same`/`unmapped`),
+//!   matching the raw strings Python passes through. A `mapping_type` the
+//!   schema forbids answers `ValueError` here where Python would echo it
+//!   (pinned typed boundary: the column is constrained to
+//!   `'full'`/`'partial'`).
 
 use marginalia_ret::eval as ret_eval;
 use marginalia_ret::filters as ret_filters;
+use marginalia_ret::words as ret_words;
 use pyo3::call::PyCallArgs;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -207,6 +218,110 @@ where
     PyErr::from_value(instance)
 }
 
+/// Render one occurrence's English-side reference.
+/// Mirrors `words/lookup.py::english_reference`: the same four keys in the
+/// same order, with the lowercase outcome as `mapping`.
+///
+/// # Errors
+///
+/// Returns `ValueError` when a loaded map joins a row whose `mapping_type`
+/// the schema forbids (Python would echo the raw string; the column is
+/// constrained to `'full'`/`'partial'`, so this is a typed boundary, not a
+/// reachable path). The decode runs only on the mapped arm — the unmapped
+/// and same arms ignore `mapping_type` exactly like the Python branches.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn english_reference<'py>(
+    py: Python<'py>,
+    hebrew_ref: &str,
+    to_ref: Option<String>,
+    to_part: Option<String>,
+    from_part: Option<String>,
+    mapping_type: Option<String>,
+    map_loaded: bool,
+) -> PyResult<Py<PyDict>> {
+    let mapping = if !map_loaded || to_ref.is_none() {
+        None
+    } else {
+        Some(
+            ret_words::Mapping::from_mapping_type(mapping_type.as_deref().unwrap_or("")).map_err(
+                |e| {
+                    let text = e.to_string();
+                    let msg = text.strip_prefix("invalid query: ").unwrap_or(&text);
+                    PyValueError::new_err(msg.to_owned())
+                },
+            )?,
+        )
+    };
+    let english = ret_words::english_reference(
+        hebrew_ref,
+        to_ref.as_deref(),
+        to_part.as_deref(),
+        from_part.as_deref(),
+        mapping,
+        map_loaded,
+    );
+    let outcome = match english.mapping {
+        ret_words::Mapping::Unmapped => "unmapped",
+        ret_words::Mapping::Same => "same",
+        ret_words::Mapping::Full => "full",
+        ret_words::Mapping::Partial => "partial",
+    };
+    let out = PyDict::new(py);
+    out.set_item("ref", english.r#ref.as_deref())
+        .expect("str keys into a fresh dict");
+    out.set_item("mapping", outcome)
+        .expect("str keys into a fresh dict");
+    out.set_item("part", english.part.as_deref())
+        .expect("str keys into a fresh dict");
+    out.set_item("hebrew_part", english.hebrew_part.as_deref())
+        .expect("str keys into a fresh dict");
+    Ok(out.unbind())
+}
+
+/// The zero-result hint: which number in which lexicon missed, and how to widen.
+/// Mirrors the `find()` inline note, except the homograph renders raw where
+/// Python uses `{homograph!r}` (pinned typed boundary: homographs are
+/// single letters, never quoted strings).
+#[pyfunction]
+fn zero_result_note(strong: &str, language: &str, homograph: Option<String>) -> String {
+    ret_words::zero_result_note(&ret_words::LemmaQuery {
+        strong: strong.to_owned(),
+        language: language.to_owned(),
+        homograph,
+        book: None,
+        chapter_start: None,
+        chapter_end: None,
+        include_occurrences: true,
+    })
+}
+
+/// First note when the verse map is empty. Mirrors the `find()` inline text.
+#[pyfunction]
+fn map_empty_note() -> &'static str {
+    ret_words::map_empty_note()
+}
+
+/// Refusal past `MAX_OCCURRENCES`. Mirrors the `find()` inline text.
+#[pyfunction]
+fn over_limit_note(total: i64) -> String {
+    ret_words::over_limit_note(total)
+}
+
+/// Attached when partials are present. Mirrors the `find()` inline text.
+#[pyfunction]
+fn partials_note(count: usize) -> String {
+    ret_words::partials_note(count)
+}
+
+/// Attached when qere-sourced occurrences are present: first 6 refs, then an
+/// ellipsis. Takes every qere ref (like the `find()` inline join over the
+/// full list); mirrors its text exactly.
+#[pyfunction]
+fn qere_note(refs: Vec<String>) -> String {
+    ret_words::qere_note(&refs)
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -223,6 +338,12 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(build_keyword_search_sql, m).expect("function name is a unique literal"),
         wrap_pyfunction!(like_escape, m).expect("function name is a unique literal"),
         wrap_pyfunction!(validate_filters, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(english_reference, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(zero_result_note, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(map_empty_note, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(over_limit_note, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(partials_note, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(qere_note, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -231,8 +352,9 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_keyword_search_sql, dcg, like_escape, ndcg_at_k, precision_at_k, recall_at_k,
-        reciprocal_rank, register_ret, validate_filters,
+        build_keyword_search_sql, dcg, english_reference, like_escape, map_empty_note, ndcg_at_k,
+        over_limit_note, partials_note, precision_at_k, qere_note, recall_at_k, reciprocal_rank,
+        register_ret, validate_filters, zero_result_note,
     };
     use pyo3::prelude::*;
     use pyo3::types::{PyDict, PyList};
@@ -463,6 +585,119 @@ mod tests {
     }
 
     #[test]
+    fn english_reference_matches_crate_on_outcomes() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            // Unmapped: no map to consult, ref withheld even with row data.
+            let got = english_reference(
+                py,
+                "Gen.1.1",
+                Some("Gen.1.1".to_owned()),
+                Some("a".to_owned()),
+                Some("b".to_owned()),
+                Some("full".to_owned()),
+                false,
+            )
+            .unwrap();
+            let got = got.bind(py);
+            let get = |key: &str| got.get_item(key).unwrap().unwrap();
+            assert_eq!(get("ref").extract::<Option<String>>().unwrap(), None);
+            assert_eq!(get("mapping").extract::<String>().unwrap(), "unmapped");
+            // Same: map loaded, no row.
+            let got = english_reference(py, "Gen.1.1", None, None, None, None, true).unwrap();
+            let got = got.bind(py);
+            let get = |key: &str| got.get_item(key).unwrap().unwrap();
+            assert_eq!(get("ref").extract::<String>().unwrap(), "Gen.1.1");
+            assert_eq!(get("mapping").extract::<String>().unwrap(), "same");
+            // Full and partial carry the row through.
+            for (mapping, part) in [("full", None), ("partial", Some("a"))] {
+                let got = english_reference(
+                    py,
+                    "Gen.1.2",
+                    Some("Gen.1.3".to_owned()),
+                    part.map(str::to_string),
+                    Some("b".to_owned()),
+                    Some(mapping.to_owned()),
+                    true,
+                )
+                .unwrap();
+                let got = got.bind(py);
+                let get = |key: &str| got.get_item(key).unwrap().unwrap();
+                assert_eq!(get("mapping").extract::<String>().unwrap(), mapping);
+                assert_eq!(
+                    get("part").extract::<Option<String>>().unwrap(),
+                    part.map(str::to_string)
+                );
+            }
+            // Keys render in the Python literal order.
+            let keys: Vec<String> = got
+                .keys()
+                .iter()
+                .map(|k| k.extract::<String>().unwrap())
+                .collect();
+            assert_eq!(keys, vec!["ref", "mapping", "part", "hebrew_part"]);
+            // A mapping_type the schema forbids answers ValueError.
+            let err = english_reference(
+                py,
+                "Gen.1.1",
+                Some("Gen.1.2".to_owned()),
+                None,
+                None,
+                Some("weird".to_owned()),
+                true,
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(err.contains("unknown verse_map mapping_type"), "{err}");
+            // ... as does a joined row missing its mapping.
+            assert!(english_reference(
+                py,
+                "Gen.1.1",
+                Some("Gen.1.2".to_owned()),
+                None,
+                None,
+                None,
+                true
+            )
+            .is_err());
+        });
+    }
+
+    #[test]
+    fn words_notes_match_crate_texts() {
+        assert_eq!(
+            zero_result_note("4941", "he", None),
+            marginalia_ret::words::zero_result_note(&marginalia_ret::words::LemmaQuery::new(
+                "4941"
+            ))
+        );
+        assert_eq!(
+            zero_result_note("4941", "he", Some("a".to_owned())),
+            "No word in 'he' carries Strong's 4941 with homograph 'a'. Check the number, or drop the homograph to widen."
+        );
+        assert_eq!(
+            zero_result_note("4941", "he", Some(String::new())),
+            "No word in 'he' carries Strong's 4941. Check the number, or drop the homograph to widen."
+        );
+        assert_eq!(map_empty_note(), marginalia_ret::words::map_empty_note());
+        assert_eq!(
+            over_limit_note(2500),
+            "2500 occurrences is over the 2000 limit; narrow with book or chapters, or read counts instead. No occurrences returned."
+        );
+        assert_eq!(
+            partials_note(3),
+            "3 occurrence(s) sit in a verse the English tradition splits or joins; their english.ref is the verse the text begins in, and english.part says which half. Cite the Hebrew reference unless you are quoting an English edition."
+        );
+        assert_eq!(
+            qere_note(vec!["Gen.1.1".to_owned(), "Ex.2.2".to_owned()]),
+            "2 occurrence(s) come from a qere (Gen.1.1, Ex.2.2). The reference is right in every edition, but an edition that prints the ketiv writes a different word there — read the verse before quoting the surface form."
+        );
+        let many: Vec<String> = (1..=8).map(|i| format!("Gen.1.{i}")).collect();
+        let got = qere_note(many);
+        assert!(got.starts_with("8 occurrence(s) come from a qere (Gen.1.1, Gen.1.2, Gen.1.3, Gen.1.4, Gen.1.5, Gen.1.6, …)"), "{got}");
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -477,6 +712,12 @@ mod tests {
                 "build_keyword_search_sql",
                 "like_escape",
                 "validate_filters",
+                "english_reference",
+                "zero_result_note",
+                "map_empty_note",
+                "over_limit_note",
+                "partials_note",
+                "qere_note",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }

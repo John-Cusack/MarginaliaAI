@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy as sa
 import structlog
 
+from research_engine import _rust as _rust_backend
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -110,6 +112,12 @@ def english_reference(
     * ``same`` — the map is loaded and holds no row, so the traditions agree.
     * ``full`` / ``partial`` — the map says where the verse moved.
     """
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.english_reference(
+            ref, to_ref, to_part, from_part, mapping_type, map_loaded
+        )
+
     if not map_loaded:
         return {"ref": None, "mapping": "unmapped", "part": None, "hebrew_part": None}
     if to_ref is None:
@@ -120,6 +128,72 @@ def english_reference(
         "part": to_part,
         "hebrew_part": from_part,
     }
+
+
+def _zero_result_note(strong: str, language: str, homograph: str | None) -> str:
+    """Which number in which lexicon missed, and how to widen."""
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.zero_result_note(strong, language, homograph)
+    note = f"No word in {language!r} carries Strong's {strong}"
+    if homograph:
+        note += f" with homograph {homograph!r}"
+    return note + ". Check the number, or drop the homograph to widen."
+
+
+def _map_empty_note() -> str:
+    """First note when the verse map is empty, with the load runbook."""
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.map_empty_note()
+    return (
+        "core.verse_map is empty, so no English-tradition reference "
+        "could be resolved and every occurrence reports "
+        "mapping='unmapped'. The Hebrew references are unaffected "
+        "and remain citable in LHB and WLC. Run "
+        "`uv run python scripts/load_versification.py` to load the "
+        "1,978 mappings; migration 016 creates the tables but does "
+        "not fill them."
+    )
+
+
+def _over_limit_note(total: int) -> str:
+    """Refusal past `MAX_OCCURRENCES`: narrow, or read the counts instead."""
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.over_limit_note(total)
+    return (
+        f"{total} occurrences is over the {MAX_OCCURRENCES} limit; "
+        f"narrow with book or chapters, or read counts instead. "
+        f"No occurrences returned."
+    )
+
+
+def _partials_note(count: int) -> str:
+    """Partials report the verse the text begins in, plus which half."""
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.partials_note(count)
+    return (
+        f"{count} occurrence(s) sit in a verse the English "
+        f"tradition splits or joins; their english.ref is the verse the "
+        f"text begins in, and english.part says which half. Cite the "
+        f"Hebrew reference unless you are quoting an English edition."
+    )
+
+
+def _qere_note(refs: list[str]) -> str:
+    """Qere-sourced occurrences: first 6 refs, then an ellipsis."""
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.qere_note(refs)
+    return (
+        f"{len(refs)} occurrence(s) come from a qere ({', '.join(refs[:6])}"
+        f"{', …' if len(refs) > 6 else ''}). The reference is right in "
+        f"every edition, but an edition that prints the ketiv writes a "
+        f"different word there — read the verse before quoting the "
+        f"surface form."
+    )
 
 
 class LemmaLookup:
@@ -221,11 +295,7 @@ class LemmaLookup:
                 books=books,
             )
             if total == 0:
-                result.notes.append(
-                    f"No word in {q.language!r} carries Strong's {q.strong}"
-                    + (f" with homograph {q.homograph!r}" if q.homograph else "")
-                    + ". Check the number, or drop the homograph to widen."
-                )
+                result.notes.append(_zero_result_note(q.strong, q.language, q.homograph))
                 return result
 
             # Aggregates first: they describe the whole result set even when the
@@ -236,24 +306,12 @@ class LemmaLookup:
             if not map_loaded:
                 # First in the list: every English reference below is withheld
                 # because of this, and a caller that reads one note reads this.
-                result.notes.append(
-                    "core.verse_map is empty, so no English-tradition reference "
-                    "could be resolved and every occurrence reports "
-                    "mapping='unmapped'. The Hebrew references are unaffected "
-                    "and remain citable in LHB and WLC. Run "
-                    "`uv run python scripts/load_versification.py` to load the "
-                    "1,978 mappings; migration 016 creates the tables but does "
-                    "not fill them."
-                )
+                result.notes.append(_map_empty_note())
 
             if not q.include_occurrences:
                 return result
             if total > MAX_OCCURRENCES:
-                result.notes.append(
-                    f"{total} occurrences is over the {MAX_OCCURRENCES} limit; "
-                    f"narrow with book or chapters, or read counts instead. "
-                    f"No occurrences returned."
-                )
+                result.notes.append(_over_limit_note(total))
                 return result
 
             result.occurrences = await self._occurrences(
@@ -262,12 +320,7 @@ class LemmaLookup:
 
         partials = [o for o in result.occurrences if o["english"]["mapping"] == "partial"]
         if partials:
-            notes.append(
-                f"{len(partials)} occurrence(s) sit in a verse the English "
-                f"tradition splits or joins; their english.ref is the verse the "
-                f"text begins in, and english.part says which half. Cite the "
-                f"Hebrew reference unless you are quoting an English edition."
-            )
+            notes.append(_partials_note(len(partials)))
         # `from_qere` is the one flag that predicts a *form* the target edition
         # may not print. WLC reads the qere; LHB prints the ketiv at these
         # references. Measured over both survey lemmas: of 579 occurrences, the
@@ -276,13 +329,7 @@ class LemmaLookup:
         # worth acting on rather than merely reporting.
         qere = [o for o in result.occurrences if o["from_qere"]]
         if qere:
-            notes.append(
-                f"{len(qere)} occurrence(s) come from a qere ({', '.join(o['ref'] for o in qere[:6])}"
-                f"{', …' if len(qere) > 6 else ''}). The reference is right in "
-                f"every edition, but an edition that prints the ketiv writes a "
-                f"different word there — read the verse before quoting the "
-                f"surface form."
-            )
+            notes.append(_qere_note([o["ref"] for o in qere]))
         result.notes.extend(notes)
         return result
 
