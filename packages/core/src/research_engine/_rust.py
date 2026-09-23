@@ -111,3 +111,17 @@ def rust_works() -> Any:
     import marginalia_rs
 
     return marginalia_rs.works
+
+
+def rust_ret() -> Any:
+    """The ``marginalia_rs.ret`` module when the Rust backend is active.
+
+    Returns ``None`` on the Python path. Retrieval services branch on this
+    rather than importing ``marginalia_rs`` themselves, so every seam
+    shares one switch.
+    """
+    if backend() != "rust":
+        return None
+    import marginalia_rs
+
+    return marginalia_rs.ret

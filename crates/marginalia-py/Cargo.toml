@@ -21,6 +21,7 @@ marginalia-types = { path = "../marginalia-types" }
 marginalia-parse = { path = "../marginalia-parse" }
 marginalia-works = { path = "../marginalia-works" }
 chrono = { workspace = true }
+marginalia-ret = { path = "../marginalia-ret" }
 
 [dev-dependencies]
 zip = "2"

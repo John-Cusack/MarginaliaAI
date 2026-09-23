@@ -13,6 +13,7 @@ mod chunk;
 mod chunkers;
 mod langconfig;
 mod parse;
+mod ret;
 mod windows;
 mod works;
 
@@ -78,6 +79,8 @@ fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&parse::parse_module(py))
         .expect("submodule name is unique");
     m.add_submodule(&works::works_module(py))
+        .expect("submodule name is unique");
+    m.add_submodule(&ret::ret_module(py))
         .expect("submodule name is unique");
     Ok(())
 }
@@ -177,6 +180,16 @@ mod tests {
             let works = root.getattr("works").unwrap();
             for name in ["compute_content_hash", "find_markers", "format_marker"] {
                 assert!(works.hasattr(name).unwrap(), "missing {name}");
+            }
+            let ret = root.getattr("ret").unwrap();
+            for name in [
+                "recall_at_k",
+                "precision_at_k",
+                "reciprocal_rank",
+                "dcg",
+                "ndcg_at_k",
+            ] {
+                assert!(ret.hasattr(name).unwrap(), "missing {name}");
             }
         });
     }

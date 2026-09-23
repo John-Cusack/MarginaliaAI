@@ -1491,6 +1491,7 @@ dependencies = [
  "chrono",
  "marginalia-chunk",
  "marginalia-parse",
+ "marginalia-ret",
  "marginalia-text",
  "marginalia-types",
  "marginalia-works",
