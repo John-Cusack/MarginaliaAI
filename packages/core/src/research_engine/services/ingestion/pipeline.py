@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.domain.documents import DocumentDraft
 from research_engine.services.ingestion.chunking.fixed_window import FixedWindowChunker
 from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
@@ -66,6 +67,9 @@ def get_chunker(chunker_id: str) -> object:
             except Exception:
                 cls = None
     if cls is None:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            raise ValueError(rs.unknown_chunker_message(chunker_id))
         raise ValueError(f"Unknown chunker: {chunker_id}")
     return cls() if isinstance(cls, type) else cls
 

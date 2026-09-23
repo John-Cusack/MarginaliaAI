@@ -45,6 +45,11 @@
 //!   language exactly like `supplied or default`. The route renders
 //!   through the crate's own serde contract, so no outcome spelling lives
 //!   on this side.
+//! - Pure predicates cross as plain values. `output_is_identical` crosses
+//!   span/text triples through the crate's generic comparison;
+//!   `coverage_complete`/`coverage_fraction` mirror the report math
+//!   exactly (replicated one-liners, so even impossible inputs agree);
+//!   `unknown_chunker_message` is the `get_chunker` refusal verbatim.
 
 use std::collections::HashSet;
 
@@ -513,6 +518,79 @@ fn resolve_language(supplied: Option<String>, default: Option<String>) -> Option
     default
 }
 
+/// One passage's retrieval identity: span plus text.
+struct SpanText {
+    char_start: i64,
+    char_end: i64,
+    text: String,
+}
+
+impl ret_ingest::PassageIdentity for SpanText {
+    fn char_start(&self) -> i64 {
+        self.char_start
+    }
+    fn char_end(&self) -> i64 {
+        self.char_end
+    }
+    fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+/// True when re-chunking would reproduce exactly the passages already
+/// stored. Mirrors `reindex._output_is_identical`: spans and text only —
+/// version, token estimates, and metadata are labels, not content.
+/// Crosses as flat triples so the crate's generic comparison runs
+/// unmodified (no logic duplicated on this side).
+#[pyfunction]
+fn output_is_identical(old: Vec<(i64, i64, String)>, new: Vec<(i64, i64, String)>) -> bool {
+    let olds: Vec<SpanText> = old
+        .into_iter()
+        .map(|(char_start, char_end, text)| SpanText {
+            char_start,
+            char_end,
+            text,
+        })
+        .collect();
+    let news: Vec<SpanText> = new
+        .into_iter()
+        .map(|(char_start, char_end, text)| SpanText {
+            char_start,
+            char_end,
+            text,
+        })
+        .collect();
+    ret_ingest::output_is_identical(&olds, &news)
+}
+
+/// True when nothing is missing and nothing is wrongly sized. Mirrors
+/// `CoverageReport.complete` as a one-line predicate, replicated rather
+/// than routed through the struct so every `i64` input — including
+/// negatives no real report carries — behaves identically on both sides.
+#[pyfunction]
+fn coverage_complete(missing: i64, wrong_dimension: i64) -> bool {
+    missing == 0 && wrong_dimension == 0
+}
+
+/// `embedded / total`, where an empty corpus is vacuously fully covered.
+/// Mirrors `CoverageReport.coverage`: exactly-rounded IEEE division on both
+/// sides (the `i64` range never overflows `f64`, so no conversion boundary).
+#[pyfunction]
+fn coverage_fraction(embedded: i64, total_passages: i64) -> f64 {
+    if total_passages == 0 {
+        1.0
+    } else {
+        embedded as f64 / total_passages as f64
+    }
+}
+
+/// Error text for an unresolvable chunker id. Mirrors the `get_chunker`
+/// `ValueError` verbatim.
+#[pyfunction]
+fn unknown_chunker_message(chunker_id: &str) -> String {
+    ret_ingest::unknown_chunker_message(chunker_id)
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -543,6 +621,10 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(classify_route, m).expect("function name is a unique literal"),
         wrap_pyfunction!(validate_recovered_text, m).expect("function name is a unique literal"),
         wrap_pyfunction!(resolve_language, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(output_is_identical, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(coverage_complete, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(coverage_fraction, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(unknown_chunker_message, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -551,10 +633,11 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_keyword_search_sql, classify_route, dcg, english_reference, first_missing_ref,
-        is_pack_uri, like_escape, map_empty_note, missing_target_refusal, ndcg_at_k,
-        normalize_audit_refs, over_limit_note, partials_note, precision_at_k, qere_note,
-        recall_at_k, reciprocal_rank, register_ret, resolve_language, validate_claim_edges,
+        build_keyword_search_sql, classify_route, coverage_complete, coverage_fraction, dcg,
+        english_reference, first_missing_ref, is_pack_uri, like_escape, map_empty_note,
+        missing_target_refusal, ndcg_at_k, normalize_audit_refs, output_is_identical,
+        over_limit_note, partials_note, precision_at_k, qere_note, recall_at_k, reciprocal_rank,
+        register_ret, resolve_language, unknown_chunker_message, validate_claim_edges,
         validate_filters, validate_recovered_text, zero_result_note,
     };
     use pyo3::prelude::*;
@@ -1143,6 +1226,46 @@ mod tests {
     }
 
     #[test]
+    fn identity_reports_span_text_equality() {
+        let old = vec![(0, 100, "alpha".to_owned()), (100, 200, "beta".to_owned())];
+        assert!(output_is_identical(old.clone(), old.clone()));
+        assert!(output_is_identical(vec![], vec![]));
+        // Length mismatch.
+        assert!(!output_is_identical(old.clone(), old[..1].to_vec()));
+        // Moved span.
+        let mut moved = old.clone();
+        moved[1].0 = 101;
+        assert!(!output_is_identical(old.clone(), moved));
+        // Changed text at the same offsets.
+        let mut reworded = old.clone();
+        reworded[0].2 = "alpha!".to_owned();
+        assert!(!output_is_identical(old.clone(), reworded));
+        // Labels are not content: the triples carry no version or metadata.
+        assert!(output_is_identical(old.clone(), old));
+    }
+
+    #[test]
+    fn coverage_math_matches_report() {
+        assert!(coverage_complete(0, 0));
+        assert!(!coverage_complete(3, 0));
+        assert!(!coverage_complete(0, 2));
+        assert!(!coverage_complete(-1, 0));
+        assert_eq!(coverage_fraction(0, 0).to_bits(), 1.0f64.to_bits());
+        assert_eq!(coverage_fraction(7, 10).to_bits(), 0.7f64.to_bits());
+        assert_eq!(
+            coverage_fraction(1, 3).to_bits(),
+            marginalia_ret::ingest::CoverageReport {
+                embedded: 1,
+                total_passages: 3,
+                ..Default::default()
+            }
+            .coverage()
+            .to_bits()
+        );
+        assert_eq!(unknown_chunker_message("nope"), "Unknown chunker: nope");
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -1171,6 +1294,10 @@ mod tests {
                 "classify_route",
                 "validate_recovered_text",
                 "resolve_language",
+                "output_is_identical",
+                "coverage_complete",
+                "coverage_fraction",
+                "unknown_chunker_message",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }

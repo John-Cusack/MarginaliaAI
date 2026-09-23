@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy as sa
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.adapters.storage.postgres.schema import (
     documents,
@@ -51,10 +52,16 @@ class CoverageReport:
 
     @property
     def complete(self) -> bool:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.coverage_complete(self.missing, self.wrong_dimension)
         return self.missing == 0 and self.wrong_dimension == 0
 
     @property
     def coverage(self) -> float:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.coverage_fraction(self.embedded, self.total_passages)
         return self.embedded / self.total_passages if self.total_passages else 1.0
 
 

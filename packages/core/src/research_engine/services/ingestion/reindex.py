@@ -140,6 +140,16 @@ def _output_is_identical(old_passages: Sequence[Any], new_drafts: Sequence[Any])
     treating a changed label as changed content is what would force a
     corpus-wide re-embed.
     """
+    rs = _rust_backend.rust_ret()
+    if rs is not None:
+        return rs.output_is_identical(
+            [(old.char_start, old.char_end, old.text) for old in old_passages],
+            [
+                (draft.char_start, draft.char_end, draft.text)
+                for draft in new_drafts
+            ],
+        )
+
     if len(old_passages) != len(new_drafts):
         return False
     return all(
