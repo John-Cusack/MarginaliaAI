@@ -85,6 +85,9 @@ class Orphan:
 
     @property
     def dependent_total(self) -> int:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.orphan_dependent_total(list(self.dependents.values()))
         return sum(self.dependents.values())
 
 
@@ -120,13 +123,26 @@ class ReindexReport:
 
     @property
     def orphan_rate(self) -> float:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.orphan_rate(len(self.orphans), self.passages_before)
         return len(self.orphans) / self.passages_before if self.passages_before else 0.0
 
     @property
     def orphaned_dependents(self) -> int:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.orphaned_dependents(
+                [list(o.dependents.values()) for o in self.orphans]
+            )
         return sum(o.dependent_total for o in self.orphans)
 
     def exceeded(self, threshold: float) -> bool:
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.orphan_rate_exceeded(
+                len(self.orphans), self.passages_before, threshold
+            )
         return self.orphan_rate > threshold
 
 

@@ -50,6 +50,10 @@
 //!   `coverage_complete`/`coverage_fraction` mirror the report math
 //!   exactly (replicated one-liners, so even impossible inputs agree);
 //!   `unknown_chunker_message` is the `get_chunker` refusal verbatim.
+//! - Reindex report math crosses as plain ints. `orphan_dependent_total`
+//!   sums one orphan's table counts; `orphaned_dependents` sums a run's;
+//!   `orphan_rate`/`orphan_rate_exceeded` mirror the fraction and the
+//!   threshold decision (exactly-rounded division both sides).
 
 use std::collections::HashSet;
 
@@ -591,6 +595,40 @@ fn unknown_chunker_message(chunker_id: &str) -> String {
     ret_ingest::unknown_chunker_message(chunker_id)
 }
 
+/// Every research row stranded by one orphan, across all tables. Mirrors
+/// `Orphan.dependent_total`: the values alone decide, so only they cross.
+#[pyfunction]
+fn orphan_dependent_total(counts: Vec<i64>) -> i64 {
+    counts.iter().sum()
+}
+
+/// Every research row stranded by a run's orphans. Mirrors
+/// `ReindexReport.orphaned_dependents` as a sum of per-orphan count lists.
+#[pyfunction]
+fn orphaned_dependents(orphans: Vec<Vec<i64>>) -> i64 {
+    orphans.iter().flatten().sum()
+}
+
+/// Fraction of passages unmatched, where an empty run is vacuously clean.
+/// Mirrors `ReindexReport.orphan_rate`: exactly-rounded IEEE division on
+/// both sides (the `i64` range never overflows `f64`).
+#[pyfunction]
+fn orphan_rate(orphans: i64, passages_before: i64) -> f64 {
+    if passages_before == 0 {
+        0.0
+    } else {
+        orphans as f64 / passages_before as f64
+    }
+}
+
+/// Fail the run above the orphan threshold. Mirrors
+/// `ReindexReport.exceeded` without routing through the property, so the
+/// adapter makes one crossing for the whole decision.
+#[pyfunction]
+fn orphan_rate_exceeded(orphans: i64, passages_before: i64, threshold: f64) -> bool {
+    orphan_rate(orphans, passages_before) > threshold
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -625,17 +663,21 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(coverage_complete, m).expect("function name is a unique literal"),
         wrap_pyfunction!(coverage_fraction, m).expect("function name is a unique literal"),
         wrap_pyfunction!(unknown_chunker_message, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(orphan_dependent_total, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(orphaned_dependents, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(orphan_rate, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(orphan_rate_exceeded, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::{
         build_keyword_search_sql, classify_route, coverage_complete, coverage_fraction, dcg,
         english_reference, first_missing_ref, is_pack_uri, like_escape, map_empty_note,
-        missing_target_refusal, ndcg_at_k, normalize_audit_refs, output_is_identical,
+        missing_target_refusal, ndcg_at_k, normalize_audit_refs, orphan_dependent_total,
+        orphan_rate, orphan_rate_exceeded, orphaned_dependents, output_is_identical,
         over_limit_note, partials_note, precision_at_k, qere_note, recall_at_k, reciprocal_rank,
         register_ret, resolve_language, unknown_chunker_message, validate_claim_edges,
         validate_filters, validate_recovered_text, zero_result_note,
@@ -1266,6 +1308,19 @@ mod tests {
     }
 
     #[test]
+    fn orphan_math_matches_reports() {
+        assert_eq!(orphan_dependent_total(vec![]), 0);
+        assert_eq!(orphan_dependent_total(vec![2, 3, 0]), 5);
+        assert_eq!(orphaned_dependents(vec![vec![2, 3], vec![], vec![1]]), 6);
+        assert_eq!(orphaned_dependents(vec![]), 0);
+        assert_eq!(orphan_rate(0, 0).to_bits(), 0.0f64.to_bits());
+        assert_eq!(orphan_rate(1, 200).to_bits(), 0.005f64.to_bits());
+        assert!(orphan_rate_exceeded(2, 200, 0.005));
+        assert!(!orphan_rate_exceeded(1, 200, 0.005));
+        assert!(!orphan_rate_exceeded(0, 0, 0.005));
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -1298,6 +1353,10 @@ mod tests {
                 "coverage_complete",
                 "coverage_fraction",
                 "unknown_chunker_message",
+                "orphan_dependent_total",
+                "orphaned_dependents",
+                "orphan_rate",
+                "orphan_rate_exceeded",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }
