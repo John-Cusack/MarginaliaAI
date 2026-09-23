@@ -86,6 +86,9 @@ class IngestionOrchestrator:
 
     def _resolve_language(self, supplied: str | None) -> str | None:
         """Prefer what the caller or parser knows; otherwise the configured default."""
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            return rs.resolve_language(supplied, self._default_language)
         return supplied or self._default_language
 
     async def _record_edition(

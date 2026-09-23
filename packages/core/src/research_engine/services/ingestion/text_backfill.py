@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy as sa
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.adapters.storage.postgres.schema import document_texts, documents
 
@@ -127,6 +128,28 @@ class TextBackfillService:
             parser=row.parser,
             route=Route.UNREACHABLE,
         )
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            if rs.is_pack_uri(row.source):
+                file_exists, dispatch = False, (False, "")
+            else:
+                path = Path(row.source)
+                file_exists = path.is_file()
+                if not file_exists:
+                    dispatch = (False, "")
+                else:
+                    candidate.size_bytes = path.stat().st_size
+                    try:
+                        module = await self._dispatcher.dispatch(path)
+                    except Exception as exc:  # noqa: BLE001 - unreachable, not a crash
+                        dispatch = (False, str(exc))
+                    else:
+                        dispatch = (True, module.id)
+            classified = rs.classify_route(row.source, file_exists, dispatch)
+            candidate.route = Route(classified["route"])
+            candidate.module_id = classified["module_id"]
+            candidate.detail = classified["detail"]
+            return candidate
 
         # A source that is not a filesystem path — `logos:LLS:...:batch:b0000` —
         # can only be re-fetched by the pack that produced it.
@@ -150,6 +173,7 @@ class TextBackfillService:
         candidate.module_id = module.id
         candidate.route = Route.SLOW if module.id in SLOW_MODULES else Route.FAST
         return candidate
+
 
     async def recover(
         self,
@@ -191,7 +215,10 @@ class TextBackfillService:
         path = Path(candidate.source)
         module = await self._dispatcher.dispatch(path)
         full_text, _title, _metadata = await module.parse(path)
-        if not full_text or not full_text.strip():
+        rs = _rust_backend.rust_ret()
+        if rs is not None:
+            full_text = rs.validate_recovered_text(full_text)
+        elif not full_text or not full_text.strip():
             raise ValueError("parser produced no text")
 
         async with transaction(self._engine) as tx:

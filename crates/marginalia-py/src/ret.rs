@@ -37,12 +37,21 @@
 //!   length, which `many_for_coordinates` never fetches (it assembles
 //!   `window_end` from the fetched slice instead) — a fetch-shape
 //!   mismatch, not a seam. The assembly stays Python.
+//! - Backfill routing crosses as plain values. `is_pack_uri` is the
+//!   pack-URI check verbatim; `classify_route` takes the I/O probes as
+//!   parameters (file flag, dispatch outcome tuple) and answers the route
+//!   triple as a dict; `validate_recovered_text` takes the parsed text
+//!   (null fails like empty); `resolve_language` prefers the supplied
+//!   language exactly like `supplied or default`. The route renders
+//!   through the crate's own serde contract, so no outcome spelling lives
+//!   on this side.
 
 use std::collections::HashSet;
 
 use marginalia_ret::argument as ret_argument;
 use marginalia_ret::eval as ret_eval;
 use marginalia_ret::filters as ret_filters;
+use marginalia_ret::ingest as ret_ingest;
 use marginalia_ret::words as ret_words;
 use pyo3::call::PyCallArgs;
 use pyo3::exceptions::PyValueError;
@@ -430,6 +439,80 @@ fn first_missing_ref(checked: Vec<String>, existing: Vec<String>) -> Option<Stri
     ret_argument::first_missing_ref(&checked, &known)
 }
 
+/// A source that is not a filesystem path can only be re-fetched by the
+/// pack that produced it. Mirrors the pack-URI check in
+/// `text_backfill._classify` verbatim: `://` anywhere, or a `:` in a path
+/// that does not start at the root.
+#[pyfunction]
+fn is_pack_uri(source: &str) -> bool {
+    ret_ingest::is_pack_uri(source)
+}
+
+/// Classify one document lacking canonical text by recovery route.
+///
+/// `file_exists` and `dispatch` stand in for the filesystem and dispatcher
+/// probes, which stay in the adapter: it only consults the dispatcher when
+/// the file exists, mirroring the order of checks. `dispatch` is
+/// `(accepted, value)` — the module id when accepted, `str(exc)` when no
+/// module takes the source. Answers the route triple as a dict; the route
+/// renders through the crate's own serde contract.
+#[pyfunction]
+fn classify_route(
+    py: Python<'_>,
+    source: &str,
+    file_exists: bool,
+    dispatch: (bool, String),
+) -> PyResult<Py<PyDict>> {
+    let outcome: Result<&str, &str> = if dispatch.0 {
+        Ok(dispatch.1.as_str())
+    } else {
+        Err(dispatch.1.as_str())
+    };
+    let classified = ret_ingest::classify_route(source, file_exists, outcome);
+    let route = serde_json::to_value(classified.route)
+        .expect("Route serializes")
+        .as_str()
+        .expect("Route serializes as a string")
+        .to_owned();
+    let out = PyDict::new(py);
+    out.set_item("route", route)
+        .expect("str keys into a fresh dict");
+    out.set_item("module_id", classified.module_id.as_deref())
+        .expect("str keys into a fresh dict");
+    out.set_item("detail", classified.detail)
+        .expect("str keys into a fresh dict");
+    Ok(out.unbind())
+}
+
+/// Reject an empty recovery before it is stored: without text the offsets
+/// would address nothing. Mirrors the `_recover_one` guard verbatim;
+/// a null parse result fails the same way as empty text, exactly like
+/// the Python `not full_text or ...`.
+///
+/// # Errors
+///
+/// Returns `ValueError` (`"parser produced no text"`) on empty text.
+#[pyfunction]
+fn validate_recovered_text(full_text: Option<String>) -> PyResult<String> {
+    let text = full_text.as_deref().unwrap_or("");
+    ret_ingest::validate_recovered_text(text)
+        .map(str::to_string)
+        .map_err(|message| PyValueError::new_err(message.to_owned()))
+}
+
+/// Prefer what the caller or parser knows; otherwise the configured
+/// default. Mirrors `Orchestrator._resolve_language` exactly: an empty
+/// `supplied` falls back like a missing one (`supplied or default`).
+#[pyfunction]
+fn resolve_language(supplied: Option<String>, default: Option<String>) -> Option<String> {
+    if let Some(known) = supplied {
+        if !known.is_empty() {
+            return Some(known);
+        }
+    }
+    default
+}
+
 pub fn ret_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "ret").expect("module name is a valid literal");
     register_ret(&m);
@@ -456,6 +539,10 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
         wrap_pyfunction!(missing_target_refusal, m).expect("function name is a unique literal"),
         wrap_pyfunction!(normalize_audit_refs, m).expect("function name is a unique literal"),
         wrap_pyfunction!(first_missing_ref, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(is_pack_uri, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(classify_route, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(validate_recovered_text, m).expect("function name is a unique literal"),
+        wrap_pyfunction!(resolve_language, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
     }
@@ -464,10 +551,11 @@ pub fn register_ret(m: &Bound<'_, PyModule>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_keyword_search_sql, dcg, english_reference, first_missing_ref, like_escape,
-        map_empty_note, missing_target_refusal, ndcg_at_k, normalize_audit_refs, over_limit_note,
-        partials_note, precision_at_k, qere_note, recall_at_k, reciprocal_rank, register_ret,
-        validate_claim_edges, validate_filters, zero_result_note,
+        build_keyword_search_sql, classify_route, dcg, english_reference, first_missing_ref,
+        is_pack_uri, like_escape, map_empty_note, missing_target_refusal, ndcg_at_k,
+        normalize_audit_refs, over_limit_note, partials_note, precision_at_k, qere_note,
+        recall_at_k, reciprocal_rank, register_ret, resolve_language, validate_claim_edges,
+        validate_filters, validate_recovered_text, zero_result_note,
     };
     use pyo3::prelude::*;
     use pyo3::types::{PyDict, PyList};
@@ -917,6 +1005,144 @@ mod tests {
     }
 
     #[test]
+    fn pack_uris_detected_like_python() {
+        for (source, expected) in [
+            ("logos:LLS:ABC:batch:b0000", true),
+            ("C:\\docs\\scan.pdf", true),
+            ("rel:path/doc.pdf", true),
+            ("/abs/path/doc.pdf", false),
+            ("plain.md", false),
+            ("", false),
+        ] {
+            assert_eq!(is_pack_uri(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn route_classification_matches_crate() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let get = |out: &Py<PyDict>, key: &str| {
+                out.bind(py)
+                    .get_item(key)
+                    .unwrap()
+                    .unwrap()
+                    .extract::<Option<String>>()
+                    .unwrap()
+            };
+            // Pack URIs never touch the filesystem.
+            let out = classify_route(
+                py,
+                "logos:LLS:ABC:batch:b0000",
+                false,
+                (false, String::new()),
+            )
+            .unwrap();
+            let bound = out.bind(py);
+            assert_eq!(
+                bound
+                    .get_item("route")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "unreachable"
+            );
+            assert_eq!(
+                get(&out, "detail"),
+                Some("source is a pack URI; re-run that pack's ingest".to_owned())
+            );
+            // Missing files name the loss.
+            let out = classify_route(py, "/gone/doc.pdf", false, (false, String::new())).unwrap();
+            assert_eq!(
+                out.bind(py)
+                    .get_item("detail")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "source file no longer exists"
+            );
+            // Dispatch failures carry the cause.
+            let out =
+                classify_route(py, "/doc.pdf", true, (false, "bad magic".to_owned())).unwrap();
+            let bound = out.bind(py);
+            assert_eq!(
+                bound
+                    .get_item("route")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "unreachable"
+            );
+            assert_eq!(
+                bound
+                    .get_item("detail")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "no ingestion module accepts this source: bad magic"
+            );
+            // Accepting modules route by weight.
+            for (module, route) in [("docling", "slow"), ("plain_text", "fast")] {
+                let out = classify_route(py, "/doc.pdf", true, (true, module.to_owned())).unwrap();
+                let bound = out.bind(py);
+                assert_eq!(
+                    bound
+                        .get_item("route")
+                        .unwrap()
+                        .unwrap()
+                        .extract::<String>()
+                        .unwrap(),
+                    route
+                );
+                assert_eq!(
+                    bound
+                        .get_item("module_id")
+                        .unwrap()
+                        .unwrap()
+                        .extract::<String>()
+                        .unwrap(),
+                    module
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn recovered_text_and_language_match() {
+        assert_eq!(
+            validate_recovered_text(Some("text".to_owned())).unwrap(),
+            "text"
+        );
+        assert_eq!(
+            validate_recovered_text(None).unwrap_err().to_string(),
+            "ValueError: parser produced no text"
+        );
+        assert_eq!(
+            validate_recovered_text(Some("   ".to_owned()))
+                .unwrap_err()
+                .to_string(),
+            "ValueError: parser produced no text"
+        );
+        assert_eq!(
+            resolve_language(Some("he".to_owned()), Some("en".to_owned())),
+            Some("he".to_owned())
+        );
+        assert_eq!(
+            resolve_language(Some(String::new()), Some("en".to_owned())),
+            Some("en".to_owned())
+        );
+        assert_eq!(
+            resolve_language(None, Some("en".to_owned())),
+            Some("en".to_owned())
+        );
+        assert_eq!(resolve_language(None, None), None);
+    }
+
+    #[test]
     fn registration_names_the_metrics() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -941,6 +1167,10 @@ mod tests {
                 "missing_target_refusal",
                 "normalize_audit_refs",
                 "first_missing_ref",
+                "is_pack_uri",
+                "classify_route",
+                "validate_recovered_text",
+                "resolve_language",
             ] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
             }
