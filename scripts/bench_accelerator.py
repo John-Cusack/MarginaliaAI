@@ -32,7 +32,8 @@ not speed.
 Release wheel only: plain `maturin build` is the dev profile (opt-level 0,
 ~10x slow against identical sources), so the script refuses any
 `research_engine._native.BUILD_PROFILE` but "release". Build with
-`uv sync` (maturin's PEP 517 build is release) or `maturin build --release`.
+`uv sync` (maturin's PEP 517 build is release), or
+`maturin develop --release` from packages/core.
 
 Usage: `uv run python scripts/bench_accelerator.py [--trials N] [--cpu N]`
 """
@@ -206,7 +207,7 @@ def main() -> None:
     profile = getattr(marginalia_rs, "BUILD_PROFILE", "unknown (pre-BUILD_PROFILE wheel)")
     if profile != "release":
         print(f"research_engine._native build profile is {profile}; benchmark a release build:")
-        print("  maturin build --release --manifest-path crates/marginalia-py/Cargo.toml")
+        print("  uv sync   (maturin's PEP 517 build is release; rebuilds after Rust edits)")
         sys.exit(2)
 
     print(_pin(args.cpu))
