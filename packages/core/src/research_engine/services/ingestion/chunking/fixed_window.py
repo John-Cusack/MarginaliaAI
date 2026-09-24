@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from research_engine import _rust as _rust_backend
 from research_engine_sdk import PassageDraft
 from research_engine_sdk.chunking import (
     DEFAULT_CHARS_PER_TOKEN,
@@ -41,10 +40,6 @@ class FixedWindowChunker:
         return max(1, int(self._window / DEFAULT_CHARS_PER_TOKEN))
 
     async def chunk(self, text: str, metadata: dict | None = None) -> list[PassageDraft]:
-        rs = _rust_backend.rust_chunk()
-        if rs is not None:
-            return _chunk_fixed_rs(rs, self, text, metadata)
-
         if not text.strip():
             return []
 
@@ -82,15 +77,3 @@ class FixedWindowChunker:
             start = max(end - overlap, start + 1)
 
         return chunks
-
-
-def _chunk_fixed_rs(rs, chunker, text, metadata):
-    """`FixedWindowChunker.chunk` via the Rust backend (see `research_engine._rust`).
-
-    Drafts cross as JSON without metadata (the crate never reads it); the
-    original mapping is reattached here, so identity holds on either backend.
-    """
-    return [
-        PassageDraft.model_validate_json(raw).model_copy(update={"metadata": metadata or {}})
-        for raw in rs.chunk_fixed(text, chunker._window, chunker._overlap)
-    ]

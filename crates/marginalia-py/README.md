@@ -10,6 +10,12 @@ or use `marginalia-ai`.
 pip install 'marginalia-ai[accelerated]'
 ```
 
+Accelerated paths, each 1.5x–25x faster than pure Python, including the
+cost of crossing into Rust: quote normalization (`normalize`,
+`normalize_for_matching`, `normalize_with_map`), prose and structural
+chunking, markdown/HTML/EPUB parsing, and `dominant_century`. Everything else
+stays Python, because a native call there costs more than it saves.
+
 `RE_RUST_BACKEND=python` forces the pure-Python path (bisection/rollback);
 `RE_RUST_BACKEND=rust` forces the native path and fails loudly when this
 package is absent.

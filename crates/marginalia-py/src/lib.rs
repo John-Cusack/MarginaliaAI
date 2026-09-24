@@ -11,9 +11,7 @@ use pyo3::prelude::*;
 
 mod chunk;
 mod chunkers;
-mod langconfig;
 mod parse;
-mod windows;
 mod works;
 
 /// Cargo profile this extension was compiled under, exposed as
@@ -31,14 +29,6 @@ const BUILD_PROFILE: &str = "release";
 #[pyfunction]
 fn normalize(text: &str) -> String {
     text_normalize::normalize(text)
-}
-
-/// Collapse whitespace runs only.
-///
-/// Mirrors `services/text/normalize.py::normalize_whitespace` exactly.
-#[pyfunction]
-fn normalize_whitespace(text: &str) -> String {
-    text_normalize::normalize_whitespace(text)
 }
 
 /// `normalize`, plus a map from each output character to its raw offset.
@@ -62,7 +52,6 @@ fn text_module(py: Python<'_>) -> Bound<'_, PyModule> {
     let m = PyModule::new(py, "text").expect("module name is a valid literal");
     for f in [
         wrap_pyfunction!(normalize, &m),
-        wrap_pyfunction!(normalize_whitespace, &m),
         wrap_pyfunction!(normalize_with_map, &m),
         wrap_pyfunction!(normalize_for_matching, &m),
     ] {
@@ -77,7 +66,8 @@ fn text_module(py: Python<'_>) -> Bound<'_, PyModule> {
     m
 }
 
-/// The `marginalia_rs` extension root: one submodule per rewrite phase.
+/// The `marginalia_rs` extension root: one submodule per rewrite phase,
+/// each holding only the seams the accelerator benchmark's gate kept.
 #[pymodule]
 fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("BUILD_PROFILE", BUILD_PROFILE)
@@ -96,8 +86,8 @@ fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        marginalia_rs, normalize, normalize_for_matching, normalize_whitespace, normalize_with_map,
-        text_module, BUILD_PROFILE,
+        marginalia_rs, normalize, normalize_for_matching, normalize_with_map, text_module,
+        BUILD_PROFILE,
     };
     use marginalia_text::normalize as text_normalize;
     use pyo3::prelude::*;
@@ -115,10 +105,6 @@ mod tests {
         ];
         for text in cases {
             assert_eq!(normalize(text), text_normalize::normalize(text));
-            assert_eq!(
-                normalize_whitespace(text),
-                text_normalize::normalize_whitespace(text)
-            );
             assert_eq!(
                 normalize_with_map(text),
                 text_normalize::normalize_with_map(text)
@@ -151,14 +137,6 @@ mod tests {
                     .unwrap(),
                 text_normalize::NORMALIZATION_VERSION,
             );
-            for name in [
-                "normalize",
-                "normalize_whitespace",
-                "normalize_with_map",
-                "normalize_for_matching",
-            ] {
-                assert!(text.hasattr(name).unwrap(), "missing {name}");
-            }
             let via_module: String = text
                 .getattr("normalize")
                 .unwrap()
@@ -168,34 +146,36 @@ mod tests {
                 .unwrap();
             assert_eq!(via_module, "hi");
             let _ = text_module(py);
-            let chunk = root.getattr("chunk").unwrap();
+            // Exactly the seams the benchmark gate kept: a binding re-added
+            // without a Python caller (or a gate result) fails here.
+            let public = |name: &str| -> Vec<String> {
+                let mut names: Vec<String> = root
+                    .getattr(name)
+                    .unwrap()
+                    .dir()
+                    .unwrap()
+                    .iter()
+                    .map(|n| n.extract::<String>().unwrap())
+                    .filter(|n| !n.starts_with('_'))
+                    .collect();
+                names.sort();
+                names
+            };
             assert_eq!(
-                chunk.getattr("RRF_K").unwrap().extract::<f64>().unwrap(),
-                60.0
+                public("text"),
+                [
+                    "NORMALIZATION_VERSION",
+                    "normalize",
+                    "normalize_for_matching",
+                    "normalize_with_map",
+                ]
             );
-            for name in ["rrf_fuse", "weighted_fuse"] {
-                assert!(chunk.hasattr(name).unwrap(), "missing {name}");
-            }
-            let parse = root.getattr("parse").unwrap();
-            for name in [
-                "parse_plain_text",
-                "parse_markdown",
-                "detect_plain_text_content",
-                "detect_markdown_content",
-                "parse_html",
-                "parse_epub",
-                "parse_tei",
-                "detect_html_content",
-                "detect_epub_magic",
-                "detect_tei_content",
-                "detect_pdf_magic",
-            ] {
-                assert!(parse.hasattr(name).unwrap(), "missing {name}");
-            }
-            let works = root.getattr("works").unwrap();
-            for name in ["compute_content_hash", "find_markers", "format_marker"] {
-                assert!(works.hasattr(name).unwrap(), "missing {name}");
-            }
+            assert_eq!(public("chunk"), ["chunk_prose", "chunk_structural"]);
+            assert_eq!(
+                public("parse"),
+                ["parse_epub", "parse_html", "parse_markdown"]
+            );
+            assert_eq!(public("works"), ["dominant_century"]);
         });
     }
 

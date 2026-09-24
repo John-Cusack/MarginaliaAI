@@ -38,11 +38,6 @@ class HTMLModule:
             return 0.8, f"MIME type '{mime}' matches HTML"
 
         # Peek at content for HTML indicators
-        rs = _rust_backend.rust_parse()
-        if rs is not None:
-            loop = asyncio.get_event_loop()
-            head = await loop.run_in_executor(None, self._read_head, source_path)
-            return rs.detect_html_content(head)
         try:
             loop = asyncio.get_event_loop()
             head = await loop.run_in_executor(None, self._read_head, source_path)

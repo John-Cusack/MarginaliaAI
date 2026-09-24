@@ -25,7 +25,6 @@ Ordinals are period-spelled: ``2d`` and ``3d`` are as common as ``2nd`` and
 from __future__ import annotations
 
 import calendar
-import json
 import re
 from datetime import UTC, datetime, timedelta
 
@@ -126,10 +125,6 @@ def parse_fuzzy_date(
     that name only a day — "the 15th", "the 3d ult." — mean nothing without it,
     and are refused rather than guessed.
     """
-    rs = _rust_backend.rust_works()
-    if rs is not None:
-        return _parse_fuzzy_date_rs(rs, text, relative_to)
-
     if not text or not text.strip():
         return None
 
@@ -435,10 +430,6 @@ def scan_dates(
     immediately after it. That ordering is what separates "March 24 11 am 1862"
     from a date in 1811: the hour sits exactly where a short year would.
     """
-    rs = _rust_backend.rust_works()
-    if rs is not None:
-        return _scan_dates_rs(rs, text, century)
-
     found: list[tuple[int, int, FuzzyDate]] = []
     for match in _MONTH_AND_DAY.finditer(text):
         month = _read_month(match.group(1))
@@ -458,23 +449,3 @@ def scan_dates(
         if parsed is not None:
             found.append((match.start(), end, parsed))
     return found
-
-
-def _parse_fuzzy_date_rs(rs, text, relative_to):
-    """`parse_fuzzy_date` via the Rust backend (see `research_engine._rust`).
-
-    The anchor crosses as RFC 3339; the answer comes back as `FuzzyDate`
-    JSON and is validated into the model here.
-    """
-    out = rs.parse_fuzzy_date(
-        text, relative_to.isoformat() if relative_to is not None else None
-    )
-    return FuzzyDate.model_validate_json(out) if out is not None else None
-
-
-def _scan_dates_rs(rs, text, century):
-    """`scan_dates` via the Rust backend."""
-    return [
-        (start, end, FuzzyDate.model_validate(date))
-        for start, end, date in json.loads(rs.scan_dates(text, century))
-    ]

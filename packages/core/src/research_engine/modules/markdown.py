@@ -93,13 +93,6 @@ class MarkdownModule:
             return 0.8, f"MIME type '{mime}' matches markdown"
 
         # Peek at content for markdown indicators
-        rs = _rust_backend.rust_parse()
-        if rs is not None:
-            loop = asyncio.get_event_loop()
-            head = await loop.run_in_executor(None, self._read_head_bytes, source_path)
-            # Universal newlines, like the text-mode read below.
-            head = head.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-            return rs.detect_markdown_content(head)
         try:
             loop = asyncio.get_event_loop()
             head = await loop.run_in_executor(None, self._read_head, source_path)
@@ -151,11 +144,6 @@ class MarkdownModule:
     @staticmethod
     def _read_head(path: Path, size: int = 4096) -> str:
         with path.open("r", encoding="utf-8") as f:
-            return f.read(size)
-
-    @staticmethod
-    def _read_head_bytes(path: Path, size: int = 4096) -> bytes:
-        with path.open("rb") as f:
             return f.read(size)
 
 

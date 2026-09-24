@@ -31,9 +31,7 @@ shrink. Two consequences drive everything here:
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
-from uuid import UUID
 
-from research_engine import _rust as _rust_backend
 from research_engine.domain.passages import PassageWindow
 from research_engine.services.ingestion.chunking.fixed_window import trim_span
 from research_engine.services.text.anchoring import Span
@@ -45,6 +43,7 @@ from research_engine.services.text.tokens import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from uuid import UUID
 
     from research_engine.domain.nodes import DocumentNode
     from research_engine.domain.passages import Passage
@@ -78,10 +77,6 @@ def choose_window(
     without offsets predates the requirement and cannot be located in the
     canonical text at all.
     """
-    rs = _rust_backend.rust_chunk()
-    if rs is not None:
-        return _choose_window_rs(rs, passage, ancestors, budget_chars, min_chars)
-
     if passage is None:
         return None
 
@@ -120,27 +115,6 @@ def choose_window(
     # threshold instead produced windows one character wider than the chunk.
     bound = next((node for node in chain if _width(node) >= worth_reading), None)
     return _plan(_centred(passage, budget_chars, bound), bound, passage)
-
-
-def _choose_window_rs(rs, passage, ancestors, budget_chars, min_chars):
-    """`choose_window` via the Rust backend (see `research_engine._rust`).
-
-    Nodes cross as `DocumentNode` JSON and the decision comes back as plain
-    tuples; the original `Span` / `WindowPlan` / node objects are reattached
-    here, so identity holds on either backend.
-    """
-    out = rs.choose_window(
-        (passage.start, passage.end) if passage is not None else None,
-        [node.model_dump_json() for node in ancestors],
-        budget_chars=budget_chars,
-        min_chars=min_chars,
-    )
-    if out is None:
-        return None
-    start, end, source, bound_id = out
-    by_id = {str(node.id): node for node in ancestors}
-    bound = by_id[bound_id] if bound_id is not None else None
-    return WindowPlan(Span(start, end), source, bound)
 
 
 def _width(node: DocumentNode) -> int:
@@ -264,10 +238,6 @@ def _build_window(
 ) -> PassageWindow | None:
     # None means the document has no canonical text; "" means an empty slice.
     # Neither is something to hand a reader.
-    rs = _rust_backend.rust_chunk()
-    if rs is not None:
-        return _build_window_rs(rs, passage, plan, chain, raw)
-
     if not raw:
         return None
 
@@ -301,31 +271,4 @@ def _build_window(
         node_id=plan.node.id if plan.node else None,
         breadcrumb=[n.title for n in chain if n.title],
         approx_tokens=approx_tokens(text),
-    )
-
-
-def _build_window_rs(rs, passage, plan, chain, raw):
-    """`_build_window` via the Rust backend (see `research_engine._rust`)."""
-    span = _passage_span(passage)
-    out = rs.build_window(
-        (span.start, span.end) if span is not None else None,
-        (
-            (plan.span.start, plan.span.end),
-            plan.source,
-            str(plan.node.id) if plan.node else None,
-        ),
-        [node.model_dump_json() for node in chain],
-        raw,
-    )
-    if out is None:
-        return None
-    text, char_start, char_end, source, node_id, breadcrumb, approx_tokens = out
-    return PassageWindow(
-        text=text,
-        char_start=char_start,
-        char_end=char_end,
-        source=source,
-        node_id=UUID(node_id) if node_id is not None else None,
-        breadcrumb=breadcrumb,
-        approx_tokens=approx_tokens,
     )

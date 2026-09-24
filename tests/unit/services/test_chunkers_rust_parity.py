@@ -1,8 +1,9 @@
-"""The Rust chunker seam must be byte-identical to the Python it replaces.
+"""The Rust chunker seams must be byte-identical to the Python they replace.
 
-Every vector runs under both ``RE_RUST_BACKEND=rust`` and ``=python``;
+Only prose and structural chunking cross to Rust (fixed and
+whole-or-paragraph lost the accelerator benchmark's keep gate). Every vector runs under both ``RE_RUST_BACKEND=rust`` and ``=python``;
 drafts must compare equal field-by-field, with the input metadata mapping
-being the *same object* on text chunkers (it never crosses the seam) and an
+being the *same object* on prose (it never crosses the seam) and an
 equal rebuild on structural (the crate never reads it). Section values must
 be JSON-native; anything else fails the adapter's ``json.dumps`` with
 ``TypeError`` on Rust where Python would carry the object (pinned boundary).
@@ -20,12 +21,8 @@ from datetime import UTC, datetime
 import pytest
 
 from research_engine.domain.errors import ChunkingError
-from research_engine.services.ingestion.chunking.fixed_window import FixedWindowChunker
 from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
 from research_engine.services.ingestion.chunking.structural import StructuralChunker
-from research_engine.services.ingestion.chunking.whole_or_paragraph import (
-    WholeOrParagraphChunker,
-)
 
 TEXTS = [
     "Hello world. This is a test. " * 100,
@@ -53,19 +50,6 @@ def _dumps(drafts):
 
 class TestTextChunkerParity:
     @pytest.mark.parametrize("text", TEXTS)
-    async def test_fixed_matches_across_backends(self, text, monkeypatch):
-        pytest.importorskip("marginalia_rs")
-        meta = {"source": "t", "n": 3}
-        chunker = FixedWindowChunker()
-        monkeypatch.setenv("RE_RUST_BACKEND", "python")
-        expected = await chunker.chunk(text, meta)
-        monkeypatch.setenv("RE_RUST_BACKEND", "rust")
-        actual = await chunker.chunk(text, meta)
-        assert _dumps(actual) == _dumps(expected)
-        if actual:
-            assert all(d.metadata is meta for d in actual)
-
-    @pytest.mark.parametrize("text", TEXTS)
     async def test_prose_matches_across_backends(self, text, monkeypatch):
         pytest.importorskip("marginalia_rs")
         meta = {"source": "t"}
@@ -78,31 +62,18 @@ class TestTextChunkerParity:
         if actual:
             assert all(d.metadata is meta for d in actual)
 
-    @pytest.mark.parametrize("text", TEXTS)
-    async def test_whole_matches_across_backends(self, text, monkeypatch):
-        pytest.importorskip("marginalia_rs")
-        meta = {"source": "t"}
-        chunker = WholeOrParagraphChunker()
-        monkeypatch.setenv("RE_RUST_BACKEND", "python")
-        expected = await chunker.chunk(text, meta)
-        monkeypatch.setenv("RE_RUST_BACKEND", "rust")
-        actual = await chunker.chunk(text, meta)
-        assert _dumps(actual) == _dumps(expected)
-        if actual:
-            assert all(d.metadata is meta for d in actual)
-
     async def test_exotic_metadata_survives_by_identity(self, monkeypatch):
-        """Text-chunker metadata never crosses the seam: identity, not copy."""
+        """Prose metadata never crosses the seam: identity, not copy."""
         pytest.importorskip("marginalia_rs")
         text = "Hello world. " * 100
-        for chunker in (FixedWindowChunker(), ProseWindowChunker(), WholeOrParagraphChunker()):
-            monkeypatch.setenv("RE_RUST_BACKEND", "rust")
-            actual = await chunker.chunk(text, EXOTIC_METADATA)
-            assert actual
-            assert all(d.metadata is EXOTIC_METADATA for d in actual)
-            monkeypatch.setenv("RE_RUST_BACKEND", "python")
-            expected = await chunker.chunk(text, EXOTIC_METADATA)
-            assert _dumps(actual) == _dumps(expected)
+        chunker = ProseWindowChunker()
+        monkeypatch.setenv("RE_RUST_BACKEND", "rust")
+        actual = await chunker.chunk(text, EXOTIC_METADATA)
+        assert actual
+        assert all(d.metadata is EXOTIC_METADATA for d in actual)
+        monkeypatch.setenv("RE_RUST_BACKEND", "python")
+        expected = await chunker.chunk(text, EXOTIC_METADATA)
+        assert _dumps(actual) == _dumps(expected)
 
     async def test_prose_budget_rejection_matches(self, monkeypatch):
         pytest.importorskip("marginalia_rs")

@@ -1,4 +1,4 @@
-//! Text/section chunker bindings over `marginalia-chunk`.
+//! Prose and structural chunker bindings over `marginalia-chunk`.
 //!
 //! Crossing contract (all pinned by tests):
 //! - Each function answers draft JSON (one `PassageDraft` per string), built
@@ -14,7 +14,7 @@
 //!   message; `chunk_prose` re-raises `cap_spans` rejections as `ValueError`
 //!   with the identical text. Both error paths are fired by tests.
 
-use marginalia_chunk::{fixed_window, prose_window, structural, whole_or_paragraph};
+use marginalia_chunk::{prose_window, structural};
 use marginalia_types::sdk::PassageDraft;
 use marginalia_types::Error;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -36,20 +36,6 @@ fn prose_error(err: Error) -> PyErr {
     }
 }
 
-/// Fixed windows over `text`.
-///
-/// Mirrors `FixedWindowChunker.chunk` without the metadata passthrough
-/// (the adapter reattaches the original mapping).
-#[pyfunction]
-#[pyo3(signature = (text, window_chars, overlap_chars))]
-fn chunk_fixed(text: &str, window_chars: i64, overlap_chars: i64) -> Vec<String> {
-    fixed_window::FixedWindowChunker::new(window_chars, overlap_chars)
-        .chunk(text, None)
-        .iter()
-        .map(draft_json)
-        .collect()
-}
-
 /// Sentence-boundary windows over `text`.
 ///
 /// Mirrors `ProseWindowChunker.chunk` without the metadata passthrough.
@@ -64,21 +50,6 @@ fn chunk_prose(text: &str, max_tokens: i64, overlap_tokens: i64) -> PyResult<Vec
         .chunk(text, None)
         .map(|drafts| drafts.iter().map(draft_json).collect())
         .map_err(prose_error)
-}
-
-/// Whole-or-paragraph windows over `text`.
-///
-/// Mirrors `WholeOrParagraphChunker.chunk` without the metadata passthrough.
-#[pyfunction]
-#[pyo3(signature = (text, threshold_tokens))]
-fn chunk_whole(text: &str, threshold_tokens: i64) -> Vec<String> {
-    whole_or_paragraph::WholeOrParagraphChunker::new(threshold_tokens)
-        .chunk(text, None)
-        // Proven infallible: no `Err` arm exists in the chunker.
-        .expect("whole chunking is infallible")
-        .iter()
-        .map(draft_json)
-        .collect()
 }
 
 /// Raise the core `ChunkingError` with the crate's message.
@@ -137,9 +108,7 @@ fn structural_error(py: Python<'_>, err: Error) -> PyErr {
 
 pub fn register_chunkers(m: &Bound<'_, PyModule>) {
     for f in [
-        wrap_pyfunction!(chunk_fixed, m).expect("function name is a unique literal"),
         wrap_pyfunction!(chunk_prose, m).expect("function name is a unique literal"),
-        wrap_pyfunction!(chunk_whole, m).expect("function name is a unique literal"),
         wrap_pyfunction!(chunk_structural, m).expect("function name is a unique literal"),
     ] {
         m.add_function(f).expect("module attribute assignment");
@@ -148,35 +117,14 @@ pub fn register_chunkers(m: &Bound<'_, PyModule>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        chunk_fixed, chunk_prose, chunk_structural, chunk_whole, prose_error, register_chunkers,
-        structural_error,
-    };
-    use marginalia_chunk::{fixed_window, prose_window, structural, whole_or_paragraph};
+    use super::{chunk_prose, chunk_structural, prose_error, register_chunkers, structural_error};
+    use marginalia_chunk::{prose_window, structural};
     use pyo3::prelude::*;
 
     fn draft_jsons(json: &[String]) -> Vec<serde_json::Value> {
         json.iter()
             .map(|s| serde_json::from_str(s).unwrap())
             .collect()
-    }
-
-    #[test]
-    fn fixed_matches_crate_draft_for_draft() {
-        let text = "Word ".repeat(3000);
-        let out = chunk_fixed(&text, 2000, 200);
-        let expected = fixed_window::FixedWindowChunker::new(2000, 200).chunk(&text, None);
-        assert_eq!(out.len(), expected.len());
-        for (got, want) in draft_jsons(&out).iter().zip(expected.iter()) {
-            assert_eq!(got["char_start"], want.char_start);
-            assert_eq!(got["char_end"], want.char_end);
-            assert_eq!(got["text"], want.text);
-            assert_eq!(got["token_count"], want.token_count.unwrap());
-            assert_eq!(got["chunker"], "fixed_window");
-            assert_eq!(got["chunker_version"], "3.0");
-        }
-        assert!(chunk_fixed("   \n ", 2000, 200).is_empty());
-        assert!(chunk_fixed("", 2000, 200).is_empty());
     }
 
     #[test]
@@ -202,25 +150,6 @@ mod tests {
             assert!(err.is_instance_of::<pyo3::exceptions::PyValueError>(py));
             assert_eq!(err.value(py).to_string(), "max_tokens must be positive");
         });
-    }
-
-    #[test]
-    fn whole_matches_crate_on_short_and_long_docs() {
-        let short = "A short doc.";
-        let out = chunk_whole(short, 600);
-        assert_eq!(out.len(), 1);
-        let long = ("Para one.\n\n".to_owned() + &"x".repeat(60_000)).repeat(2);
-        let out = chunk_whole(&long, 600);
-        let expected = whole_or_paragraph::WholeOrParagraphChunker::new(600)
-            .chunk(&long, None)
-            .expect("whole chunking is infallible");
-        assert_eq!(out.len(), expected.len());
-        for (got, want) in draft_jsons(&out).iter().zip(expected.iter()) {
-            assert_eq!(got["char_start"], want.char_start);
-            assert_eq!(got["text"], want.text);
-            assert_eq!(got["chunker"], "whole_or_paragraph");
-        }
-        assert!(chunk_whole(" \n", 600).is_empty());
     }
 
     const SECTIONS: &str = r#"[
@@ -283,13 +212,11 @@ mod tests {
         Python::with_gil(|py| {
             let m = PyModule::new(py, "chunk").unwrap();
             register_chunkers(&m);
-            for name in [
-                "chunk_fixed",
-                "chunk_prose",
-                "chunk_whole",
-                "chunk_structural",
-            ] {
+            for name in ["chunk_prose", "chunk_structural"] {
                 assert!(m.hasattr(name).unwrap(), "missing {name}");
+            }
+            for name in ["chunk_fixed", "chunk_whole"] {
+                assert!(!m.hasattr(name).unwrap(), "{name} was cut back to Python");
             }
         });
     }

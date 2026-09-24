@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from research_engine import _rust as _rust_backend
 from research_engine.services.ingestion.identifiers import with_first_page_identity
 
 if TYPE_CHECKING:
@@ -32,12 +31,8 @@ class PDFTextModule:
         mime, _ = mimetypes.guess_type(str(source_path))
         if mime in self.supported_mime_types:
             return 0.8, f"MIME type '{mime}' matches PDF"
+
         # Check the magic bytes
-        rs = _rust_backend.rust_parse()
-        if rs is not None:
-            loop = asyncio.get_event_loop()
-            header = await loop.run_in_executor(None, self._read_bytes, source_path, 5)
-            return rs.detect_pdf_magic(header)
         try:
             loop = asyncio.get_event_loop()
             header = await loop.run_in_executor(None, self._read_bytes, source_path, 5)
@@ -47,13 +42,6 @@ class PDFTextModule:
             pass
 
         return 0.0, "not detected as PDF"
-    # NOTE (Rust cutover, Phase 3c): `parse` deliberately stays Python.
-    # Page text is engine output — fitz wraps long lines and trims page
-    # edges where the Rust port's pdf-extract does neither — so routing it
-    # through `marginalia_rs` would change extracted text on real PDFs
-    # (byte-identity violation, reported under HALT). Only `detect` (pure
-    # magic bytes) cuts over; a versioned re-ingest migration owns any
-    # future engine change.
 
     async def parse(self, source_path: Path) -> tuple[str, str, dict]:
         """Extract text from a PDF page by page."""

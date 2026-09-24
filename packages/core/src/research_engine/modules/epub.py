@@ -39,12 +39,6 @@ class EPUBModule:
         if mime in self.supported_mime_types:
             return 0.8, f"MIME type '{mime}' matches EPUB"
 
-        rs = _rust_backend.rust_parse()
-        if rs is not None:
-            loop = asyncio.get_event_loop()
-            header = await loop.run_in_executor(None, self._read_bytes, source_path, 4)
-            return rs.detect_epub_magic(header)
-
         # EPUB is a ZIP with specific first bytes
         try:
             loop = asyncio.get_event_loop()

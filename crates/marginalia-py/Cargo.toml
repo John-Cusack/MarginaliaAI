@@ -15,12 +15,10 @@ extension-module = ["pyo3/extension-module"]
 marginalia-text = { path = "../marginalia-text" }
 marginalia-chunk = { path = "../marginalia-chunk" }
 pyo3 = { version = "0.24", features = ["abi3-py311"] }
-uuid = { workspace = true }
 serde_json = { workspace = true }
 marginalia-types = { path = "../marginalia-types" }
 marginalia-parse = { path = "../marginalia-parse" }
 marginalia-works = { path = "../marginalia-works" }
-chrono = { workspace = true }
 
 [dev-dependencies]
 zip = "2"

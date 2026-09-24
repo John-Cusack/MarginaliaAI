@@ -1,8 +1,10 @@
 """Differential benchmark: pure-Python path vs Rust accelerator.
 
-Runs each workload through the same seam callers production uses, under both
+Runs every shipped seam through the same caller production uses, under both
 `RE_RUST_BACKEND` settings in one process (the switch reads the env var
-dynamically), and applies the keep gate. Crossing costs are included — this
+dynamically), and re-applies the keep gate so a regression shows up as a
+"revert" verdict. Seams that failed the gate were removed from the wheel, not
+just from this table: benchmarking them now would time Python against itself. Crossing costs are included — this
 measures what users feel, not crate microbenchmarks.
 
 Method, and the confound each choice removes:
@@ -44,17 +46,28 @@ import sys
 import tempfile
 import textwrap
 import time
-import uuid
 import zipfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 GATE_RATIO = 1.5
 GATE_SAVED_S = 1e-3
 BACKENDS = ("python", "rust")
 ROOT = Path(__file__).resolve().parents[1]
+
+#: Seams shipped despite missing the gate on this machine's fixtures, and why.
+#: A row here prints `KEEP*`; one that starts clearing the gate outright should
+#: leave this table, and one that falls further should leave the wheel.
+JUDGED_KEEPS = {
+    "chunk structural": (
+        "conservative ratio sits on the line (1.42-1.50x) with 1.6ms saved per "
+        "document; it chunks every structured format the kept parsers produce"
+    ),
+    "dominant_century letters": (
+        "~23x; runs once per document over the whole text, so the 0.9ms saved on "
+        "this 95KB fixture grows with the volume"
+    ),
+}
 
 #: Genesis 1:1-3 (WLC), pointed and accented: the combining-mark density
 #: that NFKC and the script-aware token estimates actually see in this corpus.
@@ -203,23 +216,8 @@ def _fixtures(tmp: Path) -> dict:
     prose = [p for p in paragraphs if not p.startswith("#")]
     parts = [prose[i : i + 8] for i in range(0, 320, 8)]
     (tmp / "doc.epub").write_bytes(_epub(parts))
-    # The Rust TEI parser rejects `&amp;` (xml.rs `resolve_entities` decodes
-    # it, then loops on the bare `&`), so this fixture carries no ampersands.
-    divs = "".join(
-        f"<div><head>Part {i}</head>"
-        + "".join(f"<p>{html.escape(p.replace('&', 'and'))}</p>" for p in part)
-        + "</div>"
-        for i, part in enumerate(parts)
-    )
-    (tmp / "doc.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?><TEI xmlns="http://www.tei-c.org/ns/1.0">'
-        "<teiHeader><titleStmt><title>Corpus docs</title></titleStmt></teiHeader>"
-        f"<text><body>{divs}</body></text></TEI>",
-        encoding="utf-8",
-    )
     (tmp / "doc.md").write_text(md_doc, encoding="utf-8")
     (tmp / "doc.html").write_text(html_doc, encoding="utf-8")
-    (tmp / "doc.txt").write_text(mixed, encoding="utf-8")
     return {"md": md_doc, "html": html_doc, "mixed": mixed, "letters": letters}
 
 
@@ -250,79 +248,19 @@ def main() -> None:
         f"html {len(fx['html'].encode()) // 1024}KB, "
         f"mixed text {len(fx['mixed'].encode()) // 1024}KB, "
         f"letters {len(fx['letters'].encode()) // 1024}KB, "
-        f"epub {(tmp / 'doc.epub').stat().st_size // 1024}KB, "
-        f"tei {(tmp / 'doc.xml').stat().st_size // 1024}KB"
+        f"epub {(tmp / 'doc.epub').stat().st_size // 1024}KB"
     )
 
-    from research_engine.adapters.storage.postgres.repositories.passages import _is_known_config
-    from research_engine.domain.nodes import DocumentNode
     from research_engine.modules.epub import EPUBModule
     from research_engine.modules.html import HTMLModule
     from research_engine.modules.markdown import MarkdownModule
-    from research_engine.modules.plain_text import PlainTextModule
-    from research_engine.modules.tei_xml import TEIXMLModule
-    from research_engine.services.ingestion.chunking.fixed_window import FixedWindowChunker
     from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
     from research_engine.services.ingestion.chunking.structural import StructuralChunker
-    from research_engine.services.ingestion.chunking.whole_or_paragraph import (
-        WholeOrParagraphChunker,
-    )
-    from research_engine.services.search import hybrid
-    from research_engine.services.search.windows import _build_window, choose_window
-    from research_engine.services.text.anchoring import Span
-    from research_engine.services.text.dates import (
-        dominant_century,
-        parse_fuzzy_date,
-        scan_dates,
-    )
+    from research_engine.services.text.dates import dominant_century
     from research_engine.services.verification import quote
-    from research_engine.services.works import drafting
 
     os.environ["RE_RUST_BACKEND"] = "python"
     text = fx["mixed"]
-
-    # Production shapes: search fuses k_vec=k_kw=100 hits, then windows each
-    # hit inside a book-sized canonical text.
-    rng = random.Random(20260923)
-    hit_ids = [uuid.uuid4() for _ in range(150)]
-    vec_hits = [(pid, rng.random()) for pid in hit_ids[:100]]
-    kw_hits = [(pid, rng.random()) for pid in hit_ids[50:]]
-    doc_id = uuid.uuid4()
-    chain = [
-        DocumentNode(
-            id=uuid.uuid4(),
-            document_id=doc_id,
-            parent_id=None,
-            path="r" + ".n0" * depth,
-            depth=depth,
-            position=0,
-            node_type="section",
-            title=title,
-            char_start=start,
-            char_end=end,
-            created_at=datetime.now(UTC),
-        )
-        for start, end, depth, title in [
-            (0, 900_000, 0, "A Marginal Jew"),
-            (100_000, 124_267, 1, "Chapter 14"),
-        ]
-    ]
-    span = Span(110_000, 112_000)
-    plan = choose_window(span, chain, budget_chars=6_000, min_chars=800)
-    hit = SimpleNamespace(
-        id=uuid.uuid4(),
-        document_id=doc_id,
-        char_start=span.start,
-        char_end=span.end,
-        node_id=chain[-1].id,
-        text="chunk",
-    )
-    book = (text * 3)[:900_000]
-    cite = uuid.uuid4()
-    drafted = "\n\n".join(
-        p + (f" {drafting._format_marker(cite)}" if i % 3 == 0 else "")
-        for i, p in enumerate(fx["md"].split("\n\n"))
-    )
 
     loops: list[asyncio.AbstractEventLoop] = []
 
@@ -333,8 +271,7 @@ def main() -> None:
 
     md_text, _, md_meta = asyncio.run(MarkdownModule().parse(tmp / "doc.md"))
     sections = md_meta["sections"]
-    prose, fixed = ProseWindowChunker(), FixedWindowChunker()
-    structural, whole = StructuralChunker(), WholeOrParagraphChunker()
+    prose, structural = ProseWindowChunker(), StructuralChunker()
 
     workloads = [
         Workload("normalize", lambda: quote._normalize(text)),
@@ -342,29 +279,13 @@ def main() -> None:
         Workload("normalize_with_map", lambda: quote._normalize_with_map(text), trials=7),
         Workload("parse markdown", on_loop(lambda: MarkdownModule().parse(tmp / "doc.md"))),
         Workload("parse html", on_loop(lambda: HTMLModule().parse(tmp / "doc.html"))),
-        Workload("parse plain", on_loop(lambda: PlainTextModule().parse(tmp / "doc.txt"))),
         Workload("parse epub", on_loop(lambda: EPUBModule().parse(tmp / "doc.epub"))),
-        Workload("parse tei", on_loop(lambda: TEIXMLModule().parse(tmp / "doc.xml"))),
         Workload("chunk prose", on_loop(lambda: prose.chunk(text, {}))),
-        Workload("chunk fixed", on_loop(lambda: fixed.chunk(text, {}))),
-        Workload("chunk whole_or_paragraph", on_loop(lambda: whole.chunk(text, {}))),
         Workload(
             "chunk structural",
             on_loop(lambda: structural.chunk(sections, {}, full_text=md_text)),
         ),
-        Workload("scan_dates letters", lambda: scan_dates(fx["letters"], century=1800), trials=7),
         Workload("dominant_century letters", lambda: dominant_century(fx["letters"])),
-        Workload("parse_fuzzy_date", lambda: parse_fuzzy_date("March 24th, 1862"), 5000),
-        Workload("find_markers drafted", lambda: drafting._find_markers(drafted), 20),
-        Workload("rrf_fuse 2x100", lambda: hybrid._rrf_fuse(vec_hits, kw_hits), number=200),
-        Workload("weighted_fuse 2x100", lambda: hybrid._weighted_fuse(vec_hits, kw_hits), 200),
-        Workload(
-            "choose_window",
-            lambda: choose_window(span, chain, budget_chars=6_000, min_chars=800),
-            2000,
-        ),
-        Workload("build_window 900KB doc", lambda: _build_window(hit, plan, chain, book), 200),
-        Workload("is_known_config", lambda: _is_known_config("english"), 5000),
     ]
 
     print(
@@ -375,9 +296,10 @@ def main() -> None:
     for w in workloads:
         r = _measure(w, args.trials or w.trials)
         results.append(r)
+        verdict = "KEEP" if r.keep else "KEEP*" if r.name in JUDGED_KEEPS else "revert"
         print(
             f"{r.name:26} {_fmt(r.py_med):>10} {_fmt(r.rs_med):>10} {r.ratio:9.2f} "
-            f"{r.conservative:10.2f} {_fmt(r.saved):>10}  {'KEEP' if r.keep else 'revert'}"
+            f"{r.conservative:10.2f} {_fmt(r.saved):>10}  {verdict}"
         )
 
     for loop in loops:
@@ -387,8 +309,13 @@ def main() -> None:
     kept = [r.name for r in results if r.keep]
     print(
         f"\nGate: python p25 / rust p75 >= {GATE_RATIO}x and >= {_fmt(GATE_SAVED_S)} saved "
-        f"per call (median). Keep {len(kept)}/{len(results)}: {', '.join(kept) or 'none'}"
+        f"per call (median). Clear: {len(kept)}/{len(results)}."
     )
+    for r in results:
+        if not r.keep and r.name in JUDGED_KEEPS:
+            print(f"KEEP* {r.name}: {JUDGED_KEEPS[r.name]}")
+    if failing := [r.name for r in results if not r.keep and r.name not in JUDGED_KEEPS]:
+        print(f"REGRESSION: shipped seams now failing the gate: {', '.join(failing)}")
 
 
 if __name__ == "__main__":
