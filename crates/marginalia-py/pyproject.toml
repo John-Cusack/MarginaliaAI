@@ -1,0 +1,34 @@
+[project]
+name = "marginalia-ai-accelerator"
+version = "0.6.2"
+description = "Prebuilt Rust accelerator for marginalia-ai (optional; pure-Python fallback built in)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "MarginaliaAI" }]
+keywords = ["corpus", "mcp", "research", "rust"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Rust",
+    "Topic :: Text Processing :: Indexing",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/John-Cusack/MarginaliaAI"
+Source = "https://github.com/John-Cusack/MarginaliaAI"
+Issues = "https://github.com/John-Cusack/MarginaliaAI/issues"
+Changelog = "https://github.com/John-Cusack/MarginaliaAI/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "marginalia_rs"
+features = ["extension-module"]

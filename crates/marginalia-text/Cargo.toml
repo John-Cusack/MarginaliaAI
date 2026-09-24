@@ -1,0 +1,12 @@
+[package]
+name = "marginalia-text"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marginalia-types = { path = "../marginalia-types" }
+regex = "1"
+# Pinned to the release whose tables are Unicode 15.1.0, CPython 3.13's
+# `unicodedata.unidata_version` (see `UNICODE_VERSION`): a newer release
+# composes and decomposes code points Python 3.13 leaves alone.
+unicode-normalization = "=0.1.23"

@@ -1,0 +1,10 @@
+[package]
+name = "marginalia-chunk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+marginalia-types = { path = "../marginalia-types" }
+marginalia-text = { path = "../marginalia-text" }
+serde = { workspace = true }
+serde_json = { workspace = true }
