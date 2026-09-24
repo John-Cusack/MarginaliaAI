@@ -16,6 +16,15 @@ mod parse;
 mod windows;
 mod works;
 
+/// Cargo profile this extension was compiled under, exposed as
+/// `marginalia_rs.BUILD_PROFILE`. Plain `maturin build` is the dev profile
+/// (opt-level 0, ~10x slower), so benchmarks refuse anything but `release`.
+/// Selected by `cfg` rather than a runtime `if`: no branch, no coverage region.
+#[cfg(debug_assertions)]
+const BUILD_PROFILE: &str = "debug";
+#[cfg(not(debug_assertions))]
+const BUILD_PROFILE: &str = "release";
+
 /// Fold away the differences that separate a quotation from its source.
 ///
 /// Mirrors `services/text/normalize.py::normalize` exactly.
@@ -71,6 +80,8 @@ fn text_module(py: Python<'_>) -> Bound<'_, PyModule> {
 /// The `marginalia_rs` extension root: one submodule per rewrite phase.
 #[pymodule]
 fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("BUILD_PROFILE", BUILD_PROFILE)
+        .expect("module attribute assignment");
     m.add_submodule(&text_module(py))
         .expect("submodule name is unique");
     m.add_submodule(&chunk::chunk_module(py))
@@ -86,7 +97,7 @@ fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use super::{
         marginalia_rs, normalize, normalize_for_matching, normalize_whitespace, normalize_with_map,
-        text_module,
+        text_module, BUILD_PROFILE,
     };
     use marginalia_text::normalize as text_normalize;
     use pyo3::prelude::*;
@@ -125,6 +136,13 @@ mod tests {
         Python::with_gil(|py| {
             let root = PyModule::new(py, "marginalia_rs").unwrap();
             marginalia_rs(py, &root).unwrap();
+            assert_eq!(
+                root.getattr("BUILD_PROFILE")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                BUILD_PROFILE,
+            );
             let text = root.getattr("text").unwrap();
             assert_eq!(
                 text.getattr("NORMALIZATION_VERSION")
@@ -179,5 +197,12 @@ mod tests {
                 assert!(works.hasattr(name).unwrap(), "missing {name}");
             }
         });
+    }
+
+    /// `cargo test` compiles the dev profile, so the constant must say so.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn test_builds_report_the_debug_profile() {
+        assert_eq!(BUILD_PROFILE, "debug");
     }
 }
