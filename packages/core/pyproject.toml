@@ -38,9 +38,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-accelerated = [
-    "marginalia-ai-accelerator>=0.6,<0.7",
-]
 openai = [
     "openai>=1.10,<2",
 ]
@@ -91,20 +88,30 @@ Issues = "https://github.com/John-Cusack/MarginaliaAI/issues"
 Changelog = "https://github.com/John-Cusack/MarginaliaAI/blob/main/CHANGELOG.md"
 Documentation = "https://github.com/John-Cusack/MarginaliaAI/tree/main/docs"
 
+# The wheel carries a native extension, `research_engine._native`, built from
+# crates/marginalia-py: every install gets the Rust paths (see
+# `research_engine._rust`). maturin takes the version from that crate's
+# Cargo.toml, which a unit test keeps equal to `research_engine.__version__`.
 [build-system]
-requires = ["hatchling>=1.26"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
 
-[tool.hatch.version]
-path = "src/research_engine/__init__.py"
+[tool.maturin]
+manifest-path = "../../crates/marginalia-py/Cargo.toml"
+python-source = "src"
+module-name = "research_engine._native"
+bindings = "pyo3"
+features = ["extension-module"]
+# A local tree carries bytecode caches; the wheel must not.
+exclude = ["**/__pycache__/**", "**/*.pyc"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/research_engine"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "src/research_engine",
-    "README.md",
-    "LICENSE",
-    "pyproject.toml",
+# uv reinstalls this editable package when any of these change, so a Rust
+# edit is rebuilt on the next `uv sync` / `uv run`.
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "../../Cargo.toml" },
+    { file = "../../Cargo.lock" },
+    { file = "../../crates/**/Cargo.toml" },
+    { file = "../../crates/**/*.rs" },
 ]

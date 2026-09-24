@@ -3,7 +3,7 @@
 `auto` may only take the Rust path when the accelerator's compiled Unicode
 tables are the interpreter's: otherwise NFKC and word-character answers
 differ between backends and "byte-identical" stops being true. A fake
-`marginalia_rs` stands in, so these run with or without the wheel.
+`research_engine._native` stands in, so these run with or without a build.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from research_engine import _rust
 
 
 def _fake_accelerator(monkeypatch, **attrs):
-    module = types.ModuleType("marginalia_rs")
+    module = types.ModuleType("research_engine._native")
     for name, value in attrs.items():
         setattr(module, name, value)
-    monkeypatch.setitem(sys.modules, "marginalia_rs", module)
+    monkeypatch.setitem(sys.modules, "research_engine._native", module)
     return module
 
 
@@ -59,14 +59,14 @@ def test_forced_rust_skips_the_guard(monkeypatch):
 
 
 def test_forced_rust_without_the_wheel_raises(monkeypatch):
-    monkeypatch.setitem(sys.modules, "marginalia_rs", None)
+    monkeypatch.setitem(sys.modules, "research_engine._native", None)
     monkeypatch.setenv("RE_RUST_BACKEND", "rust")
-    with pytest.raises(RuntimeError, match="not installed"):
+    with pytest.raises(RuntimeError, match="not built"):
         _rust.backend()
 
 
 def test_auto_without_the_wheel_is_python(monkeypatch):
-    monkeypatch.setitem(sys.modules, "marginalia_rs", None)
+    monkeypatch.setitem(sys.modules, "research_engine._native", None)
     monkeypatch.setenv("RE_RUST_BACKEND", "auto")
     assert _rust.backend() == "python"
 
@@ -75,3 +75,19 @@ def test_unknown_mode_is_rejected(monkeypatch):
     monkeypatch.setenv("RE_RUST_BACKEND", "fortran")
     with pytest.raises(ValueError, match="Unrecognized"):
         _rust.backend()
+
+
+def test_wheel_version_follows_the_package_version():
+    """maturin versions the wheel from the extension crate's Cargo.toml.
+
+    `research_engine.__version__` is what users and the release tag check
+    read, so the two must move together.
+    """
+    import tomllib
+    from pathlib import Path
+
+    import research_engine
+
+    cargo = Path(__file__).resolve().parents[3] / "crates" / "marginalia-py" / "Cargo.toml"
+    with cargo.open("rb") as f:
+        assert tomllib.load(f)["package"]["version"] == research_engine.__version__

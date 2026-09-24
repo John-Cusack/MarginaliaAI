@@ -135,7 +135,7 @@ dependencies = [
 
 [[package]]
 name = "marginalia-py"
-version = "0.1.0"
+version = "0.6.3"
 dependencies = [
  "marginalia-chunk",
  "marginalia-parse",

@@ -51,7 +51,7 @@ def _dumps(drafts):
 class TestTextChunkerParity:
     @pytest.mark.parametrize("text", TEXTS)
     async def test_prose_matches_across_backends(self, text, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         meta = {"source": "t"}
         chunker = ProseWindowChunker()
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
@@ -64,7 +64,7 @@ class TestTextChunkerParity:
 
     async def test_exotic_metadata_survives_by_identity(self, monkeypatch):
         """Prose metadata never crosses the seam: identity, not copy."""
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         text = "Hello world. " * 100
         chunker = ProseWindowChunker()
         monkeypatch.setenv("RE_RUST_BACKEND", "rust")
@@ -76,7 +76,7 @@ class TestTextChunkerParity:
         assert _dumps(actual) == _dumps(expected)
 
     async def test_prose_budget_rejection_matches(self, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         chunker = ProseWindowChunker(max_tokens=0)
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
         with pytest.raises(ValueError, match="max_tokens must be positive"):
@@ -95,7 +95,7 @@ SECTIONS = [
 
 class TestStructuralParity:
     async def test_sections_match_across_backends(self, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         meta = {"doc": "d1", "n": 1}
         chunker = StructuralChunker()
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
@@ -108,7 +108,7 @@ class TestStructuralParity:
         assert actual[1].locator == {"heading": "Beta", "level": 2, "page": 7}
 
     async def test_locate_via_full_text_with_repeated_headings(self, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         full = "Intro here. Body one. Body one. Tail end."
         sections = [
             {"text": "Body one.", "heading": "B"},
@@ -124,7 +124,7 @@ class TestStructuralParity:
         assert actual[0].char_start != actual[1].char_start
 
     async def test_oversized_section_windows_with_parts(self, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         text = "Sentence one here. " * 400
         sections = [{"text": text, "heading": "Long", "level": 1, "char_start": 0, "char_end": len(text)}]
         chunker = StructuralChunker(max_tokens=100, overlap_tokens=10)
@@ -137,7 +137,7 @@ class TestStructuralParity:
         assert all(d.locator["section_parts"] == len(actual) for d in actual)
 
     async def test_exotic_metadata_rebuilt_equal(self, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         chunker = StructuralChunker()
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
         expected = await chunker.chunk(SECTIONS, EXOTIC_METADATA)
@@ -157,7 +157,7 @@ class TestStructuralParity:
         ],
     )
     async def test_chunking_errors_match(self, sections, full, match, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         chunker = StructuralChunker()
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
         with pytest.raises(ChunkingError) as python_err:
@@ -179,7 +179,7 @@ class TestStructuralParity:
     )
     async def test_sections_rust_refuses_take_pythons_answer(self, section, monkeypatch):
         """Values that can't cross (non-JSON, NaN, surrogates, past i64) fall back."""
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         chunker = StructuralChunker()
         full = section["text"]
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
@@ -208,7 +208,7 @@ class TestStructuralParity:
         ],
     )
     async def test_loose_sections_match_python(self, sections, full, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         chunker = StructuralChunker()
         outcomes = []
         for backend in ("python", "rust"):
@@ -223,8 +223,8 @@ class TestStructuralParity:
         import sys
 
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
-        monkeypatch.delitem(sys.modules, "marginalia_rs", raising=False)
-        monkeypatch.setitem(sys.modules, "marginalia_rs", None)
+        monkeypatch.delitem(sys.modules, "research_engine._native", raising=False)
+        monkeypatch.setitem(sys.modules, "research_engine._native", None)
         drafts = await ProseWindowChunker().chunk("Hello world. " * 50, {"m": 1})
         assert drafts
         # json is only imported for the Rust path; the module stays lean otherwise.
