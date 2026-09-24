@@ -87,19 +87,21 @@ jobs:
           rustup set profile minimal
           rustup update stable
           rustup component add llvm-tools-preview
-          cargo install cargo-llvm-cov --locked --version 0.6
+          cargo install cargo-llvm-cov --locked --version 0.9.1
 
       - name: Install dependencies
         run: uv sync --group dev
 
       # PyO3 links the test binaries against libpython, which lives outside
-      # the loader's default search path for a uv-managed interpreter. The
-      # venv interpreter is also the only one whose in-process sys.path sees
-      # the project (the seam's error tests import the real core modules).
+      # the loader's default search path for a uv-managed interpreter. An
+      # embedded interpreter never activates the venv, so the seam's error
+      # tests (which import the real core modules) get the venv's sys.path,
+      # editable installs included, through PYTHONPATH.
       - name: Point PyO3 at the project interpreter
         run: |
           echo "PYO3_PYTHON=$PWD/.venv/bin/python" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$($PWD/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')" >> "$GITHUB_ENV"
+          echo "PYTHONPATH=$($PWD/.venv/bin/python -c 'import os, sys; print(os.pathsep.join(p for p in sys.path if p))')" >> "$GITHUB_ENV"
 
 
       - name: Rust tests
