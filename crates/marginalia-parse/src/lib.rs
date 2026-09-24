@@ -7,12 +7,17 @@
 
 pub mod markdown;
 
-/// `pathlib.Path.name`'s stem: text before the last dot, except a leading
-/// dot never starts a suffix (`Path(".bashrc").stem == ".bashrc"`).
+/// `pathlib.Path(file_name).stem` as CPython 3.11-3.13 computes it: the
+/// name before its last dot, unless that dot leads (`".bashrc"`) or ends the
+/// name (`"notes."`, `".."`). Only the platform's separators split: a
+/// backslash is part of a POSIX file name.
 pub fn py_stem(file_name: &str) -> &str {
+    #[cfg(windows)]
     let base = file_name.rsplit(['/', '\\']).next().unwrap_or(file_name);
+    #[cfg(not(windows))]
+    let base = file_name.rsplit('/').next().unwrap_or(file_name);
     match base.rfind('.') {
-        Some(0) | None => base,
-        Some(i) => &base[..i],
+        Some(i) if i > 0 && i < base.len() - 1 => &base[..i],
+        _ => base,
     }
 }

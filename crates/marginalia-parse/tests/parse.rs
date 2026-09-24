@@ -162,4 +162,10 @@ fn py_stem_follows_pathlib() {
     assert_eq!(py_stem(".bashrc"), ".bashrc");
     assert_eq!(py_stem("noext"), "noext");
     assert_eq!(py_stem("/a/b/c.md"), "c");
+    // A trailing dot is not a suffix separator (`Path("notes.").stem`).
+    assert_eq!(py_stem("notes."), "notes.");
+    assert_eq!(py_stem(".."), "..");
+    assert_eq!(py_stem("é.md"), "é");
+    #[cfg(not(windows))]
+    assert_eq!(py_stem("a\\b.md"), "a\\b");
 }

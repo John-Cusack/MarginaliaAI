@@ -115,8 +115,10 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.package == 'accelerator')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - run: uv python install 3.13
       - run: uv sync --group dev --python 3.13
       - name: Verify package-specific tag
@@ -157,11 +159,13 @@ jobs:
           - { os: windows-latest, target: x64, manylinux: "", smoke: true }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - run: uv python install 3.13
       - name: Build wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
           target: ${{ matrix.target }}
@@ -173,7 +177,7 @@ jobs:
         shell: bash
         run: |
           uv run --isolated --no-project --python 3.13 --with dist/accel/marginalia_ai_accelerator-*.whl python -c 'import marginalia_rs; assert marginalia_rs.BUILD_PROFILE == "release"; assert marginalia_rs.text.normalize("fis-\ncal") == "fiscal"'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: accelerator-distributions-${{ matrix.os }}-${{ matrix.target }}
           path: dist/accel/
@@ -185,11 +189,13 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.package == 'accelerator')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - run: uvx --from 'maturin>=1.15,<2' maturin sdist --manifest-path crates/marginalia-py/Cargo.toml --out dist/accel
       - run: uvx --from twine twine check --strict dist/accel/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: accelerator-sdist
           path: dist/accel/
@@ -207,12 +213,12 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: accelerator-*
           path: dist/accel
           merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/accel/
 
@@ -229,12 +235,12 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: accelerator-*
           path: dist/accel
           merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/accel/
           repository-url: https://test.pypi.org/legacy/

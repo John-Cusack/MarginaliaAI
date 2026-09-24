@@ -77,12 +77,22 @@ fn chunk_prose(
 ///
 /// The adapter only ever reaches this on the crate's own error paths.
 fn chunking_error(py: Python<'_>, message: String) -> PyErr {
-    let errors = PyModule::import(py, "research_engine.domain.errors")
-        .expect("core error module is importable");
-    let cls = errors
-        .getattr("ChunkingError")
-        .expect("ChunkingError is defined");
-    PyErr::from_value(cls.call1((message,)).expect("exception construction"))
+    domain_error(
+        py,
+        "research_engine.domain.errors",
+        "ChunkingError",
+        message,
+    )
+}
+
+/// Build `module.class(message)` as the raised error. The accelerator does
+/// not depend on `marginalia-ai`, so the class can be missing: then the
+/// import (or attribute) error itself is raised, never a panic.
+fn domain_error(py: Python<'_>, module: &str, class: &str, message: String) -> PyErr {
+    PyModule::import(py, module)
+        .and_then(|errors| errors.getattr(class))
+        .and_then(|cls| cls.call1((message,)))
+        .map_or_else(|err| err, PyErr::from_value)
 }
 
 /// Section-table chunking.
@@ -140,7 +150,7 @@ pub fn register_chunkers(m: &Bound<'_, PyModule>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{chunk_prose, chunk_structural, prose_error, register_chunkers};
+    use super::{chunk_prose, chunk_structural, domain_error, prose_error, register_chunkers};
     use marginalia_chunk::{prose_window, structural};
     use pyo3::prelude::*;
 
@@ -204,6 +214,22 @@ mod tests {
             assert_eq!(got["locator"], serde_json::to_value(&want.locator).unwrap());
             assert_eq!(got["chunker_version"], "4.0");
         }
+    }
+
+    #[test]
+    fn a_missing_error_class_raises_instead_of_panicking() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let err = domain_error(py, "no_such_core_module", "ChunkingError", "m".into());
+            assert!(err.is_instance_of::<pyo3::exceptions::PyModuleNotFoundError>(py));
+            let err = domain_error(
+                py,
+                "research_engine.domain.errors",
+                "NoSuchError",
+                "m".into(),
+            );
+            assert!(err.is_instance_of::<pyo3::exceptions::PyAttributeError>(py));
+        });
     }
 
     #[test]
