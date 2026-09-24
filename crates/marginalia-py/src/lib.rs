@@ -73,7 +73,9 @@ fn text_module(py: Python<'_>) -> Bound<'_, PyModule> {
 
 /// The `marginalia_rs` extension root: one submodule per area, each holding
 /// only the seams the accelerator benchmark's gate and the review kept.
+/// Imported as `research_engine._native`; the crate keeps its old name.
 #[pymodule]
+#[pyo3(name = "_native")]
 fn marginalia_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("BUILD_PROFILE", BUILD_PROFILE)
         .expect("module attribute assignment");

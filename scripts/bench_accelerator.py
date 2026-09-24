@@ -31,8 +31,8 @@ not speed.
 
 Release wheel only: plain `maturin build` is the dev profile (opt-level 0,
 ~10x slow against identical sources), so the script refuses any
-`marginalia_rs.BUILD_PROFILE` but "release". Build with
-`maturin build --release` (release.yml does; ci.yml's parity wheel is dev).
+`research_engine._native.BUILD_PROFILE` but "release". Build with
+`uv sync` (maturin's PEP 517 build is release) or `maturin build --release`.
 
 Usage: `uv run python scripts/bench_accelerator.py [--trials N] [--cpu N]`
 """
@@ -199,13 +199,13 @@ def main() -> None:
         parser.error("--trials must be >= 4 (quartiles need samples)")
 
     try:
-        import marginalia_rs
+        from research_engine import _native as marginalia_rs
     except ImportError:
-        print("marginalia_rs not installed; nothing to compare against.")
+        print("research_engine._native is not built; nothing to compare against.")
         sys.exit(2)
     profile = getattr(marginalia_rs, "BUILD_PROFILE", "unknown (pre-BUILD_PROFILE wheel)")
     if profile != "release":
-        print(f"marginalia_rs build profile is {profile}; benchmark a release wheel only:")
+        print(f"research_engine._native build profile is {profile}; benchmark a release build:")
         print("  maturin build --release --manifest-path crates/marginalia-py/Cargo.toml")
         sys.exit(2)
 

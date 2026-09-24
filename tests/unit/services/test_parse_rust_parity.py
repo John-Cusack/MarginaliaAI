@@ -57,7 +57,7 @@ class TestMarkdownParity:
         ],
     )
     async def test_parse_matches_across_backends(self, text, tmp_path, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         path = _write(tmp_path, "b.md", text.encode("utf-8"))
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
         expected = await MarkdownModule().parse(path)
@@ -67,7 +67,7 @@ class TestMarkdownParity:
         assert actual[2]["sections"] == expected[2]["sections"]
 
     async def test_book_sections_keep_shape(self, tmp_path, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         path = _write(tmp_path, "b.md", BOOK.encode("utf-8"))
         monkeypatch.setenv("RE_RUST_BACKEND", "rust")
         text, title, meta = await MarkdownModule().parse(path)
@@ -84,8 +84,8 @@ class TestMarkdownParity:
         import sys
 
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
-        monkeypatch.delitem(sys.modules, "marginalia_rs", raising=False)
-        monkeypatch.setitem(sys.modules, "marginalia_rs", None)
+        monkeypatch.delitem(sys.modules, "research_engine._native", raising=False)
+        monkeypatch.setitem(sys.modules, "research_engine._native", None)
         path = _write(tmp_path, "b.md", BOOK.encode("utf-8"))
         _, title, meta = await MarkdownModule().parse(path)
         assert title == "The Whole Thing"

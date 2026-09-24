@@ -7,12 +7,14 @@ name: Release
 #   marginalia-ai-sdk             John-Cusack   MarginaliaAI  release.yml  pypi-sdk
 #   marginalia-ai                 John-Cusack   MarginaliaAI  release.yml  pypi-core
 #   marginalia-ai-plugin-history  John-Cusack   MarginaliaAI  release.yml  pypi-history
-#   marginalia-ai-accelerator     John-Cusack   MarginaliaAI  release.yml  pypi-accelerator
 #
 # Manual dispatch publishes one selected distribution to TestPyPI. A coordinated
-# `v*` tag publishes SDK, core, then history, plus the accelerator alongside;
-# `sdk-v*`, `core-v*` and `accel-v*` tags publish only that distribution, so
-# immutable sibling artifacts are never retried.
+# `v*` tag publishes SDK, core, then history; `sdk-v*` and `core-v*` tags publish
+# only that distribution, so immutable sibling artifacts are never retried.
+#
+# marginalia-ai carries a Rust extension (research_engine._native), so core
+# publishes per-platform wheels built by maturin plus an sdist that builds it
+# from source; everything else stays pure Python.
 
 on:
   push:
@@ -20,7 +22,6 @@ on:
       - "v*"
       - "core-v*"
       - "sdk-v*"
-      - "accel-v*"
   workflow_dispatch:
     inputs:
       package:
@@ -32,15 +33,13 @@ on:
           - sdk
           - core
           - history
-          - accelerator
 permissions:
   contents: read
 
 jobs:
   build-sdk:
     if: >-
-      (github.event_name == 'push' && !startsWith(github.ref_name, 'core-v') &&
-      !startsWith(github.ref_name, 'accel-v')) ||
+      (github.event_name == 'push' && !startsWith(github.ref_name, 'core-v')) ||
       (github.event_name == 'workflow_dispatch' && inputs.package == 'sdk')
     runs-on: ubuntu-latest
     steps:
@@ -71,7 +70,6 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       !startsWith(github.ref_name, 'core-v') &&
-      !startsWith(github.ref_name, 'accel-v') &&
       needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-sdk
@@ -106,14 +104,18 @@ jobs:
           packages-dir: dist/sdk/
           repository-url: https://test.pypi.org/legacy/
 
-  test-accelerator:
-    # The wheel only ships if the Rust answers what the Python answers. Same
-    # gates as CI's rust job, on the interpreter whose Unicode tables the
-    # accelerator is built for (the only one where `auto` engages it).
+  build-core:
+    needs: [publish-sdk, publish-sdk-testpypi]
     if: >-
-      (github.event_name == 'push' && (startsWith(github.ref_name, 'v') || startsWith(github.ref_name, 'accel-v'))) ||
-      (github.event_name == 'workflow_dispatch' && inputs.package == 'accelerator')
+      always() &&
+      ((github.event_name == 'push' && startsWith(github.ref_name, 'core-v')) ||
+      (github.event_name == 'push' && startsWith(github.ref_name, 'v') &&
+      needs.publish-sdk.result == 'success') ||
+      (github.event_name == 'workflow_dispatch' && inputs.package == 'core'))
     runs-on: ubuntu-latest
+    # The gate: nothing below builds or publishes unless both backends pass.
+    # 3.13 because its unicodedata matches the extension's Unicode tables, so
+    # `auto` exercises Rust; the second pass pins the pure-Python path.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -122,31 +124,28 @@ jobs:
       - run: uv python install 3.13
       - run: uv sync --group dev --python 3.13
       - name: Verify package-specific tag
-        if: github.event_name == 'push' && startsWith(github.ref_name, 'accel-v')
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'core-v')
         run: >-
-          test "accel-v$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/marginalia-py/pyproject.toml)"
+          test "core-v$(uv run python -c
+          'import research_engine; print(research_engine.__version__)')"
           = "$GITHUB_REF_NAME"
+      - run: uv run ruff check packages/ tests/
       - name: Rust tests
         run: |
-          echo "PYO3_PYTHON=$PWD/.venv/bin/python" >> "$GITHUB_ENV"
           export PYO3_PYTHON=$PWD/.venv/bin/python
           export LD_LIBRARY_PATH=$($PYO3_PYTHON -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
           export PYTHONPATH=$($PYO3_PYTHON -c 'import os, sys; print(os.pathsep.join(p for p in sys.path if p))')
           cargo test --workspace
-      - name: Parity suites against a release wheel
+      - name: Unit tests, Rust backend
         run: |
-          uvx --from 'maturin>=1.15,<2' maturin build --release -i "$PYO3_PYTHON" --manifest-path crates/marginalia-py/Cargo.toml --out dist/test-wheel
-          uv pip install dist/test-wheel/*.whl
-          RE_RUST_BACKEND=rust uv run pytest tests/unit/services/test_text_rust_parity.py tests/unit/services/test_chunkers_rust_parity.py tests/unit/services/test_parse_rust_parity.py tests/unit/services/test_rust_backend.py -q
           uv run python -c "from research_engine import _rust; assert _rust.backend() == 'rust'"
+          uv run pytest tests/unit -q
+      - name: Unit tests, Python backend
+        run: RE_RUST_BACKEND=python uv run pytest tests/unit -q
 
-  build-accelerator:
-    # Independent of the SDK -> core -> history chain: nothing depends on it
-    # and it depends on nothing. The pure-Python fallback means platforms
-    # without a prebuilt wheel still install and work.
-    if: >-
-      (github.event_name == 'push' && (startsWith(github.ref_name, 'v') || startsWith(github.ref_name, 'accel-v'))) ||
-      (github.event_name == 'workflow_dispatch' && inputs.package == 'accelerator')
+  build-core-wheels:
+    needs: build-core
+    if: always() && needs.build-core.result == 'success'
     strategy:
       matrix:
         include:
@@ -170,153 +169,95 @@ jobs:
           command: build
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          # Relative to the repo root: the smoke and upload steps read here.
-          args: --release --out dist/accel --manifest-path crates/marginalia-py/Cargo.toml
+          working-directory: packages/core
+          # Absolute: the smoke and upload steps read the repo root.
+          args: --release --out ${{ github.workspace }}/dist/core
+      # The lightweight base install still pulls no ML stack, the CLI starts,
+      # and `auto` engages the extension on the interpreter it matches.
       - name: Smoke the wheel without Rust
         if: matrix.smoke
         shell: bash
         run: |
-          uv run --isolated --no-project --python 3.13 --with dist/accel/marginalia_ai_accelerator-*.whl python -c 'import marginalia_rs; assert marginalia_rs.BUILD_PROFILE == "release"; assert marginalia_rs.text.normalize("fis-\ncal") == "fiscal"'
+          uv venv --seed --python 3.13 "$RUNNER_TEMP/re-base"
+          py="$RUNNER_TEMP/re-base/bin/python"; [ -x "$py" ] || py="$RUNNER_TEMP/re-base/Scripts/python.exe"
+          uv pip install --python "$py" marginalia-ai-sdk==0.6.1 dist/core/marginalia_ai-*.whl
+          "$py" -c 'from importlib.util import find_spec; assert find_spec("torch") is None; assert find_spec("docling") is None; assert find_spec("sentence_transformers") is None'
+          "$py" -c 'from research_engine import _rust, _native; assert _native.BUILD_PROFILE == "release"; assert _rust.backend() == "rust"; assert _native.text.normalize("fis-\ncal") == "fiscal"'
+          bin="$(dirname "$py")"
+          "$bin/research-engine" --help
+          "$bin/research-engine" config --help
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: accelerator-distributions-${{ matrix.os }}-${{ matrix.target }}
-          path: dist/accel/
+          name: core-distributions-${{ matrix.os }}-${{ matrix.target }}
+          path: dist/core/
           if-no-files-found: error
 
-  build-accelerator-sdist:
-    if: >-
-      (github.event_name == 'push' && (startsWith(github.ref_name, 'v') || startsWith(github.ref_name, 'accel-v'))) ||
-      (github.event_name == 'workflow_dispatch' && inputs.package == 'accelerator')
+  build-core-sdist:
+    needs: build-core
+    if: always() && needs.build-core.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-      - run: uvx --from 'maturin>=1.15,<2' maturin sdist --manifest-path crates/marginalia-py/Cargo.toml --out dist/accel
-      - run: uvx --from twine twine check --strict dist/accel/*
+      - name: Build sdist
+        working-directory: packages/core
+        run: uvx --from 'maturin>=1.15,<2' maturin sdist --out "$GITHUB_WORKSPACE/dist/core"
+      - run: uvx --from twine twine check --strict dist/core/*
+      # Platforms without a prebuilt wheel install from this: it must build.
+      - name: Build a wheel from the sdist
+        run: |
+          uv python install 3.13
+          uv venv --python 3.13 "$RUNNER_TEMP/from-sdist"
+          uv pip install --python "$RUNNER_TEMP/from-sdist/bin/python" marginalia-ai-sdk==0.6.1 dist/core/marginalia_ai-*.tar.gz
+          "$RUNNER_TEMP/from-sdist/bin/python" -c 'from research_engine import _rust; assert _rust.backend() == "rust"'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: accelerator-sdist
-          path: dist/accel/
+          name: core-distributions-sdist
+          path: dist/core/
           if-no-files-found: error
 
-  publish-accelerator:
-    needs: [test-accelerator, build-accelerator, build-accelerator-sdist]
-    if: >-
-      github.event_name == 'push' &&
-      needs.test-accelerator.result == 'success' &&
-      needs.build-accelerator.result == 'success' &&
-      needs.build-accelerator-sdist.result == 'success'
-    runs-on: ubuntu-latest
-    environment: pypi-accelerator
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: accelerator-*
-          path: dist/accel
-          merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-        with:
-          packages-dir: dist/accel/
-
-  publish-accelerator-testpypi:
-    needs: [test-accelerator, build-accelerator, build-accelerator-sdist]
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      inputs.package == 'accelerator' &&
-      needs.test-accelerator.result == 'success' &&
-      needs.build-accelerator.result == 'success' &&
-      needs.build-accelerator-sdist.result == 'success'
-    runs-on: ubuntu-latest
-    environment: pypi-accelerator
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: accelerator-*
-          path: dist/accel
-          merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-        with:
-          packages-dir: dist/accel/
-          repository-url: https://test.pypi.org/legacy/
-
-  build-core:
-    needs: [publish-sdk, publish-sdk-testpypi]
-    if: >-
-      always() &&
-      ((github.event_name == 'push' && startsWith(github.ref_name, 'core-v')) ||
-      (github.event_name == 'push' && startsWith(github.ref_name, 'v') &&
-      needs.publish-sdk.result == 'success') ||
-      (github.event_name == 'workflow_dispatch' && inputs.package == 'core'))
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.11
-      - run: uv sync --group dev
-      - name: Verify package-specific tag
-        if: github.event_name == 'push' && startsWith(github.ref_name, 'core-v')
-        run: >-
-          test "core-v$(uv run python -c
-          'import research_engine; print(research_engine.__version__)')"
-          = "$GITHUB_REF_NAME"
-      - run: uv run ruff check packages/ tests/
-      - run: uv run pytest tests/unit -q
-      - run: uv build --package marginalia-ai --out-dir dist/core
-      - run: uvx --from twine twine check --strict dist/core/*
-      - name: Smoke lightweight base artifact
-        run: |
-          uv venv --seed /tmp/re-base
-          uv pip install --python /tmp/re-base/bin/python marginalia-ai-sdk==0.6.1 dist/core/marginalia_ai-0.6.2-py3-none-any.whl
-          /tmp/re-base/bin/python -c 'from importlib.util import find_spec; assert find_spec("torch") is None; assert find_spec("docling") is None; assert find_spec("sentence_transformers") is None'
-          /tmp/re-base/bin/research-engine --help
-          /tmp/re-base/bin/research-engine config --help
-      - uses: actions/upload-artifact@v4
-        with:
-          name: core-distributions
-          path: dist/core/
-
   publish-core:
-    needs: build-core
+    needs: [build-core-wheels, build-core-sdist]
     if: >-
       always() &&
       github.event_name == 'push' &&
-      needs.build-core.result == 'success'
+      needs.build-core-wheels.result == 'success' &&
+      needs.build-core-sdist.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-core
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: core-distributions
+          pattern: core-distributions-*
           path: dist/core
-      - uses: pypa/gh-action-pypi-publish@release/v1
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/core/
 
   publish-core-testpypi:
-    needs: build-core
+    needs: [build-core-wheels, build-core-sdist]
     if: >-
       always() &&
       github.event_name == 'workflow_dispatch' &&
       inputs.package == 'core' &&
-      needs.build-core.result == 'success'
+      needs.build-core-wheels.result == 'success' &&
+      needs.build-core-sdist.result == 'success'
     runs-on: ubuntu-latest
     environment: pypi-core
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: core-distributions
+          pattern: core-distributions-*
           path: dist/core
-      - uses: pypa/gh-action-pypi-publish@release/v1
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/core/
           repository-url: https://test.pypi.org/legacy/

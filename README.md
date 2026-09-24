@@ -41,7 +41,8 @@ MarginaliaAI requires PostgreSQL 15 or newer with `vector`, `pg_trgm`, and
 [installed-package database setup](packages/core/README.md) to set
 `RE_DB_URL`, upgrade the schema, and configure an MCP client.
 
-From a source checkout:
+From a source checkout (needs a Rust toolchain: `uv sync` compiles the
+`research_engine._native` extension, and rebuilds it when crates change):
 
 ```bash
 uv sync

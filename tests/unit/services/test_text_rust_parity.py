@@ -72,7 +72,7 @@ def _fold_all(text: str) -> tuple:
 class TestFoldParity:
     @pytest.mark.parametrize("raw", FOLD_VECTORS)
     def test_rust_matches_python_output_and_map(self, raw, monkeypatch):
-        marginalia_rs = pytest.importorskip("marginalia_rs")
+        marginalia_rs = pytest.importorskip("research_engine._native")
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
         expected = _fold_all(raw)
         monkeypatch.setenv("RE_RUST_BACKEND", "rust")
@@ -100,7 +100,7 @@ class TestFoldParity:
         assert quote_mod._normalize_with_map(raw) == normalize_py.normalize_with_map(raw)
 
     def test_find_folded_agrees_past_non_ascii(self, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         raw = "préface «« " + HEBREW + " »» " + SOURCE
         needle = normalize_py.normalize_for_matching("“justice and righteousness”")
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
@@ -115,7 +115,7 @@ class TestFoldParity:
 class TestSurrogateFallback:
     def test_lone_surrogate_takes_the_python_path(self, monkeypatch):
         """A lone surrogate can't cross into Rust; the wrappers answer from Python."""
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         raw = "lone \ud800 surrogate, fis-\ncal"
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
         expected = _fold_all(raw)
@@ -145,7 +145,7 @@ class TestTierParity:
         ],
     )
     async def test_tiers_and_spans_match_across_backends(self, quote, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         verifier = self._verifier()
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
         expected = await verifier.verify(quote, DOC)
@@ -155,7 +155,7 @@ class TestTierParity:
         assert actual.model_dump() == expected.model_dump()
 
     async def test_exact_stays_exact_under_rust(self, monkeypatch):
-        pytest.importorskip("marginalia_rs")
+        pytest.importorskip("research_engine._native")
         monkeypatch.setenv("RE_RUST_BACKEND", "rust")
         result = await self._verifier().verify(
             "makes it a flood.", DOC
@@ -168,8 +168,8 @@ class TestBackendSwitch:
         import sys
 
         monkeypatch.setenv("RE_RUST_BACKEND", "auto")
-        monkeypatch.delitem(sys.modules, "marginalia_rs", raising=False)
-        monkeypatch.setitem(sys.modules, "marginalia_rs", None)
+        monkeypatch.delitem(sys.modules, "research_engine._native", raising=False)
+        monkeypatch.setitem(sys.modules, "research_engine._native", None)
         # An unimportable accelerator is auto, not an error.
         assert rust_backend.backend() == "python"
         assert rust_backend.rust_text() is None
@@ -178,17 +178,17 @@ class TestBackendSwitch:
         import sys
 
         monkeypatch.setenv("RE_RUST_BACKEND", "rust")
-        monkeypatch.delitem(sys.modules, "marginalia_rs", raising=False)
-        monkeypatch.setitem(sys.modules, "marginalia_rs", None)
-        with pytest.raises(RuntimeError, match="accelerated"):
+        monkeypatch.delitem(sys.modules, "research_engine._native", raising=False)
+        monkeypatch.setitem(sys.modules, "research_engine._native", None)
+        with pytest.raises(RuntimeError, match="not built"):
             rust_backend.backend()
 
     def test_python_mode_needs_no_wheel(self, monkeypatch):
         import sys
 
         monkeypatch.setenv("RE_RUST_BACKEND", "python")
-        monkeypatch.delitem(sys.modules, "marginalia_rs", raising=False)
-        monkeypatch.setitem(sys.modules, "marginalia_rs", None)
+        monkeypatch.delitem(sys.modules, "research_engine._native", raising=False)
+        monkeypatch.setitem(sys.modules, "research_engine._native", None)
         assert rust_backend.backend() == "python"
 
     def test_unknown_mode_rejected(self, monkeypatch):

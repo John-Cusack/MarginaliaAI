@@ -1355,9 +1355,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-accelerated = [
-    { name = "marginalia-ai-accelerator" },
-]
 dev = [
     { name = "fastapi" },
     { name = "pytest" },
@@ -1416,7 +1413,6 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1,<4" },
     { name = "lxml", marker = "extra == 'documents'", specifier = ">=5.1,<6" },
     { name = "lxml", marker = "extra == 'full'", specifier = ">=5.1,<6" },
-    { name = "marginalia-ai-accelerator", marker = "extra == 'accelerated'", directory = "crates/marginalia-py" },
     { name = "marginalia-ai-sdk", editable = "packages/sdk" },
     { name = "mcp", specifier = ">=1.0,<2" },
     { name = "openai", marker = "extra == 'full'", specifier = ">=1.10,<2" },
@@ -1444,12 +1440,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'embed-server'", specifier = ">=0.27" },
     { name = "uvicorn", marker = "extra == 'full'", specifier = ">=0.27" },
 ]
-provides-extras = ["accelerated", "dev", "document-ai", "documents", "embed-server", "full", "local-inference", "openai"]
-
-[[package]]
-name = "marginalia-ai-accelerator"
-version = "0.6.2"
-source = { directory = "crates/marginalia-py" }
+provides-extras = ["dev", "document-ai", "documents", "embed-server", "full", "local-inference", "openai"]
 
 [[package]]
 name = "marginalia-ai-plugin-academic-journal"

@@ -30,6 +30,14 @@ python -m pip install marginalia-ai
 python -m pip install "marginalia-ai[full]"
 ```
 
+Wheels are prebuilt for Linux (x86_64 and aarch64, glibc 2.17+), macOS (Apple
+silicon and Intel) and Windows x64, and include a Rust extension that speeds
+up quote normalization, prose and structural chunking, and markdown parsing.
+On Python 3.13 those paths run in Rust; other Python versions use the
+byte-identical pure-Python code, because the extension's Unicode tables match
+3.13's. Other platforms build from the source distribution, which needs a
+Rust toolchain. `RE_RUST_BACKEND=python` forces the pure-Python path.
+
 Optional features are independently installable:
 
 - `marginalia-ai[openai]` — OpenAI-compatible LLM adapter;
