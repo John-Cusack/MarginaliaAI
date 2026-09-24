@@ -10,10 +10,10 @@ crate's message on Rust, engine-native errors on Python — callers catch
 ``Exception``). The missing-dependency gates stay on the Python path only:
 the Rust backend parses without ``bs4``/``ebooklib``.
 
-One documented residual: ``&#[0-9]+[a-f]`` without a semicolon corrupts
-html.parser's tag state (following markup leaks as text — version-fragile,
-probed on beautifulsoup4 4.x); the crate decodes per the missing-semicolon
-rule instead. Pinned explicitly below: if a BeautifulSoup upgrade fixes
+One documented residual: ``&#[0-9]+[a-f]`` without a semicolon trips
+html.parser (CPython 3.13 leaks the following markup as text; 3.11.16 leaves
+the reference undecoded); the crate decodes per the missing-semicolon rule
+instead. Pinned explicitly below: if a BeautifulSoup upgrade fixes
 the leak, that test fails to signal full equality may hold.
 
 Rust-forced cases skip when the accelerator wheel is absent; the Python path
@@ -106,9 +106,10 @@ class TestHTMLParity:
         actual = await HTMLModule().parse(path)
         if "&#38b" in doc or "&#65D" in doc:
             # Documented residual (see module docstring): the crate decodes
-            # cleanly, html.parser leaks the closing markup as text.
+            # cleanly; html.parser's answer depends on the CPython patch level
+            # (3.13 leaks the closing markup as text, 3.11.16 leaves `&#38b`).
             assert actual[0] == "A&b CAD"
-            assert expected[0] == "A&b C&#65;D</p></body></html>"
+            assert expected[0] in {"A&b C&#65;D</p></body></html>", "A&#38b CAD"}
         else:
             assert actual == expected
 
