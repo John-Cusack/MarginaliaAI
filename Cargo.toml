@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["crates/marginalia-types", "crates/marginalia-text", "crates/marginalia-chunk", "crates/marginalia-parse", "crates/marginalia-py"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip", "arbitrary_precision"] }
+uuid = { version = "1", features = ["serde"] }
+thiserror = "1"

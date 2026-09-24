@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import mimetypes
 import re
 from typing import TYPE_CHECKING
 
 import structlog
 
+from research_engine import _rust as _rust_backend
 from research_engine.services.text.sections import sections_from_markdown
 
 if TYPE_CHECKING:
@@ -106,6 +108,10 @@ class MarkdownModule:
         loop = asyncio.get_event_loop()
         raw = await loop.run_in_executor(None, self._read_file, source_path)
 
+        rs = _rust_backend.rust_parse()
+        if rs is not None:
+            return _parse_markdown_rs(rs, raw, source_path)
+
         title = _extract_title(raw, source_path.stem)
         full_text = _strip_markdown(raw)
         sections = sections_from_markdown(full_text)
@@ -139,3 +145,17 @@ class MarkdownModule:
     def _read_head(path: Path, size: int = 4096) -> str:
         with path.open("r", encoding="utf-8") as f:
             return f.read(size)
+
+
+def _parse_markdown_rs(rs, raw, source_path):
+    """`MarkdownModule.parse` via the Rust backend (see `research_engine._rust`).
+
+    The file read stays caller-side; stripped text, title, and the section
+    table come back as `ParsedDocument` JSON, remapped to the module triple
+    (the table travels in the `sections` field, not duplicated under
+    metadata — the same contract the pipeline reads).
+    """
+    doc = json.loads(rs.parse_markdown(raw, source_path.name))
+    metadata = dict(doc["metadata"])
+    metadata["sections"] = doc["sections"]
+    return doc["text"], doc["title"], metadata

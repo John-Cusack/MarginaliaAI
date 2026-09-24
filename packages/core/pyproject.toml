@@ -38,6 +38,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+accelerated = [
+    "marginalia-ai-accelerator>=0.6,<0.7",
+]
 openai = [
     "openai>=1.10,<2",
 ]

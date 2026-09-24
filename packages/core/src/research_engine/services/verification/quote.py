@@ -33,6 +33,7 @@ from uuid import UUID  # noqa: TC003 - pydantic needs it at runtime
 import structlog
 from pydantic import BaseModel, Field
 
+from research_engine import _rust as _rust_backend
 from research_engine.services.text.anchoring import Span
 from research_engine.services.text.normalize import (
     normalize,
@@ -149,6 +150,44 @@ class QuoteVerification(BaseModel):
         return self.tier in (Tier.EXACT, Tier.NORMALIZED)
 
 
+def _normalize(text: str) -> str:
+    """`normalize`, via the Rust backend when selected (see `research_engine._rust`).
+
+    Text with a lone surrogate (reachable through JSON ``\\ud800`` escapes)
+    cannot cross into Rust; it takes the Python path, which accepts it. The
+    same holds for the two wrappers below.
+    """
+    rs = _rust_backend.rust_text()
+    if rs is not None:
+        try:
+            return rs.normalize(text)
+        except UnicodeEncodeError:
+            pass
+    return normalize(text)
+
+
+def _normalize_for_matching(text: str) -> str:
+    """`normalize_for_matching`, via the Rust backend when selected."""
+    rs = _rust_backend.rust_text()
+    if rs is not None:
+        try:
+            return rs.normalize_for_matching(text)
+        except UnicodeEncodeError:
+            pass
+    return normalize_for_matching(text)
+
+
+def _normalize_with_map(text: str) -> tuple[str, list[int]]:
+    """`normalize_with_map`, via the Rust backend when selected."""
+    rs = _rust_backend.rust_text()
+    if rs is not None:
+        try:
+            return rs.normalize_with_map(text)
+        except UnicodeEncodeError:
+            pass
+    return normalize_with_map(text)
+
+
 class QuoteVerifier:
     def __init__(
         self,
@@ -187,8 +226,8 @@ class QuoteVerifier:
         # column, which was written by it. `normalize_for_matching` for anything
         # compared against `normalize_with_map` output. Mixing them silently
         # fails to match on combining marks.
-        stored_form = normalize(quote)
-        match_form = normalize_for_matching(quote)
+        stored_form = _normalize(quote)
+        match_form = _normalize_for_matching(quote)
 
         if document_id is not None:
             sizes = await self._texts.lengths(document_id)
@@ -428,14 +467,14 @@ class QuoteVerifier:
 
         matched_prefix = stored_form[:prefix_len]
         span = await self._locate_normalized(
-            holder, matched_prefix, normalize_for_matching(matched_prefix)
+            holder, matched_prefix, _normalize_for_matching(matched_prefix)
         )
         source_continues = ""
         if span is not None:
             following = await self._texts.get_span(
                 holder, span.end, span.end + DIVERGENCE_CONTEXT
             )
-            source_continues = normalize(following or "")
+            source_continues = _normalize(following or "")
 
         result = QuoteVerification(
             tier=Tier.NEAR,
@@ -491,7 +530,7 @@ class QuoteVerifier:
 
 def _find_folded(raw: str, match_form: str) -> Span | None:
     """Locate a folded needle in *raw*, returning raw offsets."""
-    folded, index_map = normalize_with_map(raw)
+    folded, index_map = _normalize_with_map(raw)
     at = folded.find(match_form)
     if at < 0:
         return None
