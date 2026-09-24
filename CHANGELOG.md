@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### marginalia-ai 0.6.3 carries a Rust extension
+
+Every `marginalia-ai` wheel now includes `research_engine._native`, built
+from the repository's Rust crates. On Python 3.13 it runs quote
+normalization (6–9x faster), prose chunking (4x), markdown parsing (2.7x) and
+structural chunking (1.5x). Each path returns exactly what the pure-Python
+code returns. Other Python versions keep using the pure-Python code, because
+the extension's Unicode tables match 3.13's. `RE_RUST_BACKEND=python` forces
+the Python path, and `=rust` forces the extension.
+
+Wheels are prebuilt for Linux x86_64 and aarch64 (glibc 2.17+), macOS on Apple
+silicon and Intel, and Windows x64. Other platforms install from the source
+distribution, which needs a Rust toolchain; so does `uv sync` in a checkout.
+There is no API change, so plugins declaring `core_api: ">=0.6,<0.7"` still
+load.
+
 ## 0.6.2 — 2026-09-19
 
 ### Backups and status are safe to operate

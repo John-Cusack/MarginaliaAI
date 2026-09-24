@@ -282,7 +282,7 @@ jobs:
       - name: Smoke production SDK/core/history artifacts
         run: |
           uv venv --seed /tmp/re-history
-          uv pip install --python /tmp/re-history/bin/python marginalia-ai-sdk==0.6.1 marginalia-ai==0.6.2 dist/history/marginalia_ai_plugin_history-0.2.0-py3-none-any.whl
+          uv pip install --python /tmp/re-history/bin/python marginalia-ai-sdk==0.6.1 marginalia-ai==0.6.3 dist/history/marginalia_ai_plugin_history-0.2.0-py3-none-any.whl
           /tmp/re-history/bin/python -c 'from research_engine.plugins.discovery import discover_plugins; p=discover_plugins(); assert [x.plugin_id for x in p] == ["history"]'
       - uses: actions/upload-artifact@v4
         with:
