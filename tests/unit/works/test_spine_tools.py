@@ -484,3 +484,13 @@ class TestWorkPublishTool:
 
         assert result["state"] == "published"
         assert result["revision_number"] == 1
+
+    @pytest.mark.asyncio
+    async def test_draft_refused_as_invalid_input(self):
+        async def publish(**kwargs: Any) -> Any:
+            raise FrozenRevisionError("Revision is draft: cannot become published.")
+        container = SimpleNamespace(work_publication=SimpleNamespace(publish=publish))
+
+        result = await work_publish.handler(container, slug="s")
+
+        assert result["error"]["code"] == "invalid_input"
