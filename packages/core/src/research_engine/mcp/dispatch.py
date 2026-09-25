@@ -55,6 +55,7 @@ from research_engine.mcp.tools import (
     work_import,
     work_link,
     work_promote,
+    work_publish,
     work_render,
     work_trace,
     work_validate,
@@ -138,6 +139,7 @@ CORE_TOOL_MODULES = [
     work_export,
     work_import,
     work_promote,
+    work_publish,
 ]
 
 

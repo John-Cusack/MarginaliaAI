@@ -9,6 +9,7 @@ pure file reading plus validation; verification against the corpus lives in
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import re
 from pathlib import Path
@@ -150,13 +151,24 @@ class WorkFileReader:
         """Every work file, as forward-slash paths relative to the works dir.
 
         `README.md`, `_TEMPLATE.md`, and anything starting with `_` are the
-        contract itself, not works.
+        contract itself, not works. Sync conflict copies (Dropbox's
+        `*conflicted copy*`, Syncthing's `*.sync-conflict-*`) are not works
+        either: neither side of a sync conflict is authoritative.
         """
-        found = [
-            path.relative_to(self._works_dir).as_posix()
-            for path in sorted(self._works_dir.rglob("*.md"))
-            if path.name not in _NON_WORK_NAMES and not path.name.startswith("_")
-        ]
+        found = []
+        for path in sorted(self._works_dir.rglob("*.md")):
+            if path.name in _NON_WORK_NAMES or path.name.startswith("_"):
+                continue
+            if (
+                "conflicted copy" in path.name
+                or fnmatch.fnmatch(path.name, "*.sync-conflict-*")
+            ):
+                logger.info(
+                    "works_conflict_copy_skipped",
+                    path=path.relative_to(self._works_dir).as_posix(),
+                )
+                continue
+            found.append(path.relative_to(self._works_dir).as_posix())
         logger.debug("works_listed", count=len(found), works_dir=str(self._works_dir))
         return found
 

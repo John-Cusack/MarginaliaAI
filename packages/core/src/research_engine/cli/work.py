@@ -427,6 +427,42 @@ async def _freeze(
         await container.close()
 
 
+@work_app.command("publish")
+def publish_command(
+    slug: str = typer.Argument(..., help="Work slug."),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
+    """Validate at the publish gate, then seal the frozen revision as published."""
+    asyncio.run(_publish(slug, json_output))
+
+
+async def _publish(slug: str, json_output: bool) -> None:
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.domain.errors import FrozenRevisionError, NotFoundError
+    from research_engine.services.works.publication import FreezeBlocked
+
+    container = await build_container(load_settings())
+    try:
+        assert container.work_publication is not None  # always built
+        try:
+            sealed = await container.work_publication.publish(slug=slug)
+        except FreezeBlocked as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        except (NotFoundError, FrozenRevisionError) as exc:
+            # A draft is not publishable: the repo transition refuses it.
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        if json_output:
+            print(sealed.model_dump_json(indent=2))
+        else:
+            console.print(f"[green]published rev {sealed.revision_number}[/green] "
+                          f"{sealed.content_hash}")
+    finally:
+        await container.close()
+
+
 @work_app.command("export")
 def export_command(
     slug: str = typer.Argument(..., help="Work slug."),
