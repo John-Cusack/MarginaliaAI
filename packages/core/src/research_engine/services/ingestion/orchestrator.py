@@ -11,7 +11,7 @@ import structlog
 
 from research_engine.adapters.storage.postgres.engine import transaction
 from research_engine.domain.documents import DocumentDraft
-from research_engine.domain.errors import IngestionError
+from research_engine.domain.errors import IngestionError, IngestRefused
 from research_engine.domain.nodes import (
     DocumentNodeDraft,
     attach_nodes,
@@ -21,7 +21,7 @@ from research_engine.services.ingestion.pipeline import build_document_draft, ru
 from research_engine.services.search.langconfig import pg_config
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Sequence
     from pathlib import Path
 
     from research_engine.ports.embedding import EmbeddingPort
@@ -52,6 +52,7 @@ class IngestionOrchestrator:
         document_texts: DocumentTextRepo | None = None,
         document_nodes: object | None = None,
         editions: EditionRepo | None = None,
+        forbidden_roots: Sequence[Path] = (),
     ) -> None:
         self._document_texts = document_texts
         #: Optional like ``document_texts``: without it ingested edition keys
@@ -72,8 +73,12 @@ class IngestionOrchestrator:
         self._embedding_batch_size = embedding_batch_size
         #: ISO 639-1 code assumed when neither the parser nor the caller supplies
         #: one. Left unset the corpus indexes under ``simple`` (no stemming),
-        #: which is the safe default; a single-language corpus should set it.
         self._default_language = default_language
+        #: Vault roots ingestion must never touch. Stored resolved so a
+        #: symlink pointing into the vault is refused like the vault itself.
+        self._forbidden_roots = tuple(
+            root.resolve() for root in forbidden_roots
+        )
 
     def _resolve_language(self, supplied: str | None) -> str | None:
         """Prefer what the caller or parser knows; otherwise the configured default."""
@@ -96,10 +101,25 @@ class IngestionOrchestrator:
             return await self._editions.upsert_key(tx, key, lock=True)
         return await self._editions.upsert_key(tx, key)
 
+    def _forbidden_root(self, path: Path) -> Path | None:
+        """The forbidden root containing *path*, resolving symlinks first."""
+        resolved = path.resolve()
+        for root in self._forbidden_roots:
+            if resolved == root or root in resolved.parents:
+                return root
+        return None
+
     async def ingest_paths(
         self, paths: list[Path], plugin_hint: str | None = None
     ) -> dict:
         """Ingest files from the given paths. Returns stats dict."""
+        for path in paths:
+            root = self._forbidden_root(path)
+            if root is not None:
+                raise IngestRefused(
+                    f"Refusing to ingest {path}: it is the vault or under it "
+                    f"({root}). Authored material never enters the corpus."
+                )
         run = await self._ingestion_runs.start_run(
             {"paths": [str(p) for p in paths], "hint": plugin_hint}
         )
@@ -454,8 +474,20 @@ class IngestionOrchestrator:
         """Yield individual files from paths (files directly, dirs recursively)."""
         for path in paths:
             if path.is_file():
+                root = self._forbidden_root(path)
+                if root is not None:
+                    raise IngestRefused(
+                        f"Refusing to ingest {path}: it resolves under the "
+                        f"vault ({root})."
+                    )
                 yield path
             elif path.is_dir():
                 for child in sorted(path.rglob("*")):
                     if child.is_file() and not child.name.startswith("."):
+                        root = self._forbidden_root(child)
+                        if root is not None:
+                            raise IngestRefused(
+                                f"Refusing to ingest {child}: it resolves "
+                                f"under the vault ({root})."
+                            )
                         yield child

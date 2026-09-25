@@ -150,15 +150,16 @@ one broke a decision in the first draft.
 ### D4. Vault path parameterized, never assumed
 
 - Context: the brief forbade assuming `~/Dropbox`.
-- Decision: one explicit setting, `RE_VAULT_DIR` **(proposed)**, the folder
+- Decision: one explicit setting, `RE_VAULT_DIR`, the folder
   holding `.obsidian/`. No `obsidian.json` discovery.
 - Rationale: the vault root here is doubly nested
   (`…/Marginalia-Writing/Marginalia-Writing/` — outer is a Dropbox folder,
   inner holds `.obsidian/`); a guess breaks on exactly this layout. The
   setting has one consumer that justifies it: the ingest guard (P3). Export
   paths are passed with `--out` and need no setting.
-- Consequence: until P3 lands, the `.env` records the vault root as a
-  comment only (G1).
+- Consequence: the setting's consumer is the ingest guard (P3), which
+  refuses any path under the vault root. Export paths are passed with
+  `--out` and need no setting.
 
 ### D5. Citations are acquired after promotion, by the agent, never hand-written
 
@@ -329,9 +330,9 @@ verify/render for the survey.
 - **P2 — Publish.** `work publish` CLI + `work_publish` MCP over
   `publish()` (G6). Tests: edition-missing graduates to error at publish;
   CLI/MCP parity.
-- **P3 — Vault guard + master-doc note.** `RE_VAULT_DIR` Settings field;
-  `ingest_paths` refuses any path under it. Master doc F1/F2 get a scope
-  note: the flip applies to pre-012 file works.
+- **P3 — Vault guard + master-doc note.** `RE_VAULT_DIR` Settings field
+  (implemented); `ingest_paths` refuses any path under it. Master doc F1/F2
+  get a scope note: the flip applies to pre-012 file works.
 - **Deferred:** the survey's port (F5) — still unbuilt, so it stays a file
   work under `works/`.
 

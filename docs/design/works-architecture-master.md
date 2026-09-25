@@ -130,6 +130,9 @@ The flip, as a protocol (decision 2, review §4.2):
 - **F2 — Post-flip, the file is a read-only export.** `work export` rewrites it
   and git diff is the audit trail. A manual edit to a flipped work's file is
   drift: the next validate run reports it; the database never follows the file.
+  (Scope: the flip applies to pre-012 file works — today only
+  `works/mishpat-tsedaqah-survey.md`; works created after 012 are DB-born
+  per F4.)
 - **F3 — `work_index` and the mirror are one unit.** They live while any
   pre-012 work is unflipped and drop together when the last one flips. Their
   rows are derivable from files, so the cost is zero.

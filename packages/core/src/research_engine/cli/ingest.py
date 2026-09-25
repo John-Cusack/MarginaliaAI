@@ -29,13 +29,18 @@ def ingest(
 async def _ingest(sources: list[Path], plugin: str | None, concurrency: int):
     from research_engine.composition import build_container
     from research_engine.config import load_settings
+    from research_engine.domain.errors import IngestRefused
 
     settings = load_settings(ingest_concurrency=concurrency)
     container = await build_container(settings)
     try:
         with Progress(console=console) as progress:
             task = progress.add_task("Ingesting...", total=None)
-            stats = await container.ingestion.ingest_paths(sources, plugin_hint=plugin)
+            try:
+                stats = await container.ingestion.ingest_paths(sources, plugin_hint=plugin)
+            except IngestRefused as exc:
+                console.print(f"[red]{exc}[/red]")
+                raise typer.Exit(code=1) from exc
             progress.update(task, completed=True)
 
         console.print("\n[bold green]Ingestion complete:[/bold green]")

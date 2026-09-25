@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     #: The folder holding works/*.md, outside this repo. Unset means the work
     #: tools answer `works_not_configured` rather than an empty result.
     works_dir: Path | None = None
+    #: The Obsidian vault root (the folder holding `.obsidian/`); ingestion
+    #: refuses any path under it, so authored material never enters the corpus.
+    vault_dir: Path | None = None
     #: Per-work-type validation policy: work type to rule id to severity.
     #: Values are `error`, `warn`, or `allow`; anything else falls back to
     #: the core floor. Unset means the core floor holds for every work type.
