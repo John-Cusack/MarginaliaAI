@@ -431,25 +431,28 @@ async def _freeze(
 def export_command(
     slug: str = typer.Argument(..., help="Work slug."),
     draft: bool = typer.Option(False, "--draft", help="Render the current draft revision."),
+    revision: int | None = typer.Option(None, "--revision", help="Render a numbered revision (frozen history included)."),
     out: str | None = typer.Option(None, "--out", help="Write to this file."),
 ) -> None:
-    """Render the current draft revision to markdown (no manifest yet)."""
-    asyncio.run(_export(slug, draft, out))
+    """Render one revision to markdown (no manifest yet)."""
+    asyncio.run(_export(slug, draft, revision, out))
 
 
-async def _export(slug: str, draft: bool, out: str | None) -> None:
+async def _export(slug: str, draft: bool, revision: int | None, out: str | None) -> None:
     from research_engine.composition import build_container
     from research_engine.config import load_settings
     from research_engine.domain.errors import NotFoundError
 
-    if not draft:
-        console.print("[red]Only --draft export exists until first publication.[/red]")
+    if draft == (revision is not None):
+        console.print("[red]Pass exactly one of --draft (current) or --revision N.[/red]")
         raise typer.Exit(code=2)
     container = await build_container(load_settings())
     try:
         assert container.work_export is not None  # always built
         try:
-            rendered = await container.work_export.export_draft(slug=slug)
+            rendered = await container.work_export.export_draft(
+                slug=slug, revision=revision
+            )
         except NotFoundError as exc:
             console.print(f"[red]{exc}[/red]")
             raise typer.Exit(code=1) from exc
@@ -494,7 +497,8 @@ async def _import(path: str, slug: str, dry_run: bool, json_output: bool) -> Non
                 slug=slug, markdown=markdown, dry_run=dry_run
             )
         except (NotFoundError, ImportRefused) as exc:
-            console.print(f"[red]{exc}[/red]")
+            rule = f"{exc.rule_id}: " if isinstance(exc, ImportRefused) else ""
+            console.print(f"[red]{rule}{exc}[/red]")
             raise typer.Exit(code=1) from exc
         except ValueError as exc:
             console.print(f"[red]{exc}[/red]")

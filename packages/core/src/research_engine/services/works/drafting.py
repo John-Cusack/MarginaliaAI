@@ -1,12 +1,15 @@
 """Render a draft to markdown and read an edited one back — the drafting loop.
 
 `export_draft` regenerates the §6.4 file from rows: front matter with the
-citations in block order, then one `<!-- block:<key> -->` comment per block
+citations in block order, stamped with the content hash (`base`) of the
+rendered revision, then one `<!-- block:<key> -->` comment per block
 with its markdown. `import_draft` parses edited markdown per the §5.2 block
-boundaries, copies the revision forward, and applies inserts, updates,
-deletions, and reorders, matching blocks by their comments. Markers resolve
-against the copied occurrences; a marker with no occurrence refuses the
-whole import with `AUTH_CITATION_MARKER_DANGLING`.
+boundaries, refuses a file whose `base` differs from the current revision's
+hash (`AUTH_PARENT_REVISION_MISMATCH`, so a stale export cannot silently
+revert newer blocks), copies the revision forward, and applies inserts,
+updates, deletions, and reorders, matching blocks by their comments. Markers
+resolve against the copied occurrences; a marker with no occurrence refuses
+the whole import with `AUTH_CITATION_MARKER_DANGLING`.
 
 Round-trip contract (§5.4): export then import with no edits is a no-op new
 revision — same keys, empty diff. The two deliberate deviations from the
@@ -29,7 +32,11 @@ from uuid_utils import uuid7
 
 from research_engine.domain.errors import NotFoundError
 from research_engine.domain.works import WorkBlockDraft
-from research_engine.services.works.assembly import assemble_revision
+from research_engine.services.works.assembly import (
+    assemble_revision,
+    hash_assembled,
+    resolve_revision,
+)
 from research_engine.services.works.markers import find_markers, format_marker
 
 if TYPE_CHECKING:
@@ -105,11 +112,25 @@ class WorkExportService:
         self._transaction = transaction_factory
 
     async def export_draft(
-        self, *, slug: str | None = None, work_id: UUID | None = None
+        self, *, slug: str | None = None, work_id: UUID | None = None,
+        revision: int | None = None,
     ) -> str:
-        """Render the work's current revision to §6.4 markdown."""
-        work, revision = await self._resolve_current(slug=slug, work_id=work_id)
-        view = await self._assemble(work, revision)
+        """Render one revision to §6.4 markdown: current when omitted.
+
+        A numbered revision renders frozen history as well as the draft;
+        importing such a file is refused as stale (its base predates
+        current), so a reading copy cannot silently revert newer work.
+        """
+        if revision is None:
+            work, resolved = await self._resolve_current(
+                slug=slug, work_id=work_id
+            )
+        else:
+            work, resolved = await resolve_revision(
+                self._works, self._revisions,
+                slug=slug, work_id=work_id, revision_number=revision,
+            )
+        view = await self._assemble(work, resolved)
         return render_markdown(view)
 
     async def export_draft_text(self, work_id: UUID) -> str:
@@ -130,6 +151,34 @@ class WorkExportService:
         if front.get("work") != work.slug:
             raise ValueError(
                 f"Import names work {front.get('work')!r}, not {work.slug!r}"
+            )
+        # A stale export would arrive as mass deletion: every block added
+        # since it rendered is absent from the file. The revision number
+        # alone cannot guard this — `work_block_upsert` edits the draft in
+        # place without bumping it — so the check compares content.
+        view = await self._assemble(work, revision)
+        current = hash_assembled(view).hex()
+        file_base = front.get("base")
+        if file_base != current:
+            if file_base is None:
+                message = (
+                    "Import has no base stamp: the file was not produced by "
+                    "`work export` (re-export and re-apply edits)"
+                )
+            else:
+                message = (
+                    "Import base does not match the current revision: the "
+                    "work changed since this file was exported "
+                    "(re-export and re-apply edits)"
+                )
+            raise ImportRefused(
+                "AUTH_PARENT_REVISION_MISMATCH",
+                message,
+                detail={
+                    "file_base": file_base,
+                    "current_base": current,
+                    "current_revision": revision.revision_number,
+                },
             )
         known_keys, depth_by_key = await self._copy_inventory(revision.id)
         async with self._transaction() as tx:
@@ -350,6 +399,10 @@ def render_markdown(view: AssembledRevision) -> str:
         "type": view.work.work_type,
         "revision": view.revision.revision_number,
         "state": view.revision.state.value,
+        # The content hash of the rendered revision. Import refuses a file
+        # whose base differs from current: the revision number alone cannot
+        # guard staleness, since in-place block edits do not bump it.
+        "base": hash_assembled(view).hex(),
     }
     entries: list[dict[str, Any]] = []
     for item in view.blocks:

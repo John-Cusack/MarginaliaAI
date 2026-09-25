@@ -31,7 +31,11 @@ from research_engine.domain.works import (
     WorkRevision,
     WorkRevisionDraft,
 )
-from research_engine.services.works.assembly import AssembledRevision, assemble_revision
+from research_engine.services.works.assembly import (
+    AssembledRevision,
+    assemble_revision,
+    resolve_revision,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -128,8 +132,9 @@ class WorkService:
         revision: int | None = None,
     ) -> dict[str, Any]:
         """The ordered block tree with occurrences, items, and links inlined."""
-        work, resolved = await self._resolve_revision(
-            slug=slug, work_id=work_id, revision_number=revision
+        work, resolved = await resolve_revision(
+            self._works, self._revisions,
+            slug=slug, work_id=work_id, revision_number=revision,
         )
         assembled = await assemble_revision(
             work,
@@ -291,40 +296,6 @@ class WorkService:
                 "copy it forward to edit."
             )
         return revision
-
-    async def _resolve_revision(
-        self,
-        *,
-        slug: str | None,
-        work_id: UUID | None,
-        revision_number: int | None,
-    ) -> tuple[Work, WorkRevision]:
-        work = await self._require_work(slug=slug, work_id=work_id)
-        if revision_number is None:
-            if work.current_revision_id is None:
-                raise NotFoundError("work_revision", f"current of {work.slug}")
-            revision = await self._revisions.get(work.current_revision_id)
-            if revision is None:
-                raise NotFoundError("work_revision", work.current_revision_id)
-            return work, revision
-        latest = await self._revisions.latest(work.id)
-        if latest is None or revision_number > latest.revision_number:
-            raise NotFoundError(
-                "work_revision", f"{work.slug} revision {revision_number}"
-            )
-        current = latest
-        while current.revision_number != revision_number:
-            if current.parent_revision_id is None:
-                raise NotFoundError(
-                    "work_revision", f"{work.slug} revision {revision_number}"
-                )
-            parent = await self._revisions.get(current.parent_revision_id)
-            if parent is None:  # pragma: no cover - FK keeps the chain whole
-                raise NotFoundError(
-                    "work_revision", f"{work.slug} revision {revision_number}"
-                )
-            current = parent
-        return work, current
 
 
 def _dump_assembled(view: AssembledRevision) -> dict[str, Any]:

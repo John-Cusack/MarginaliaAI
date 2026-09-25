@@ -165,6 +165,12 @@ class TestDraftFormat:
         # block_end occurrence with no marker in the text renders at the end.
         assert format_marker(CITE_A) in rendered
 
+    def test_export_stamps_base_with_content_hash(self):
+        view = _view_with_citation()
+        front, _ = parse_markdown(render_markdown(view))
+
+        assert front["base"] == hash_assembled(view).hex()
+
     def test_parse_recovers_keys_types_titles_and_parents(self):
         front, parsed = parse_markdown(render_markdown(_view_with_citation()))
 
