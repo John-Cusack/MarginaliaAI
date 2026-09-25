@@ -845,6 +845,38 @@ async def test_freeze_waiver_and_stable_hash(
 
 
 @pytest.mark.asyncio
+async def test_publish_freeze_then_publish(engine: AsyncEngine, corpus: Corpus) -> None:
+    """Freeze seals the draft; publish seals the frozen revision in place."""
+    doc_id = await _ingest(engine, corpus)
+    built = await _work_with_cited_paragraph(engine, corpus, "spine-publish", doc_id)
+    spine = built["spine"]
+
+    frozen = await spine.publish.freeze(slug="spine-publish", message="first")
+    assert frozen.state == "frozen"
+
+    published = await spine.publish.publish(slug="spine-publish")
+    assert published.state == "published"
+    assert published.revision_number == frozen.revision_number == 1
+    assert published.content_hash == frozen.content_hash
+
+    view = await spine.works.get(slug="spine-publish")
+    assert view["revision"]["state"] == "published"
+
+
+@pytest.mark.asyncio
+async def test_publish_draft_refused(engine: AsyncEngine, corpus: Corpus) -> None:
+    """A never-frozen draft cannot publish: the repo transition refuses it."""
+    spine = _Spine(engine)
+    created = await spine.works.create(
+        slug="spine-publish-draft", title="Draft", work_type="essay"
+    )
+    corpus.track(works, created.work_id)
+
+    with pytest.raises(FrozenRevisionError):
+        await spine.publish.publish(slug="spine-publish-draft")
+
+
+@pytest.mark.asyncio
 async def test_drafting_loop(engine: AsyncEngine, corpus: Corpus) -> None:
     doc_id = await _ingest(engine, corpus)
     built = await _work_with_cited_paragraph(engine, corpus, "spine-loop", doc_id)

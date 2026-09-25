@@ -332,7 +332,8 @@ class WorkService:
 def _dump_assembled(view: AssembledRevision) -> dict[str, Any]:
     """The `work_get` shape: JSON-safe, keys as strings, datetimes ISO."""
     work = view.work.model_dump(mode="json")
-    revision = view.revision.model_dump(mode="json")
+    # Bytes are not JSON: the hash dumps below as hex, never raw.
+    revision = view.revision.model_dump(mode="json", exclude={"content_hash"})
     revision["content_hash"] = (
         view.revision.content_hash.hex() if view.revision.content_hash else None
     )

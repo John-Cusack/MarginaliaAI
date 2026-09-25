@@ -91,6 +91,13 @@ class TestGoodFile:
 
         assert WorkFileReader(tmp_path).list_works() == ["essay.md"]
 
+    def test_reader_skips_sync_conflict_copies(self, tmp_path):
+        _write(tmp_path, "a.md")
+        _write(tmp_path, "a (John's conflicted copy 2026-09-25).md")
+        _write(tmp_path, "b.sync-conflict-20260925-x.md")
+
+        assert WorkFileReader(tmp_path).list_works() == ["a.md"]
+
 
 class TestBadEntries:
     BAD = GOOD.replace("    intent: background", "    intent: frobnicate").replace(

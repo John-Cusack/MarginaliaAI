@@ -23,6 +23,7 @@ from research_engine.mcp.tools import (
     work_import,
     work_link,
     work_promote,
+    work_publish,
     work_trace,
     work_validate,
 )
@@ -455,3 +456,31 @@ class TestWorkPromoteTool:
 
         assert result["error"]["code"] == "validation_error"
         assert result["error"]["details"]["rule_id"] == "AUTH_CITATION_MARKER_DANGLING"
+
+
+class TestWorkPublishTool:
+    @pytest.mark.asyncio
+    async def test_blockers_refuse(self):
+        async def publish(**kwargs: Any) -> Any:
+            raise FreezeBlocked(["AUTH_CITATION_EDITION_MISSING"])
+        container = SimpleNamespace(work_publication=SimpleNamespace(publish=publish))
+
+        result = await work_publish.handler(container, slug="s")
+
+        assert result["error"]["code"] == "validation_error"
+        assert result["error"]["details"]["blockers"] == ["AUTH_CITATION_EDITION_MISSING"]
+
+    @pytest.mark.asyncio
+    async def test_ok(self):
+        sealed = RevisionSealed(
+            revision_id=UUID(KEY), revision_number=1,
+            content_hash="ab" * 32, state="published",
+        )
+        async def publish(**kwargs: Any) -> Any:
+            return sealed
+        container = SimpleNamespace(work_publication=SimpleNamespace(publish=publish))
+
+        result = await work_publish.handler(container, slug="s")
+
+        assert result["state"] == "published"
+        assert result["revision_number"] == 1

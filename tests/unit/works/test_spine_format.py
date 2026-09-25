@@ -28,7 +28,11 @@ from research_engine.services.works.assembly import (
 )
 from research_engine.services.works.drafting import parse_markdown, render_markdown
 from research_engine.services.works.markers import find_markers, format_marker
-from research_engine.services.works.validate import resolve_severity
+from research_engine.services.works.validate import (
+    ValidationFinding,
+    _blockers,
+    resolve_severity,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -103,6 +107,28 @@ class TestPolicy:
         assert resolve_severity(policy, "dossier", "AUTH_SPAN_REGION", "warning") == "warning"
         # An unknown value is a typo, not a silencer: the floor holds.
         assert resolve_severity(policy, "essay", "AUTH_FILE_DRIFT", "warning") == "warning"
+
+
+class TestGateBlockers:
+    def _finding(self, rule_id: str, severity: str) -> ValidationFinding:
+        return ValidationFinding(
+            rule_id=rule_id, severity=severity, message="test finding"
+        )
+
+    def test_edition_missing_warns_at_freeze_but_blocks_publish(self):
+        # An edition-less citation is unreachable through attach (it refuses
+        # at the boundary), so the graduation is pinned at the gate logic.
+        findings = [self._finding("AUTH_CITATION_EDITION_MISSING", "warning")]
+
+        assert _blockers(findings, "freeze", set()) == []
+        assert _blockers(findings, "publish", set()) == [
+            "AUTH_CITATION_EDITION_MISSING"
+        ]
+
+    def test_errors_block_freeze(self):
+        findings = [self._finding("AUTH_QUOTE_UNVERIFIED", "error")]
+
+        assert _blockers(findings, "freeze", set()) == ["AUTH_QUOTE_UNVERIFIED"]
 
 
 class TestContentHash:
