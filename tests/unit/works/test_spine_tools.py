@@ -17,13 +17,17 @@ from research_engine.mcp.tools import (
     work_block_upsert,
     work_cite,
     work_create,
+    work_export,
     work_freeze,
     work_get,
+    work_import,
     work_link,
+    work_promote,
     work_trace,
     work_validate,
 )
 from research_engine.services.works.attach import AttachedItem, AttachRefused, CitationAttached
+from research_engine.services.works.drafting import ImportDiff, ImportRefused
 from research_engine.services.works.publication import FreezeBlocked, RevisionSealed
 from research_engine.services.works.trace import TraceNode
 from research_engine.services.works.validate import GateResult, ValidationReport
@@ -326,3 +330,128 @@ class TestWorkFreezeTool:
         result = await work_freeze.handler(container, slug="s", message="first")
 
         assert result["state"] == "frozen"
+
+
+class _FakeExportService:
+    """WorkExportService double: per-method outcomes or exceptions."""
+
+    def __init__(self, **behaviour: Any) -> None:
+        self._behaviour = behaviour
+
+    async def export_draft(self, **kwargs: Any) -> Any:
+        return self._result("export_draft", **kwargs)
+
+    async def import_draft(self, **kwargs: Any) -> Any:
+        return self._result("import_draft", **kwargs)
+
+    async def promote(self, **kwargs: Any) -> Any:
+        return self._result("promote", **kwargs)
+
+    def _result(self, name: str, **kwargs: Any) -> Any:
+        outcome = self._behaviour[name]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class TestWorkExportTool:
+    @pytest.mark.asyncio
+    async def test_ok(self):
+        container = SimpleNamespace(
+            work_export=_FakeExportService(export_draft="# Beat\n")
+        )
+
+        result = await work_export.handler(container, slug="s")
+
+        assert result == {"markdown": "# Beat\n"}
+
+    @pytest.mark.asyncio
+    async def test_missing_revision(self):
+        container = SimpleNamespace(
+            work_export=_FakeExportService(
+                export_draft=NotFoundError("work_revision", "s revision 9")
+            )
+        )
+
+        result = await work_export.handler(container, slug="s", revision=9)
+
+        assert result["error"]["code"] == "not_found"
+
+
+class TestWorkImportTool:
+    def _diff(self) -> ImportDiff:
+        return ImportDiff(revision_id=UUID(KEY), revision_number=2)
+
+    @pytest.mark.asyncio
+    async def test_ok(self):
+        container = SimpleNamespace(
+            work_export=_FakeExportService(import_draft=self._diff())
+        )
+
+        result = await work_import.handler(container, slug="s", markdown="m")
+
+        assert result["revision_number"] == 2
+        assert result["changes"] == []
+
+    @pytest.mark.asyncio
+    async def test_refusal_carries_rule_id(self):
+        refused = ImportRefused(
+            "AUTH_PARENT_REVISION_MISMATCH",
+            "the work changed since this file was exported",
+            detail={"file_base": "old", "current_base": "new",
+                    "current_revision": 2},
+        )
+        container = SimpleNamespace(
+            work_export=_FakeExportService(import_draft=refused)
+        )
+
+        result = await work_import.handler(container, slug="s", markdown="m")
+
+        assert result["error"]["code"] == "validation_error"
+        assert result["error"]["details"]["rule_id"] == "AUTH_PARENT_REVISION_MISMATCH"
+        assert result["error"]["details"]["current_base"] == "new"
+
+
+class TestWorkPromoteTool:
+    @pytest.mark.asyncio
+    async def test_ok(self):
+        diff = ImportDiff(revision_id=UUID(KEY), revision_number=1)
+        container = SimpleNamespace(
+            work_export=_FakeExportService(promote=diff)
+        )
+
+        result = await work_promote.handler(
+            container, slug="s", title="T", work_type="script", markdown="m"
+        )
+
+        assert result["revision_number"] == 1
+
+    @pytest.mark.asyncio
+    async def test_taken_slug(self):
+        container = SimpleNamespace(
+            work_export=_FakeExportService(promote=ValueError("slug 's' is taken"))
+        )
+
+        result = await work_promote.handler(
+            container, slug="s", title="T", work_type="script", markdown="m"
+        )
+
+        assert result["error"]["code"] == "invalid_input"
+
+    @pytest.mark.asyncio
+    async def test_refusal_carries_rule_id(self):
+        refused = ImportRefused(
+            "AUTH_CITATION_MARKER_DANGLING",
+            "Marker {{cite:k}} matches no occurrence",
+            detail={"citation_key": "k"},
+        )
+        container = SimpleNamespace(
+            work_export=_FakeExportService(promote=refused)
+        )
+
+        result = await work_promote.handler(
+            container, slug="s", title="T", work_type="script", markdown="m"
+        )
+
+        assert result["error"]["code"] == "validation_error"
+        assert result["error"]["details"]["rule_id"] == "AUTH_CITATION_MARKER_DANGLING"

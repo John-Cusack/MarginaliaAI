@@ -515,6 +515,60 @@ async def _import(path: str, slug: str, dry_run: bool, json_output: bool) -> Non
         await container.close()
 
 
+@work_app.command("promote")
+def promote_command(
+    path: str = typer.Argument(..., help="Plain markdown note to promote."),
+    slug: str = typer.Option(..., "--slug", help="Work slug to create."),
+    title: str = typer.Option(..., "--title", help="Work title."),
+    work_type: str = typer.Option(..., "--type", help="Work type (e.g. script, essay)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Compute the diff, write nothing."),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
+    """Make a plain note a work: create it and land the note as revision 1."""
+    asyncio.run(_promote(path, slug, title, work_type, dry_run, json_output))
+
+
+async def _promote(
+    path: str, slug: str, title: str, work_type: str, dry_run: bool, json_output: bool
+) -> None:
+    from research_engine.composition import build_container
+    from research_engine.config import load_settings
+    from research_engine.domain.errors import NotFoundError
+    from research_engine.services.works.drafting import ImportRefused
+
+    try:
+        with open(path, encoding="utf-8") as handle:
+            markdown = handle.read()
+    except OSError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    container = await build_container(load_settings())
+    try:
+        assert container.work_export is not None  # always built
+        try:
+            diff = await container.work_export.promote(
+                slug=slug, title=title, work_type=work_type,
+                markdown=markdown, dry_run=dry_run,
+            )
+        except (NotFoundError, ImportRefused) as exc:
+            rule = f"{exc.rule_id}: " if isinstance(exc, ImportRefused) else ""
+            console.print(f"[red]{rule}{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=2) from exc
+        if json_output:
+            print(diff.model_dump_json(indent=2))
+        else:
+            console.print(f"rev {diff.revision_number}"
+                          f"{' (dry run)' if diff.dry_run else ''}: "
+                          f"{len(diff.changes)} change(s)")
+            for change in diff.changes:
+                console.print(f"  {change.change} {change.block_key}")
+    finally:
+        await container.close()
+
+
 @work_app.command("set-key")
 def set_key_command(
     document_id: str = typer.Argument(..., help="Document UUID."),

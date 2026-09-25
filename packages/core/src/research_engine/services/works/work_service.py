@@ -63,6 +63,41 @@ class LinkWritten(BaseModel):
     relation: str
 
 
+async def create_work_in_tx(
+    tx: Any,
+    *,
+    works: Any,
+    revisions: Any,
+    slug: str,
+    title: str,
+    work_type: str,
+    language: str | None = None,
+    abstract: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[Work, WorkRevision]:
+    """Insert the work, its revision 1, and the current pointer.
+
+    One copy of the insert logic, shared by `WorkService.create` and
+    `WorkExportService.promote`: each runs it inside its own transaction.
+    """
+    work = await works.insert(
+        tx,
+        WorkDraft(
+            slug=slug,
+            title=title,
+            work_type=work_type,
+            language=language,
+            abstract=abstract,
+            metadata=metadata or {},
+        ),
+    )
+    revision = await revisions.insert(
+        tx, WorkRevisionDraft(work_id=work.id, revision_number=1)
+    )
+    await works.set_current_revision(tx, work.id, revision.id)
+    return work, revision
+
+
 class WorkService:
     """The drafting-loop writers and the `work_get` reader."""
 
@@ -98,21 +133,17 @@ class WorkService:
         """Create the work and its revision 1, both draft, in one transaction."""
         try:
             async with self._transaction() as tx:
-                work = await self._works.insert(
+                work, revision = await create_work_in_tx(
                     tx,
-                    WorkDraft(
-                        slug=slug,
-                        title=title,
-                        work_type=work_type,
-                        language=language,
-                        abstract=abstract,
-                        metadata=metadata or {},
-                    ),
+                    works=self._works,
+                    revisions=self._revisions,
+                    slug=slug,
+                    title=title,
+                    work_type=work_type,
+                    language=language,
+                    abstract=abstract,
+                    metadata=metadata,
                 )
-                revision = await self._revisions.insert(
-                    tx, WorkRevisionDraft(work_id=work.id, revision_number=1)
-                )
-                await self._works.set_current_revision(tx, work.id, revision.id)
         except IntegrityError as exc:
             raise ValueError(f"slug {slug!r} is taken") from exc
         logger.info(
