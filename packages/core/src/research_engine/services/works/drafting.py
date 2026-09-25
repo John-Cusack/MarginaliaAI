@@ -28,6 +28,7 @@ from uuid import UUID  # noqa: TC003 - pydantic needs it at runtime
 import structlog
 import yaml
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from uuid_utils import uuid7
 
 from research_engine.domain.errors import NotFoundError
@@ -38,6 +39,7 @@ from research_engine.services.works.assembly import (
     resolve_revision,
 )
 from research_engine.services.works.markers import find_markers, format_marker
+from research_engine.services.works.work_service import create_work_in_tx
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -202,6 +204,53 @@ class WorkExportService:
         return ImportDiff(
             revision_id=created.id,
             revision_number=created.revision_number,
+            dry_run=dry_run,
+            changes=changes,
+        )
+
+    async def promote(
+        self,
+        *,
+        slug: str,
+        title: str,
+        work_type: str,
+        markdown: str,
+        dry_run: bool = False,
+    ) -> ImportDiff:
+        """Make a plain note a work: create it and land the note as revision 1.
+
+        One transaction, so a failed parse or a refused marker leaves no
+        work row behind. Citations come after promotion: with no known
+        occurrences any `{{cite:…}}` marker is refused as dangling.
+        """
+        front, parsed = parse_markdown(markdown, require_front_matter=False)
+        if front.get("work") is not None and front.get("work") != slug:
+            raise ValueError(
+                f"Import names work {front.get('work')!r}, not {slug!r}"
+            )
+        try:
+            async with self._transaction() as tx:
+                _, rev1 = await create_work_in_tx(
+                    tx,
+                    works=self._works,
+                    revisions=self._revisions,
+                    slug=slug,
+                    title=title,
+                    work_type=work_type,
+                )
+                changes = await self._apply(
+                    tx, rev1.id, parsed, known_keys={}, depth_by_key={},
+                )
+                if dry_run:
+                    await tx.conn.rollback()
+        except IntegrityError as exc:
+            raise ValueError(f"slug {slug!r} is taken") from exc
+        logger.info(
+            "work_promoted", slug=slug, blocks=len(changes), dry_run=dry_run,
+        )
+        return ImportDiff(
+            revision_id=rev1.id,
+            revision_number=rev1.revision_number,
             dry_run=dry_run,
             changes=changes,
         )
@@ -458,15 +507,25 @@ def render_markdown(view: AssembledRevision) -> str:
     return "\n".join(parts)
 
 
-def parse_markdown(markdown: str) -> tuple[dict[str, Any], list[_ParsedBlock]]:
+def parse_markdown(
+    markdown: str, *, require_front_matter: bool = True
+) -> tuple[dict[str, Any], list[_ParsedBlock]]:
     """Split edited markdown into front matter and §5.2 blocks."""
     match = _FRONT_MATTER_RE.match(markdown)
     if match is None:
-        raise ValueError("Import needs YAML front matter between --- lines")
+        if require_front_matter:
+            raise ValueError("Import needs YAML front matter between --- lines")
+        # A plain note: the whole text is the body, with no work name to check.
+        return {}, _parse_body(markdown)
     front = yaml.safe_load(match.group(1)) or {}
     if not isinstance(front, dict):
         raise ValueError("Front matter must be a mapping")
     body = markdown[match.end():]
+    return front, _parse_body(body)
+
+
+def _parse_body(body: str) -> list[_ParsedBlock]:
+    """Split a markdown body into §5.2 blocks."""
     parsed: list[_ParsedBlock] = []
     heading_stack: list[tuple[int, int]] = []  # (level, parsed index)
 
@@ -588,4 +647,4 @@ def parse_markdown(markdown: str) -> tuple[dict[str, Any], list[_ParsedBlock]]:
             current.append(line)
         index += 1
     flush_paragraph()
-    return front, parsed
+    return parsed

@@ -993,6 +993,132 @@ async def test_export_numbered_revision(engine: AsyncEngine, corpus: Corpus) -> 
     assert live_front["state"] == "draft"
 
 
+_NOTE_BODY = """# Beat
+
+A paragraph with [[Some note]] and [^1].
+
+- item one
+- item two
+
+## Sub-beat
+
+Closing line.
+"""
+
+_NOTE = "---\ntags: [idea]\n---\n\n" + _NOTE_BODY
+
+
+@pytest.mark.asyncio
+async def test_promote_plain_note(engine: AsyncEngine, corpus: Corpus) -> None:
+    """A vault note with Obsidian front matter lands as revision 1."""
+    spine = _Spine(engine)
+
+    diff = await spine.export.promote(
+        slug="spine-promote", title="Promoted", work_type="script",
+        markdown=_NOTE,
+    )
+    corpus.track(works, (await spine.repos.works.get_by_slug("spine-promote")).id)
+
+    assert diff.revision_number == 1
+    assert {change.change for change in diff.changes} == {"added"}
+
+    view = await spine.works.get(slug="spine-promote")
+    assert view["revision"]["revision_number"] == 1
+    kinds = [block["block_type"] for block in view["blocks"]]
+    assert kinds == ["heading", "paragraph", "list", "heading", "paragraph"]
+    beat = view["blocks"][0]
+    assert beat["title"] == "Beat"
+    assert view["blocks"][3]["title"] == "Sub-beat"
+    assert view["blocks"][3]["parent_key"] == beat["block_key"]
+    assert "[[Some note]]" in view["blocks"][1]["body_markdown"]
+
+
+@pytest.mark.asyncio
+async def test_promote_without_front_matter(engine: AsyncEngine, corpus: Corpus) -> None:
+    """Zero engine duty before promotion: no front matter also lands."""
+    spine = _Spine(engine)
+
+    diff = await spine.export.promote(
+        slug="spine-promote-bare", title="Bare", work_type="script",
+        markdown=_NOTE_BODY,
+    )
+    corpus.track(works, (await spine.repos.works.get_by_slug("spine-promote-bare")).id)
+
+    assert diff.revision_number == 1
+    view = await spine.works.get(slug="spine-promote-bare")
+    assert [block["block_type"] for block in view["blocks"]] == [
+        "heading", "paragraph", "list", "heading", "paragraph",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_promote_export_import_round_trip(engine: AsyncEngine, corpus: Corpus) -> None:
+    """Promote, export, import unchanged: an empty diff on revision 2."""
+    spine = _Spine(engine)
+    await spine.export.promote(
+        slug="spine-promote-loop", title="Loop", work_type="script",
+        markdown=_NOTE,
+    )
+    corpus.track(works, (await spine.repos.works.get_by_slug("spine-promote-loop")).id)
+
+    exported = await spine.export.export_draft(slug="spine-promote-loop")
+    diff = await spine.export.import_draft(
+        slug="spine-promote-loop", markdown=exported
+    )
+    assert diff.revision_number == 2
+    assert diff.changes == []
+
+
+@pytest.mark.asyncio
+async def test_promote_taken_slug(engine: AsyncEngine, corpus: Corpus) -> None:
+    """Promoting onto a taken slug fails without a second work."""
+    spine = _Spine(engine)
+    created = await spine.works.create(
+        slug="spine-promote-taken", title="First", work_type="script"
+    )
+    corpus.track(works, created.work_id)
+
+    with pytest.raises(ValueError, match="is taken"):
+        await spine.export.promote(
+            slug="spine-promote-taken", title="Second", work_type="script",
+            markdown=_NOTE_BODY,
+        )
+
+    kept = await spine.repos.works.get_by_slug("spine-promote-taken")
+    assert kept is not None and kept.id == created.work_id
+    latest = await spine.repos.revisions.latest(kept.id)
+    assert latest is not None and latest.revision_number == 1
+
+
+@pytest.mark.asyncio
+async def test_promote_refuses_markers_without_a_work(engine: AsyncEngine, corpus: Corpus) -> None:
+    """Citations come after promotion: a marker refuses with no work row left."""
+    spine = _Spine(engine)
+
+    with pytest.raises(ImportRefused) as exc_info:
+        await spine.export.promote(
+            slug="spine-promote-cite", title="Cited", work_type="script",
+            markdown="# Beat\n\nA claim {{cite:11111111-1111-1111-1111-111111111111}}.\n",
+        )
+    assert exc_info.value.rule_id == "AUTH_CITATION_MARKER_DANGLING"
+    assert await spine.repos.works.get_by_slug("spine-promote-cite") is None
+
+
+@pytest.mark.asyncio
+async def test_promote_dry_run_writes_nothing(engine: AsyncEngine, corpus: Corpus) -> None:
+    """A dry run returns the diff but leaves no work row behind."""
+    spine = _Spine(engine)
+
+    diff = await spine.export.promote(
+        slug="spine-promote-dry", title="Dry", work_type="script",
+        markdown=_NOTE, dry_run=True,
+    )
+
+    assert diff.dry_run is True
+    assert len(diff.changes) == 5
+    assert await spine.repos.works.get_by_slug("spine-promote-dry") is None
+
+
 @pytest.mark.asyncio
 async def test_dangling_import_refuses(engine: AsyncEngine, corpus: Corpus) -> None:
     doc_id = await _ingest(engine, corpus)
