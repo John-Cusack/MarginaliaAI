@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 
-from research_engine.domain.errors import NotFoundError
+from research_engine.domain.errors import FrozenRevisionError, NotFoundError
 from research_engine.mcp.errors import envelope, failed
 from research_engine.services.works.publication import FreezeBlocked
 
@@ -37,6 +37,9 @@ async def handler(container: Any, *, slug: str) -> dict[str, Any]:
         return envelope("validation_error", str(exc), {"blockers": exc.blockers})
     except NotFoundError as exc:
         return envelope("not_found", str(exc), None)
+    except FrozenRevisionError as exc:
+        # A draft is user-correctable (freeze it first), not a tool failure.
+        return envelope("invalid_input", str(exc), None)
     except ValueError as exc:
         return envelope("invalid_input", str(exc), None)
     except Exception as exc:  # noqa: BLE001 - the dispatch envelope for the unexpected

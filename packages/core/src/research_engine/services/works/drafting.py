@@ -228,8 +228,10 @@ class WorkExportService:
             raise ValueError(
                 f"Import names work {front.get('work')!r}, not {slug!r}"
             )
-        try:
-            async with self._transaction() as tx:
+        # Only the insert can raise a slug conflict: an IntegrityError from
+        # _apply (e.g. a block constraint) must not masquerade as one.
+        async with self._transaction() as tx:
+            try:
                 _, rev1 = await create_work_in_tx(
                     tx,
                     works=self._works,
@@ -238,13 +240,13 @@ class WorkExportService:
                     title=title,
                     work_type=work_type,
                 )
-                changes = await self._apply(
-                    tx, rev1.id, parsed, known_keys={}, depth_by_key={},
-                )
-                if dry_run:
-                    await tx.conn.rollback()
-        except IntegrityError as exc:
-            raise ValueError(f"slug {slug!r} is taken") from exc
+            except IntegrityError as exc:
+                raise ValueError(f"slug {slug!r} is taken") from exc
+            changes = await self._apply(
+                tx, rev1.id, parsed, known_keys={}, depth_by_key={},
+            )
+            if dry_run:
+                await tx.conn.rollback()
         logger.info(
             "work_promoted", slug=slug, blocks=len(changes), dry_run=dry_run,
         )
