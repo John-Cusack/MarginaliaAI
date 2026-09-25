@@ -45,6 +45,10 @@ class ChunkingError(IngestionError):
     """Chunking a document failed."""
 
 
+class IngestRefused(IngestionError):
+    """A path under a forbidden root (e.g. the Obsidian vault) was refused."""
+
+
 # --- Validation ---
 
 

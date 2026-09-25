@@ -489,6 +489,7 @@ async def build_container(settings: Settings) -> Container:
         document_texts=document_texts_repo,
         document_nodes=document_nodes_repo,
         editions=editions_repo,
+        forbidden_roots=[settings.vault_dir] if settings.vault_dir else [],
     )
 
     # Plugin-facing adapters are the only objects crossing the SDK boundary.
