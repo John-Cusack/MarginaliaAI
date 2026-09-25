@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 # noqa TC001 below: pydantic resolves the annotations at model definition,
 # so these are runtime imports despite looking annotation-only.
 from research_engine.domain.citations import BlockCitations  # noqa: TC001
+from research_engine.domain.errors import NotFoundError
 from research_engine.domain.spans import SourceSpan  # noqa: TC001
 from research_engine.domain.works import (  # noqa: TC001
     BlockLinks,
@@ -51,6 +52,54 @@ class AssembledRevision(BaseModel):
     def key_index(self) -> dict[str, AssembledBlock]:
         """Blocks by block-key string, for marker and parent joins."""
         return {str(item.block.block_key): item for item in self.blocks}
+
+
+async def resolve_revision(
+    works: Any,
+    revisions: Any,
+    *,
+    slug: str | None,
+    work_id: UUID | None,
+    revision_number: int | None,
+) -> tuple[Work, WorkRevision]:
+    """The work and one revision: current when the number is None.
+
+    Shared by `WorkService.get` and `WorkExportService.export_draft` so the
+    two cannot disagree about which revision a number names.
+    """
+    if slug is not None:
+        work = await works.get_by_slug(slug)
+    elif work_id is not None:
+        work = await works.get(work_id)
+    else:
+        work = None
+    if work is None:
+        raise NotFoundError("work", slug or work_id)
+    if revision_number is None:
+        if work.current_revision_id is None:
+            raise NotFoundError("work_revision", f"current of {work.slug}")
+        revision = await revisions.get(work.current_revision_id)
+        if revision is None:
+            raise NotFoundError("work_revision", work.current_revision_id)
+        return work, revision
+    latest = await revisions.latest(work.id)
+    if latest is None or revision_number > latest.revision_number:
+        raise NotFoundError(
+            "work_revision", f"{work.slug} revision {revision_number}"
+        )
+    current = latest
+    while current.revision_number != revision_number:
+        if current.parent_revision_id is None:
+            raise NotFoundError(
+                "work_revision", f"{work.slug} revision {revision_number}"
+            )
+        parent = await revisions.get(current.parent_revision_id)
+        if parent is None:  # pragma: no cover - FK keeps the chain whole
+            raise NotFoundError(
+                "work_revision", f"{work.slug} revision {revision_number}"
+            )
+        current = parent
+    return work, current
 
 
 def hash_assembled(view: AssembledRevision) -> bytes:

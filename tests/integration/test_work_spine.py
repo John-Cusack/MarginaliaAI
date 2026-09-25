@@ -50,7 +50,11 @@ from research_engine.services.ingestion.orchestrator import IngestionOrchestrato
 from research_engine.services.verification import QuoteVerifier
 from research_engine.services.works.assembly import assemble_revision, hash_assembled
 from research_engine.services.works.attach import AttachRefused, CitationService
-from research_engine.services.works.drafting import ImportRefused, WorkExportService
+from research_engine.services.works.drafting import (
+    ImportRefused,
+    WorkExportService,
+    parse_markdown,
+)
 from research_engine.services.works.publication import (
     FreezeBlocked,
     WaiverGiven,
@@ -878,6 +882,115 @@ async def test_drafting_loop(engine: AsyncEngine, corpus: Corpus) -> None:
     assert dry.dry_run is True
     assert dry.changes == []
     assert (await spine.works.get(slug="spine-loop"))["revision"]["revision_number"] == 2
+
+
+@pytest.mark.asyncio
+async def test_stale_export_refuses(engine: AsyncEngine, corpus: Corpus) -> None:
+    """An export predating an in-place block edit is refused; nothing is written."""
+    doc_id = await _ingest(engine, corpus)
+    built = await _work_with_cited_paragraph(engine, corpus, "spine-stale", doc_id)
+    spine = built["spine"]
+
+    stale = await spine.export.export_draft(slug="spine-stale")
+    before = await spine.repos.works.get_by_slug("spine-stale")
+    assert before is not None and before.current_revision_id is not None
+
+    # An in-place draft edit bumps no revision number, so only the content
+    # hash moves — exactly what the base stamp guards.
+    await spine.works.upsert_block(
+        slug="spine-stale", position=1, block_type="paragraph",
+        body_markdown="A newer claim.",
+    )
+
+    with pytest.raises(ImportRefused) as exc_info:
+        await spine.export.import_draft(slug="spine-stale", markdown=stale)
+    assert exc_info.value.rule_id == "AUTH_PARENT_REVISION_MISMATCH"
+    assert exc_info.value.detail["current_revision"] == 1
+
+    after = await spine.repos.works.get_by_slug("spine-stale")
+    assert after is not None
+    assert after.current_revision_id == before.current_revision_id
+    latest = await spine.repos.revisions.latest(after.id)
+    assert latest is not None and latest.revision_number == 1
+
+
+@pytest.mark.asyncio
+async def test_reimport_is_idempotent(engine: AsyncEngine, corpus: Corpus) -> None:
+    """A no-change copy-forward keeps the content hash, so re-importing the
+    same bytes is an idempotent no-op rather than a refusal: the stamp still
+    matches because the words did not move."""
+    doc_id = await _ingest(engine, corpus)
+    built = await _work_with_cited_paragraph(engine, corpus, "spine-reimport", doc_id)
+    spine = built["spine"]
+
+    exported = await spine.export.export_draft(slug="spine-reimport")
+    first = await spine.export.import_draft(slug="spine-reimport", markdown=exported)
+    assert first.revision_number == 2
+    assert first.changes == []
+
+    second = await spine.export.import_draft(slug="spine-reimport", markdown=exported)
+    assert second.revision_number == 3
+    assert second.changes == []
+
+
+@pytest.mark.asyncio
+async def test_import_without_base_refuses(engine: AsyncEngine, corpus: Corpus) -> None:
+    """A file with no base stamp was not produced by `work export`."""
+    doc_id = await _ingest(engine, corpus)
+    built = await _work_with_cited_paragraph(engine, corpus, "spine-nobase", doc_id)
+    spine = built["spine"]
+
+    exported = await spine.export.export_draft(slug="spine-nobase")
+    stripped = "\n".join(
+        line for line in exported.splitlines() if not line.startswith("base:")
+    )
+    with pytest.raises(ImportRefused) as exc_info:
+        await spine.export.import_draft(slug="spine-nobase", markdown=stripped)
+    assert exc_info.value.rule_id == "AUTH_PARENT_REVISION_MISMATCH"
+    assert exc_info.value.detail["file_base"] is None
+
+    view = await spine.works.get(slug="spine-nobase")
+    assert view["revision"]["revision_number"] == 1
+
+
+@pytest.mark.asyncio
+async def test_export_numbered_revision(engine: AsyncEngine, corpus: Corpus) -> None:
+    """Any revision renders: frozen history keeps its state and base stamp."""
+    doc_id = await _ingest(engine, corpus)
+    built = await _work_with_cited_paragraph(
+        engine, corpus, "spine-frozen-export", doc_id
+    )
+    spine = built["spine"]
+
+    sealed = await spine.publish.freeze(
+        slug="spine-frozen-export",
+        message="first",
+        waivers=[
+            WaiverGiven(
+                rule_id="AUTH_QUOTE_UNVERIFIED",
+                subject=str(built["attached"].citation_key),
+                reason="reviewed for the export test",
+            )
+        ],
+    )
+    # Copy forward so rev 1 is history, then render it by number.
+    current = await spine.export.export_draft(slug="spine-frozen-export")
+    moved = await spine.export.import_draft(
+        slug="spine-frozen-export", markdown=current
+    )
+    assert moved.revision_number == 2
+
+    rendered = await spine.export.export_draft(
+        slug="spine-frozen-export", revision=1
+    )
+    front, _ = parse_markdown(rendered)
+    assert front["state"] == "frozen"
+    assert front["base"] == sealed.content_hash
+
+    live = await spine.export.export_draft(slug="spine-frozen-export")
+    live_front, _ = parse_markdown(live)
+    assert live_front["revision"] == 2
+    assert live_front["state"] == "draft"
 
 
 @pytest.mark.asyncio
