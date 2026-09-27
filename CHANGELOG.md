@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### GPU embed server idles at zero instead of holding the card
+
+`research-engine embed-server` takes `--idle-exit-after` (default 900 s) and
+releases transient batch memory after every request, so the card sits at 0 MB
+from Marginalia unless bulk work ran recently. Bulk commands (`ingest`,
+`embeddings backfill`, `reindex chunks`) start the host's
+`marginalia-embed` unit on demand — over ssh from the laptop — and wait for
+`warm=true` before touching the database; they never stop it, so overlapping
+ingests are safe and shutdown stays the server's race-free idle exit.
+Queries while the server is down are unchanged: local embedding fallback,
+reranking skipped and flagged. Ops detail in `docs/gpu-embed-host.md`; the
+unit ships disabled-by-default in `deploy/marginalia-embed.service`.
+
 ### marginalia-ai 0.6.3 carries a Rust extension
 
 Every `marginalia-ai` wheel now includes `research_engine._native`, built

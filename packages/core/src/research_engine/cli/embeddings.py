@@ -42,14 +42,25 @@ def purge(
     asyncio.run(_purge(model, dry_run, yes))
 
 
-async def _service():
+async def _service(*, needs_gpu: bool = False):
+    from research_engine.adapters.inference.gpu_host import (
+        GpuHostError,
+        ensure_gpu_host_ready,
+    )
     from research_engine.composition import build_container
     from research_engine.config import load_settings
     from research_engine.services.ingestion.embedding_backfill import (
         EmbeddingBackfillService,
     )
 
-    container = await build_container(load_settings())
+    settings = load_settings()
+    if needs_gpu:
+        try:
+            await ensure_gpu_host_ready(settings)
+        except GpuHostError as exc:
+            typer.echo(f"Stopped: {exc}")
+            raise typer.Exit(code=1) from exc
+    container = await build_container(settings)
     service = EmbeddingBackfillService(
         container.engine,
         container.passages,
@@ -94,7 +105,9 @@ async def _status() -> None:
 
 
 async def _backfill(dry_run: bool, limit: int | None) -> None:
-    container, service = await _service()
+    # A dry run only counts candidates in Postgres; waking the card for it
+    # would burn a warm-up to embed nothing.
+    container, service = await _service(needs_gpu=not dry_run)
     try:
         report = await service.backfill(dry_run=dry_run, limit=limit)
         if dry_run:

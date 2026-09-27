@@ -152,11 +152,23 @@ def chunks(
 async def _reindex(
     document_ids: list[UUID] | None, dry_run: bool, orphan_threshold: float
 ) -> ReindexReport:
+    from research_engine.adapters.inference.gpu_host import (
+        GpuHostError,
+        ensure_gpu_host_ready,
+    )
     from research_engine.composition import build_container
     from research_engine.config import load_settings
     from research_engine.services.ingestion.reindex import ReindexService
 
-    container = await build_container(load_settings())
+    settings = load_settings()
+    # A dry run still does the embedding work before rolling back, so it
+    # needs the card the same as the real pass.
+    try:
+        await ensure_gpu_host_ready(settings)
+    except GpuHostError as exc:
+        typer.echo(f"\nStopped: {exc}")
+        raise typer.Exit(code=1) from exc
+    container = await build_container(settings)
     try:
         service = ReindexService(
             container.engine,

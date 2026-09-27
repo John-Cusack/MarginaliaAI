@@ -119,6 +119,9 @@ RE_ANTHROPIC_API_KEY=sk-ant-...
 
 All settings use the `RE_` prefix. See `packages/core/src/research_engine/config/settings.py` for the full list.
 
+Offloading embedding and reranking to a GPU host — and keeping its card free
+unless bulk work is running — is covered in [docs/gpu-embed-host.md](docs/gpu-embed-host.md).
+
 ## Plugin System
 
 Corpus Engine discovers standard Python distributions through the
@@ -319,7 +322,7 @@ packages/plugins/   # First-party plugin distributions in this workspace
 | [07-pack-system.md](corpus-engine-docs/docs/07-pack-system.md) | Pack manifest, SDK contract |
 | [11-implementation-architecture.md](corpus-engine-docs/docs/11-implementation-architecture.md) | Implementation guide |
 | [docs/corpus-setup.md](docs/corpus-setup.md) | Ordered sequence for populating the Bible corpus |
-| [works/README.md](works/README.md) | The work file contract |
+| [docs/gpu-embed-host.md](docs/gpu-embed-host.md) | GPU embed server lifecycle: on-demand start, idle shutdown, queries while down |
 | [docs/pypi-readiness.md](docs/pypi-readiness.md) | PyPI readiness assessment, blockers, and release checklist |
 | [docs/design/pypi-plugin-distribution-architecture.md](docs/design/pypi-plugin-distribution-architecture.md) | Proposed PyPI distribution, SDK, and plugin architecture |
 | [docs/implementation/pypi-plugin-migration/index.md](docs/implementation/pypi-plugin-migration/index.md) | Executable cross-repository PyPI/plugin migration runbooks |

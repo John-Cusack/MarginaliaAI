@@ -31,7 +31,12 @@ rather than after depositing thousands of incomparable vectors.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import os
+import time
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 import structlog
 
@@ -48,6 +53,79 @@ from research_engine.adapters.embedding.wire import (
 logger = structlog.get_logger()
 
 
+#: How often the idle watcher wakes to check. Exit latency past the threshold
+#: is at most this, so keep it small against an idle timeout of minutes.
+IDLE_POLL_INTERVAL = 5.0
+
+
+class IdleTracker:
+    """When the server last did billable work, for ``--idle-exit-after``.
+
+    The clock is injectable so the watcher is testable without sleeping for
+    fifteen minutes. Startup counts as activity: a freshly started server that
+    nobody calls must still idle out.
+    """
+
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._last_activity = clock()
+
+    def note_activity(self) -> None:
+        self._last_activity = self._clock()
+
+    def idle_seconds(self, now: float | None = None) -> float:
+        now = self._clock() if now is None else now
+        return max(0.0, now - self._last_activity)
+
+
+def _release_accelerator_memory() -> None:
+    """Hand transient batch buffers back to the driver after each request.
+
+    Model weights stay resident; only the PyTorch caching allocator's unused
+    blocks are released, so a long-running server stops sitting on its peak
+    batch allocation. Same guarded shape as
+    `services.ingestion.embed_batches.free_accelerator_memory`, kept local
+    because adapters must not import from services.
+    """
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
+def _exit_process() -> None:
+    """Stop the process with a clean status, so `Restart=on-failure` stays down.
+
+    An idle server has no in-flight requests by construction, so there is
+    nothing to drain; exiting is the whole point, and exit 0 is not a failure.
+    """
+    os._exit(0)
+
+
+async def idle_exit_watcher(
+    tracker: IdleTracker,
+    idle_exit_after: float,
+    *,
+    shutdown: Callable[[], None] = _exit_process,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    poll_interval: float = IDLE_POLL_INTERVAL,
+) -> None:
+    """Exit the server once nothing has asked it for work in a while."""
+    while True:
+        await sleep(poll_interval)
+        if tracker.idle_seconds() >= idle_exit_after:
+            logger.info(
+                "embed_server_idle_exit",
+                idle_seconds=tracker.idle_seconds(),
+                idle_exit_after=idle_exit_after,
+            )
+            shutdown()
+            return
+
+
 def create_app(
     model: str = "BAAI/bge-m3",
     dim: int = 1024,
@@ -56,6 +134,7 @@ def create_app(
     device: str | None = None,
     warm: bool = False,
     concurrency: int = 1,
+    idle_exit_after: float = 0,
 ) -> Any:
     """Build the ASGI app wrapping warm inference models.
 
@@ -73,6 +152,11 @@ def create_app(
         concurrency: Batches allowed on the GPU at once. 1 is safest. A 24 GB
             card can usually take 2; beyond that long passages risk CUDA OOM,
             which the client handles by halving but at the cost of a round trip.
+        idle_exit_after: Seconds without an embedding or rerank request before
+            the process exits 0. 0 disables. The point is a GPU that sits at
+            0 MB unless bulk work ran recently: pair with
+            `Restart=on-failure` (a clean exit stays stopped) and let bulk
+            commands start the unit on demand.
     """
     try:
         from fastapi import FastAPI, HTTPException
@@ -116,6 +200,9 @@ def create_app(
         assert reranker is not None
         reranker._ensure_model()  # noqa: SLF001 - the adapter owns loading
 
+    # Startup counts as activity, so a unit nobody calls still idles out.
+    tracker = IdleTracker()
+
     @asynccontextmanager
     async def lifespan(_app: Any):
         if warm:
@@ -132,7 +219,20 @@ def create_app(
                 rerank_model=rerank_model,
                 device=state["device"],
             )
-        yield
+            tracker.note_activity()
+        watcher = None
+        if idle_exit_after > 0:
+            logger.info(
+                "embed_server_idle_exit_armed", idle_exit_after=idle_exit_after
+            )
+            watcher = asyncio.create_task(
+                idle_exit_watcher(tracker, idle_exit_after)
+            )
+        try:
+            yield
+        finally:
+            if watcher is not None:
+                watcher.cancel()
 
     app = FastAPI(title="research-engine inference server", lifespan=lifespan)
 
@@ -193,6 +293,11 @@ def create_app(
                         },
                     ) from exc
                 raise HTTPException(status_code=500, detail=detail) from exc
+            finally:
+                # A request is activity even when it fails, and its transient
+                # buffers must not linger in the caching allocator.
+                tracker.note_activity()
+                _release_accelerator_memory()
 
         if not state["warm"]:
             state["warm"] = True
@@ -235,6 +340,9 @@ def create_app(
                     error=str(exc),
                 )
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
+            finally:
+                tracker.note_activity()
+                _release_accelerator_memory()
 
         if not state["rerank_warm"]:
             state["rerank_warm"] = True
