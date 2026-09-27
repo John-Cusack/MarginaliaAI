@@ -27,9 +27,13 @@ def ingest(
 
 
 async def _ingest(sources: list[Path], plugin: str | None, concurrency: int):
+    import asyncio
+    import contextlib
+
     from research_engine.adapters.inference.gpu_host import (
         GpuHostError,
         ensure_gpu_host_ready,
+        watch_gpu_host,
     )
     from research_engine.composition import build_container
     from research_engine.config import load_settings
@@ -41,11 +45,19 @@ async def _ingest(sources: list[Path], plugin: str | None, concurrency: int):
     # server idle-exits on its own, which is what makes overlapping ingests
     # safe.
     try:
-        await ensure_gpu_host_ready(settings)
+        gpu_status = await ensure_gpu_host_ready(settings)
     except GpuHostError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
     container = await build_container(settings)
+    # The run's own CPU phases (OCR on scanned pages) are silent for longer
+    # than --idle-exit-after, and the server cannot tell an ingest is coming
+    # back — so keep watch until the run ends. Skipped means local mode, in
+    # which there is nothing to keep up.
+    watcher: asyncio.Task | None = None
+    stop_watch = asyncio.Event()
+    if gpu_status != "skipped":
+        watcher = asyncio.create_task(watch_gpu_host(settings, stop_watch))
     try:
         with Progress(console=console) as progress:
             task = progress.add_task("Ingesting...", total=None)
@@ -62,4 +74,9 @@ async def _ingest(sources: list[Path], plugin: str | None, concurrency: int):
         console.print(f"  Skipped: {stats['skipped']}")
         console.print(f"  Failed:  {stats['failed']}")
     finally:
+        if watcher is not None:
+            stop_watch.set()
+            watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
         await container.close()

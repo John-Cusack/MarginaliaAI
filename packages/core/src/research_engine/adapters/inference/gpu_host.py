@@ -145,6 +145,59 @@ async def _default_wait_warm(base_url: str, timeout: float) -> None:
             await asyncio.sleep(POLL_INTERVAL)
 
 
+async def watch_gpu_host(
+    settings: Settings,
+    stop: asyncio.Event,
+    *,
+    run: Callable[[list[str]], Any] | None = None,
+    wait_warm: Callable[[str, float], Awaitable[None]] | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    interval: float = 60.0,
+) -> None:
+    """Re-wake the unit while a bulk run is still going. Runs until cancelled.
+
+    The startup bracket covers a cold card at launch, but a run's own CPU
+    phases (510 scanned pages of OCR) are silent for longer than
+    `--idle-exit-after`, and the server cannot tell an ingest is coming back.
+    So the client keeps watch for the run's duration: if the unit went down,
+    start it again (and wait for warm, so it is ready before the next batch).
+    Start-only like the bracket, so overlapping runs stay safe; a start that
+    fails here only logs, and the batch that needs the server fails loudly
+    itself. Cancel when the run ends.
+    """
+    base_url = settings.resolved_inference_base_url
+    if base_url is None:  # pragma: no cover - callers skip watching then
+        return
+    control = resolve_control(base_url, settings.embed_ssh_target)
+    runner = run or _default_run
+    waiter = wait_warm or _default_wait_warm
+    where = "this host" if control.kind == "local" else control.target
+    while not stop.is_set():
+        active = await asyncio.to_thread(
+            runner, control_command(control, "is-active", UNIT)
+        )
+        if active.returncode != 0:
+            logger.warning("gpu_host_went_down_mid_run", where=where, unit=UNIT)
+            started = await asyncio.to_thread(
+                runner, control_command(control, "start", UNIT)
+            )
+            if started.returncode != 0:
+                logger.error(
+                    "gpu_host_rewake_failed",
+                    where=where,
+                    detail=str(
+                        getattr(started, "stderr", "")
+                        or getattr(started, "stdout", "")
+                    ).strip(),
+                )
+            else:
+                try:
+                    await waiter(base_url, settings.embed_start_timeout)
+                except GpuHostError as exc:
+                    logger.error("gpu_host_rewake_never_warmed", error=str(exc))
+        await sleep(interval)
+
+
 async def ensure_gpu_host_ready(
     settings: Settings,
     *,
