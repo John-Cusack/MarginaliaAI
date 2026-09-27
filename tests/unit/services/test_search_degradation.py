@@ -7,14 +7,13 @@ why. Returning fused results and flagging them degrades in quality, visibly,
 rather than in latency, invisibly.
 """
 
-from __future__ import annotations
-
 import uuid
 from types import SimpleNamespace
 
 import pytest
 
-from research_engine.domain.errors import RerankUnavailable
+from research_engine.adapters.inference.routing import QueryEmbeddingWithFallback
+from research_engine.domain.errors import EmbeddingUnavailable, RerankUnavailable
 from research_engine.domain.passages import SearchQuery
 from research_engine.services.search.hybrid import HybridSearchService
 
@@ -172,3 +171,46 @@ async def test_the_reranker_is_given_chunk_text():
 
     assert reranker.texts
     assert all(t.startswith("passage ") for t in reranker.texts)
+
+
+class UnreachableRemoteEmbedding:
+    """The GPU host is down: every call raises, like the real client."""
+
+    model_name, model_version, dim = "BAAI/bge-m3", "1.0", 1024
+
+    async def embed_batch(self, texts):
+        raise EmbeddingUnavailable("john-super-server is asleep")
+
+
+class LocalFallbackEmbedding:
+    """The laptop's own bge-m3, standing in for the 2.3 GB load."""
+
+    model_name, model_version, dim = "BAAI/bge-m3", "1.0", 1024
+
+    async def embed(self, text):
+        return [0.1] * self.dim
+
+    async def embed_batch(self, texts):
+        return [[0.1] * self.dim for _ in texts]
+
+
+@pytest.mark.asyncio
+async def test_query_while_the_server_is_down_still_answers():
+    """The whole degraded query path in one service: remote embedding falls
+    back to local, remote reranking is skipped and flagged, hits come back.
+    This is what `research-engine search` does with the unit stopped."""
+    query_embedding = QueryEmbeddingWithFallback(
+        UnreachableRemoteEmbedding(),
+        LocalFallbackEmbedding,
+        base_url="http://gpu-host:9882",
+    )
+    service = HybridSearchService(
+        passages=FakePassages(),
+        embedding=query_embedding,
+        reranker=DeadReranker(),
+    )
+
+    result = await service.find_passages(SearchQuery(text="mishpat", k=3, rerank=True))
+
+    assert len(result.hits) == 3
+    assert result.degraded == ["rerank_unavailable"]

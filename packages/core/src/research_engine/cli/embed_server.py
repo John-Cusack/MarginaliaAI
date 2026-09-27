@@ -34,6 +34,14 @@ def serve(
         "-c",
         help="Batches allowed on the GPU at once. 1 is safest; 2 suits a 24GB card.",
     ),
+    idle_exit_after: float = typer.Option(
+        900.0,
+        "--idle-exit-after",
+        help="Exit 0 after this many seconds without an embedding or rerank "
+        "request (/health does not count). 0 disables. Pair with "
+        "Restart=on-failure so the exit stays stopped, and let bulk commands "
+        "start the unit on demand.",
+    ),
 ) -> None:
     """Serve embedding and reranking over HTTP for another machine to use.
 
@@ -69,6 +77,7 @@ def serve(
         device=device,
         warm=warm,
         concurrency=concurrency,
+        idle_exit_after=idle_exit_after,
     )
 
     typer.echo(

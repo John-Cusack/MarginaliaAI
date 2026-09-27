@@ -1,0 +1,29 @@
+# marginalia-embed.service — GPU embedding + rerank server (systemd user unit).
+#
+# Install on the GPU host at ~/.config/systemd/user/marginalia-embed.service,
+# then `systemctl --user daemon-reload`. It is installed DISABLED on purpose:
+# bulk commands (`ingest`, `embeddings backfill`, `reindex chunks`) start it
+# on demand over ssh or locally, and --idle-exit-after stops it when unused,
+# so a fresh boot shows 0 MB from Marginalia. See docs/gpu-embed-host.md.
+#
+# Do NOT enable it: `systemctl --user disable marginalia-embed.service`.
+# (Linger must stay on — `loginctl show-user john` → Linger=yes — or user
+# units will not run without a login session. Already the case; just don't
+# turn it off.)
+#
+# Adjust ExecStart's binary path to the server's venv.
+
+[Unit]
+Description=Marginalia embedding and rerank server (BGE-M3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/home/john/repos/MarginaliaAI/.venv/bin/research-engine embed-server --host 0.0.0.0 --port 9882 --warm --concurrency 2 --idle-exit-after 900
+# A clean idle exit (status 0) is not a failure: stay stopped until the next
+# bulk run starts the unit again. Do not change to always/on-success.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

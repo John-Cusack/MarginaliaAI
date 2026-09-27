@@ -76,6 +76,28 @@ class Settings(BaseSettings):
     #: the researcher whether or not it eventually returns.
     reranker_timeout: float = 30.0
 
+    # GPU host lifecycle (the box serving `research-engine embed-server`)
+    #: Start the host's `marginalia-embed` unit before bulk embedding.
+    #:
+    #: - ``auto``   — only when bulk embedding actually needs the host, i.e. a
+    #:   base URL is set and `embedding_provider` is not `local_bge`.
+    #: - ``always`` — whenever a base URL is set (for exercising the path).
+    #: - ``never``  — never touch systemd; the operator manages the server.
+    #:
+    #: The bracket only ever starts. Shutdown is the server's
+    #: `--idle-exit-after`, which needs no coordination; a client-side stop
+    #: would need a lease on the host to survive overlapping ingests from two
+    #: machines. See `adapters/inference/gpu_host.py`.
+    embed_manage_gpu: Literal["auto", "always", "never"] = "auto"
+    #: ssh target for the host's systemctl. Defaults to the inference URL's
+    #: hostname — a Tailscale name works. Set this when the URL does not name
+    #: the box itself.
+    embed_ssh_target: str | None = None
+    #: Seconds to wait for /health `warm=true` after starting the unit before
+    #: failing the run. Model load is 30–60 s; this is the patience, not the
+    #: expectation.
+    embed_start_timeout: float = 300.0
+
     # Paths
     data_dir: Path = Path.home() / ".research-engine"
     plugins_dir: Path | None = None

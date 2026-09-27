@@ -27,11 +27,24 @@ def ingest(
 
 
 async def _ingest(sources: list[Path], plugin: str | None, concurrency: int):
+    from research_engine.adapters.inference.gpu_host import (
+        GpuHostError,
+        ensure_gpu_host_ready,
+    )
     from research_engine.composition import build_container
     from research_engine.config import load_settings
     from research_engine.domain.errors import IngestRefused
 
     settings = load_settings(ingest_concurrency=concurrency)
+    # Wake the GPU host before touching the database, so a cold card fails
+    # here with one line rather than mid-run. Never stops anything: the
+    # server idle-exits on its own, which is what makes overlapping ingests
+    # safe.
+    try:
+        await ensure_gpu_host_ready(settings)
+    except GpuHostError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
     container = await build_container(settings)
     try:
         with Progress(console=console) as progress:
