@@ -72,7 +72,12 @@ def cut_points(
 def spans(
     openings: list[Opening], text: str, cuts: list[int]
 ) -> list[tuple[int, int]]:
-    """``(start, end)`` of each letter, in order; trailing whitespace trimmed."""
+    """``(start, end)`` of each letter, in order; trailing whitespace trimmed.
+
+    Openings are merged before this runs, so no two share a start; a span can
+    still come out empty if a cut falls on the opening itself, and the caller
+    drops those rather than ingest an empty letter.
+    """
     result: list[tuple[int, int]] = []
     for index, opening in enumerate(openings):
         stop = openings[index + 1].start if index + 1 < len(openings) else len(text)

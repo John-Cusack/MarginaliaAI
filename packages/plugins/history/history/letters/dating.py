@@ -192,6 +192,8 @@ class Reading:
     weekday: str | None
     received: str | None
     confidence: float
+    #: Two readings of this one opening gave different dates.
+    readings_disagree: bool = False
 
     @classmethod
     def of(cls, data: dict[str, Any]) -> Reading:
@@ -209,6 +211,7 @@ class Reading:
             weekday=(data.get("weekday") or None) and str(data["weekday"]).lower(),
             received=data.get("received_date"),
             confidence=confidence,
+            readings_disagree=bool(data.get("readings_disagree")),
         )
 
 
@@ -281,6 +284,9 @@ def _read_one(reading: Reading, strict_single_reader: bool) -> Decision:
         return decision.held(UNDATED)
     if _CONJECTURE.search(written) or _CONJECTURE.search(reading.dateline or ""):
         return decision.held(CONJECTURAL)
+    if reading.readings_disagree:
+        decision.readers = "disagree"
+        return decision.held(READER_DISAGREEMENT, candidate=read_day(written))
     if reading.anchor_kind == "editorial":
         decision.caps.append(CAP_EDITORIAL)
 

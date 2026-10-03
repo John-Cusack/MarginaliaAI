@@ -138,6 +138,17 @@ async def _structure(
     placement = openings.place(records, passages, text, excluded)
     cuts = units.cut_points(await corpus.get_document_outline(volume_id), excluded)
     letter_spans = units.spans(placement.openings, text, cuts)
+    empty = [i for i, (start, end) in enumerate(letter_spans) if end <= start]
+    for index in reversed(empty):
+        placement.misplaced.append(
+            {
+                "record_id": placement.openings[index].record_ids[0],
+                "why": "a chapter or excluded range starts at the opening itself",
+                "opening": placement.openings[index].get("opening"),
+            }
+        )
+        del placement.openings[index]
+        del letter_spans[index]
     existing = await _existing_letters(ingestion, volume_id)
     reviewed, accept_errors = _reviewed_dates(placement.openings, existing, accept)
 
@@ -524,8 +535,13 @@ async def _configure(
         if key in config and not isinstance(config[key], expected)
     ]
     for pair in config.get("excluded_ranges") or []:
-        if not (isinstance(pair, list | tuple) and len(pair) == 2 and int(pair[0]) < int(pair[1])):
-            problems.append(f"excluded_ranges: {pair!r} is not [start, end]")
+        if not (
+            isinstance(pair, list | tuple)
+            and len(pair) == 2
+            and all(isinstance(bound, int) for bound in pair)
+            and pair[0] < pair[1]
+        ):
+            problems.append(f"excluded_ranges: {pair!r} is not [start, end] with start < end")
     if problems:
         return {"error": "invalid configuration", "problems": problems}
     change = {

@@ -219,3 +219,15 @@ def test_the_schema_registers():
     assert list(fields)[0] == "opening", "the first evidence field is the anchor"
     assert fields["dateline"]["scan"] == "dates"
     assert fields["received_date"]["resolve"] == "forward"
+
+
+def test_two_readings_of_one_opening_that_disagree_are_merged_and_held():
+    """Two letters do not begin a few characters apart; two readings of one do."""
+    july = opening_data("FARADAY TO HIS MOTHER.", dateline="' Geneva : July 1.", date_written="July 1")
+    june = opening_data("FARADAY TO HIS MOTHER.", dateline="' Geneva : June 1.", date_written="June 1")
+    placed = openings.place(
+        [record("r1", "p1", 0, july), record("r2", "p1", 0, june)], PASSAGES, TEXT
+    )
+    assert len(placed.openings) == 1
+    [decision] = decide([Reading.of(placed.openings[0].data)], tolerance_days=None)
+    assert decision.hold == "reader_disagreement"

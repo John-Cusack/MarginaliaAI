@@ -104,26 +104,29 @@ def place(
 def merge(openings: list[Opening]) -> tuple[list[Opening], int]:
     """Collapse readings of one opening from overlapping passages.
 
-    Same place (within `MERGE_DISTANCE`) and the same dateline, whitespace
-    aside. Exact-offset equality alone under-merges: the same quotation located
-    in two passages can land a few characters apart. The reading with the
-    higher confidence is kept, and every record id travels with it.
+    Readings within `MERGE_DISTANCE` of each other are one opening: two letters
+    do not begin eight characters apart, and exact-offset equality alone
+    under-merges, because the same quotation located in two passages can land a
+    few characters apart. The reading with the higher confidence is kept, every
+    record id travels with it, and if the readings disagree about the date the
+    opening is marked ``readings_disagree`` — dating holds it rather than pick.
     """
     ordered = sorted(openings, key=lambda o: o.start)
     kept: list[Opening] = []
     merged = 0
     for opening in ordered:
         last = kept[-1] if kept else None
-        if (
-            last is not None
-            and opening.start - last.start <= MERGE_DISTANCE
-            and normalized(opening.get("dateline")) == normalized(last.get("dateline"))
-        ):
+        if last is not None and opening.start - last.start <= MERGE_DISTANCE:
             merged += 1
+            disagree = normalized(opening.get("dateline")) != normalized(
+                last.get("dateline")
+            ) and normalized(opening.get("date_written")) != normalized(last.get("date_written"))
             winner, loser = (opening, last) if opening.confidence > last.confidence else (last, opening)
             winner.record_ids = sorted(set(last.record_ids) | set(opening.record_ids))
             winner.passage_ids = sorted(set(last.passage_ids) | set(opening.passage_ids))
             winner.start = min(loser.start, winner.start)
+            if disagree or loser.data.get("readings_disagree"):
+                winner.data = {**winner.data, "readings_disagree": True}
             kept[-1] = winner
             continue
         kept.append(opening)
