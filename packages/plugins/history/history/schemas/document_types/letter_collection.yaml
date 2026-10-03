@@ -1,0 +1,73 @@
+# A collected volume of letters: one document holding many letters, each of
+# which `history.structure_letters` splits out as a `letter` document of its own.
+# The volume stays for reading order, the editor's narrative, journals and page
+# furniture; its letters are the searchable, citable units, which is why the type
+# is declared `searchable: false` in plugin.yaml.
+#
+# JSON Schema for the volume's `metadata`, as `structure_letters` reads it and
+# its `configure` mode writes it.
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: letter_collection metadata
+type: object
+properties:
+  editor:
+    type: string
+    description: The volume's editor, e.g. "Henry Bence Jones".
+  volume:
+    type: [string, integer]
+    description: Which volume of the edition this is.
+  date_span:
+    type: array
+    description: First and last letter dates, ISO 8601. Informational only.
+    items: {type: string}
+    minItems: 2
+    maxItems: 2
+  default_sender:
+    description: >
+      The edition's subject, who writes every letter whose heading names only a
+      recipient ("TO MRS. FARADAY."). An entity id, or {entity_id, name}. Applied
+      only when the heading names no writer, and flagged
+      sender_by_edition_convention on every letter it fills.
+    oneOf:
+      - type: string
+      - type: object
+        required: [entity_id]
+        properties:
+          entity_id: {type: string}
+          name: {type: string}
+  alias_map:
+    type: object
+    description: >
+      Names that mean one person in this volume only — kinship words ("his
+      mother"), abbreviations, initials — mapped to an entity id or {entity_id,
+      name}. Keys match case- and whitespace-insensitively. Never global
+      aliases: "his mother" and "Mrs. Faraday" are different people in other
+      books, and "Mrs. Faraday" is two people in this one.
+    additionalProperties:
+      oneOf:
+        - type: string
+        - type: object
+          required: [entity_id]
+          properties:
+            entity_id: {type: string}
+            name: {type: string}
+  excluded_ranges:
+    type: array
+    description: >
+      Character ranges of the canonical text that hold no letters — front matter,
+      a publisher's catalogue, an index. Openings inside them are dropped and no
+      letter runs into them. Offsets, not node paths, because paths change on a
+      rebuild.
+    items:
+      type: array
+      items: {type: integer}
+      minItems: 2
+      maxItems: 2
+  chronology_tolerance_days:
+    type: integer
+    minimum: 0
+    description: >
+      How far a printed date may sit from the median of its dated neighbours
+      before the letter is held for review. Required to apply; a review
+      threshold, never a correction.
+additionalProperties: true
