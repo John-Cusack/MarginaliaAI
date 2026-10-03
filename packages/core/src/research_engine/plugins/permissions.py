@@ -99,6 +99,46 @@ class DeniedEdgeClient:
         raise PermissionDenied(self._plugin, "write")
 
 
+class GatedEventClient:
+    """Event client whose writes need `write`; reads stay open.
+
+    Every pack received the event client ungated, so any pack could write the
+    timeline while edges — the same kind of derived assertion — required
+    `write`. Gating the methods rather than the client keeps the tools that only
+    read events (cadence, missing letters) working without the permission.
+    """
+
+    def __init__(self, inner, can_write: bool, plugin_name: str) -> None:
+        self._inner = inner
+        self._can_write = can_write
+        self._plugin = plugin_name
+
+    def _check(self) -> None:
+        if not self._can_write:
+            raise PermissionDenied(self._plugin, "write")
+
+    async def create(self, *args, **kwargs):
+        self._check()
+        return await self._inner.create(*args, **kwargs)
+
+    async def upsert(self, *args, **kwargs):
+        self._check()
+        return await self._inner.upsert(*args, **kwargs)
+
+    async def delete(self, *args, **kwargs):
+        self._check()
+        return await self._inner.delete(*args, **kwargs)
+
+    async def query(self, *args, **kwargs):
+        return await self._inner.query(*args, **kwargs)
+
+    async def get_actors(self, *args, **kwargs):
+        return await self._inner.get_actors(*args, **kwargs)
+
+    async def get_actors_many(self, *args, **kwargs):
+        return await self._inner.get_actors_many(*args, **kwargs)
+
+
 class GatedHttpClient:
     """HTTP client that filters requests against an allowlist."""
 

@@ -95,7 +95,23 @@ class EntityClient(Protocol):
 
 @runtime_checkable
 class EventClient(Protocol):
+    """Events and their actors.
+
+    Writes (``create``, ``upsert``, ``delete``) need the ``write`` permission;
+    reads do not. Direction lives in each actor's ``role`` — ``sender`` and
+    ``recipient`` for a letter — so read it from the actors, never from a copy
+    in the payload.
+    """
+
     async def create(self, event: dict[str, Any]) -> Event: ...
+
+    async def upsert(self, event: dict[str, Any]) -> Event:
+        """Create or replace the one event of ``event_type`` derived from
+        ``source_passage_id`` (required). ``actors``, when given, replace the
+        stored ones."""
+        ...
+
+    async def delete(self, event_id: UUID | str) -> bool: ...
 
     async def query(
         self,
@@ -103,6 +119,14 @@ class EventClient(Protocol):
         k: int = 1000,
         group_by: str | None = None,
     ) -> tuple[list[Event], list[TimelineBucket]]: ...
+
+    async def get_actors(self, event_id: UUID | str) -> list[dict[str, Any]]: ...
+
+    async def get_actors_many(
+        self, event_ids: list[UUID | str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """``{event_id: [{"entity_id", "role"}, ...]}`` in one round trip."""
+        ...
 
 
 @runtime_checkable
