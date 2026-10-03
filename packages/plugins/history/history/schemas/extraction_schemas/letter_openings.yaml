@@ -1,0 +1,111 @@
+id: letter_openings
+version: 1
+description: |
+  One record per letter that begins in the passage: who wrote it, to whom,
+  where and when, as the page states it. Read from a collected volume
+  (letter_collection) before history.structure_letters splits it into letters.
+owner: pack:history
+
+record_types:
+  - id: letter_opening
+    description: The start of one letter in a collected edition
+    fields:
+      # Declared first: the first evidence field anchors the record's offset,
+      # and structure_letters cuts the volume at that offset.
+      opening:
+        type: evidence_span
+        description: >
+          The letter's heading ("FARADAY TO HIS MOTHER."), else the editor's
+          sentence that introduces it, else its salutation. Exactly as printed.
+        required: true
+      dateline:
+        type: evidence_span
+        # Core's dateline scanner reads the same quotation independently, so the
+        # two readings can be checked against each other (dateline_dates).
+        scan: dates
+        description: >
+          The dateline exactly as printed, wherever it sits, OCR errors included.
+          Omit if the letter has none.
+      anchor_kind:
+        type: enum
+        values: [head, tail, editorial, undated]
+        description: >
+          Where the letter's date is stated: a dateline at its head, one at its
+          foot, an editor's sentence, or nowhere.
+        required: true
+      date_written:
+        type: fuzzy_date
+        resolve: forward
+        description: >
+          The date the letter was written, with an English month name and OCR
+          repaired ("Octoter 6, 1818" -> "October 6, 1818"; "13 octobre 1830" ->
+          "13 October 1830"). No weekday, place or time of day. If no year is
+          printed, give none — never supply one from context or running heads.
+      weekday:
+        type: enum
+        values: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+        description: The weekday, lowercase, only if the dateline prints one.
+      place:
+        type: string
+        description: >
+          The place of writing, OCR repaired ("Eome" -> "Rome", "Eoyal
+          Institution" -> "Royal Institution"). The verbatim form stays in
+          dateline.
+      place_qualifier:
+        type: string
+        description: A word qualifying the place, such as "near" or "camp near".
+      received_date:
+        type: fuzzy_date
+        resolve: forward
+        description: A receipt note on the dateline, e.g. "Received July 18".
+      sender:
+        type: entity_ref
+        entity_type: person
+        description: >
+          Only if this passage names the writer. Correct obvious OCR letter-swaps
+          ("FAEADAT" -> "Faraday"); never infer the writer from the book.
+      recipient:
+        type: entity_ref
+        entity_type: person
+        description: >
+          As the heading or salutation names them, OCR letter-swaps corrected.
+          Kinship words stay literal: "his mother", not her name.
+      confidence:
+        type: number
+        range: [0, 1]
+        required: true
+
+prompt: |
+  You are reading one passage from a published volume of letters. It may hold
+  the start of zero, one or several letters, plus the editor's narrative,
+  journal entries or other text. For each letter that BEGINS in this passage,
+  produce one letter_opening record.
+
+  A letter begins at a heading ("FARADAY TO HIS MOTHER."), at an editor's
+  sentence that introduces and dates it ("His third letter to Abbott is dated
+  August 11, 1812."), or at a salutation that starts a new letter.
+
+  Produce NO record for:
+  - a later dateline or postscript inside a letter already begun ("Tuesday
+    morning, half-past six o'clock");
+  - a journal or diary entry ("Saturday, Dec. 11th. -Sir Humphry Davy ...");
+  - a letter quoted in passing inside narrative;
+  - dates of births, deaths or experiments.
+
+  Rules:
+  - opening and dateline are exact substrings of the passage, OCR errors
+    included.
+  - date_written uses an English month name with OCR repaired. No weekday,
+    place or time. If no year is printed, give none. Never invent a year from
+    running heads or context.
+  - weekday lowercase, only if printed.
+  - sender only if this passage names the writer; never infer it from the book.
+  - confidence 0.9 or above only when the heading and the dateline are both
+    explicit; 0.5-0.7 when the year is missing or the editor supplies the date.
+
+  Passage:
+  """
+  {{ passage_text }}
+  """
+
+  Output JSON matching the schema.

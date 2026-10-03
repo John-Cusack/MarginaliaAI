@@ -184,3 +184,45 @@ class TestSyncPacks:
 
         assert registered.name == "scripture_claims"
         assert registered.owner == "logos"
+
+
+class TestFieldOptions:
+    """Options the enricher acts on are checked where they are declared."""
+
+    @staticmethod
+    def definition(**field):
+        return {
+            "record_types": [
+                {
+                    "id": "letter_opening",
+                    "fields": {
+                        "opening": {"type": "evidence_span"},
+                        "field": field,
+                    },
+                }
+            ]
+        }
+
+    def test_forward_resolution_on_a_date(self):
+        validate_schema_definition(
+            self.definition(type="fuzzy_date", resolve="forward"), "{{ passage_text }}"
+        )
+
+    def test_a_scanned_quotation(self):
+        validate_schema_definition(
+            self.definition(type="evidence_span", scan="dates"), "{{ passage_text }}"
+        )
+
+    def test_a_misspelt_direction_is_rejected(self):
+        """`foward` would otherwise resolve every receipt date a year early."""
+        with pytest.raises(ValidationError, match="resolve"):
+            validate_schema_definition(
+                self.definition(type="fuzzy_date", resolve="foward"),
+                "{{ passage_text }}",
+            )
+
+    def test_an_option_on_the_wrong_type_is_rejected(self):
+        with pytest.raises(ValidationError, match="only applies to fuzzy_date"):
+            validate_schema_definition(
+                self.definition(type="string", resolve="forward"), "{{ passage_text }}"
+            )

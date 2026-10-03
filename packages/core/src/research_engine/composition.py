@@ -466,6 +466,7 @@ async def build_container(settings: Settings) -> Container:
         embedding=inference.query_embedding,
         reranker=reranker,
         get_filter_extensions=registry.get_filter_extensions,
+        get_unsearchable_types=registry.unsearchable_document_types,
         windows=window_reader,
         hit_sources=HitSourceReader(
             documents=docs, document_texts=document_texts_repo
@@ -497,9 +498,9 @@ async def build_container(settings: Settings) -> Container:
     entity_client = EntityServiceAdapter(entity_service, tx_factory)
     event_client = EventServiceAdapter(event_service, tx_factory)
     extraction_client = ExtractionServiceAdapter(
-        extraction_service, passages_repo, extractions_repo
+        extraction_service, passages_repo, extractions_repo, extraction_schemas_repo
     )
-    ingestion_client = IngestionServiceAdapter(ingestion_service, registry)
+    ingestion_client = IngestionServiceAdapter(ingestion_service, registry, docs)
 
     # Plugin loader
     plugin_loader = PluginLoader(
@@ -513,6 +514,7 @@ async def build_container(settings: Settings) -> Container:
         documents=docs,
         passages=passages_repo,
         document_nodes=document_nodes_repo,
+        document_texts=document_texts_repo,
         entity=entity_client,
         event=event_client,
         extraction=extraction_client,

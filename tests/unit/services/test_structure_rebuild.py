@@ -11,10 +11,16 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
+
 from research_engine.domain.nodes import build_node_tree
 from research_engine.services.ingestion.reindex import ReindexReport, ReindexService
 from research_engine.services.ingestion.structure import (
     DATELINE_WINDOW,
+    StructureReport,
+    StructureService,
+    StructureShrinkRefused,
+    check_shrink,
     dated_sections,
     node_tree_for,
 )
@@ -156,3 +162,64 @@ class TestOneEntryPointForBothCommands:
         dated = [n for n in written if n.metadata.get("date_start")]
         assert len(dated) == 2, "the two letters must keep their datelines"
         assert written[0].title == "Papers", "the root must keep the document title"
+
+
+#: A Docling-sectioned book: real sections in `document_nodes`, and canonical
+#: text with no markdown heading or chapter line to rebuild them from. The
+#: Faraday volumes are exactly this — 112 sections each would become a root.
+PLAIN_TEXT = "FARADAY TO HIS MOTHER.\n\n' Geneva : July 1. Received July 18.\n\nDear Mother..."
+
+
+def nodes_repo_holding(count: int) -> AsyncMock:
+    repo = AsyncMock()
+    repo.get_tree = AsyncMock(return_value=[object()] * count)
+    return repo
+
+
+class TestShrinkRefusal:
+    """A rebuild that would discard most of a tree is refused unless asked for."""
+
+    def test_losing_most_nodes_is_refused(self):
+        with pytest.raises(StructureShrinkRefused, match="112 structure nodes with 1"):
+            check_shrink(uuid4(), 112, 1, allow_shrink=False)
+
+    def test_asking_for_it_allows_it(self):
+        check_shrink(uuid4(), 112, 1, allow_shrink=True)
+
+    def test_a_document_with_no_tree_yet_is_never_refused(self):
+        check_shrink(uuid4(), 0, 1, allow_shrink=False)
+
+    def test_keeping_half_is_fine(self):
+        check_shrink(uuid4(), 10, 5, allow_shrink=False)
+
+    async def test_reindex_structure_reports_the_refusal_and_writes_nothing(self):
+        texts = AsyncMock()
+        texts.get = AsyncMock(return_value=MagicMock(text=PLAIN_TEXT))
+        nodes = nodes_repo_holding(112)
+        service = StructureService(MagicMock(), texts, nodes, MagicMock())
+        service._candidates = AsyncMock(return_value=[(uuid4(), "Faraday vol 1")])
+
+        report = await service.rebuild()
+
+        assert isinstance(report, StructureReport)
+        [error] = report.failures.values()
+        assert "--allow-shrink" in error
+        nodes.delete_for_document.assert_not_called()
+
+    async def test_re_chunking_refuses_before_deleting(self):
+        nodes = nodes_repo_holding(112)
+        service = ReindexService(
+            engine=MagicMock(),
+            passage_repo=AsyncMock(),
+            document_text_repo=AsyncMock(),
+            embedding=AsyncMock(),
+            document_node_repo=nodes,
+        )
+        tx = MagicMock()
+        tx.conn.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: "Faraday vol 1")
+        )
+
+        with pytest.raises(StructureShrinkRefused):
+            await service._rebuild_nodes(tx, uuid4(), PLAIN_TEXT, [], ReindexReport())
+        nodes.delete_for_document.assert_not_called()

@@ -128,12 +128,22 @@ async def test_union_query_can_use_the_gin_index(engine: AsyncEngine) -> None:
     rather than what it prefers on a near-empty table.
     """
     sql = build_keyword_search_sql(["english", "german"])
-    async with engine.connect() as conn:
-        await conn.execute(sa.text("SET LOCAL enable_seqscan = off"))
-        rows = await conn.execute(
-            sa.text(f"EXPLAIN {sql}"),
-            {"query": "test", "no_filter": True, "candidate_ids": [], "k": 10},
-        )
-        plan = "\n".join(row[0] for row in rows)
+    # Unfiltered, and with default search's exclusion of container types: the
+    # exclusion is a NOT IN on the passage id and must not cost the index.
+    for excluded in ([], ["letter_collection"]):
+        async with engine.connect() as conn:
+            await conn.execute(sa.text("SET LOCAL enable_seqscan = off"))
+            rows = await conn.execute(
+                sa.text(f"EXPLAIN {sql}"),
+                {
+                    "query": "test",
+                    "no_filter": True,
+                    "candidate_ids": [],
+                    "no_exclusion": not excluded,
+                    "excluded_types": excluded,
+                    "k": 10,
+                },
+            )
+            plan = "\n".join(row[0] for row in rows)
 
-    assert "passage_fts_ts_idx" in plan, plan
+        assert "passage_fts_ts_idx" in plan, plan

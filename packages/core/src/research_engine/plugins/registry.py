@@ -222,6 +222,14 @@ class PluginRegistry:
     def list_document_types(self) -> dict[str, dict[str, Any]]:
         return dict(self._document_types)
 
+    def unsearchable_document_types(self) -> list[str]:
+        """Types default search leaves out: containers of separately stored units."""
+        return sorted(
+            type_id
+            for type_id, spec in self._document_types.items()
+            if spec.get("searchable") is False
+        )
+
     # --- Entity types ---
 
     def register_entity_type(self, id: str, spec: dict[str, Any], plugin: str) -> None:

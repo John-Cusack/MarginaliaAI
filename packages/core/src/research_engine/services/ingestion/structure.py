@@ -51,6 +51,39 @@ logger = structlog.get_logger()
 DATELINE_WINDOW = 200
 
 
+#: A rebuild that would keep fewer than this fraction of a document's existing
+#: nodes is refused unless the caller says otherwise. Both rebuild paths read
+#: structure back from markdown headings or `Chapter N` lines, and a document
+#: whose nodes came from somewhere else — Docling's `section_header` items, a
+#: pack's table of contents — has neither: the Faraday volumes would have gone
+#: from 112 sections to one root node, silently and in one transaction.
+MIN_KEPT_FRACTION = 0.5
+
+
+class StructureShrinkRefused(Exception):
+    """A rebuild would discard most of a document's existing structure."""
+
+    def __init__(self, document_id: UUID, existing: int, rebuilt: int) -> None:
+        self.document_id = document_id
+        self.existing = existing
+        self.rebuilt = rebuilt
+        super().__init__(
+            f"refusing to replace {existing} structure nodes with {rebuilt}: the "
+            f"rebuilt tree comes from markdown headings or chapter lines, and this "
+            f"document's existing nodes did not. Pass --allow-shrink to do it anyway."
+        )
+
+
+def check_shrink(
+    document_id: UUID, existing: int, rebuilt: int, *, allow_shrink: bool
+) -> None:
+    """Raise :class:`StructureShrinkRefused` when a rebuild loses most nodes."""
+    if allow_shrink or existing == 0:
+        return
+    if rebuilt < existing * MIN_KEPT_FRACTION:
+        raise StructureShrinkRefused(document_id, existing, rebuilt)
+
+
 @dataclass
 class StructureReport:
     documents_total: int = 0
@@ -84,12 +117,15 @@ class StructureService:
         *,
         dry_run: bool = False,
         only_missing: bool = False,
+        allow_shrink: bool = False,
     ) -> StructureReport:
         report = StructureReport(dry_run=dry_run)
         for document_id, title in await self._candidates(document_ids, only_missing):
             report.documents_total += 1
             try:
-                await self._rebuild_one(document_id, title, report, dry_run=dry_run)
+                await self._rebuild_one(
+                    document_id, title, report, dry_run=dry_run, allow_shrink=allow_shrink
+                )
             except Exception as exc:  # noqa: BLE001 - one document must not stop the run
                 logger.warning(
                     "structure_rebuild_failed", document_id=str(document_id), error=str(exc)
@@ -127,6 +163,7 @@ class StructureService:
         report: StructureReport,
         *,
         dry_run: bool,
+        allow_shrink: bool = False,
     ) -> None:
         stored_text = await self._texts.get(document_id)
         if stored_text is None or not stored_text.text:
@@ -139,6 +176,8 @@ class StructureService:
 
         drafts = node_tree_for(text, title=title)
         dated = sum(1 for d in drafts if d.metadata.get("date_start"))
+        existing = len(await self._nodes.get_tree(document_id))
+        check_shrink(document_id, existing, len(drafts), allow_shrink=allow_shrink)
 
         async with self._transaction() as tx:
             await self._nodes.delete_for_document(tx, document_id)

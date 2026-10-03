@@ -9,11 +9,22 @@ permissions:
   network: none
   filesystem: plugin_data
   llm: true
+  # structure_letters stores each letter of a collected volume as a document,
+  # and its letter_sent event; both need the permission core gates them behind.
+  ingest: true
+  write: true
 
 provides:
   document_types:
     - id: letter
       default_chunker: whole_or_paragraph
+    # A collected volume whose letters are split out as `letter` documents.
+    # Kept for reading order and narrative; left out of default search so each
+    # letter is found once, as itself.
+    - id: letter_collection
+      default_chunker: structural
+      searchable: false
+      schema: schemas/document_types/letter_collection.yaml
 
   entity_types:
     - id: person
@@ -39,6 +50,9 @@ provides:
     - id: claims
       version: 1
       file: schemas/extraction_schemas/claims.yaml
+    - id: letter_openings
+      version: 1
+      file: schemas/extraction_schemas/letter_openings.yaml
 
   mcp_tools:
     - id: history.find_missing_letters
@@ -93,3 +107,59 @@ provides:
             enum: [month, week, day]
             default: month
         required: [correspondent_a_entity_id, correspondent_b_entity_id]
+    - id: history.structure_letters
+      entry: history.tools.structure_letters:tool_handler
+      description: >
+        Split a letter_collection volume into dated letter documents and
+        letter_sent events, from its letter_openings records. Dry run by
+        default; holds any letter it cannot date safely for review instead of
+        guessing. Modes: structure, review_queue, configure.
+      input_schema:
+        type: object
+        properties:
+          volume_id:
+            type: string
+            description: >
+              The letter_collection document. Optional for review_queue, where
+              it narrows the queue to one volume.
+          mode:
+            type: string
+            enum: [structure, review_queue, configure]
+            default: structure
+          dry_run:
+            type: boolean
+            default: true
+            description: Report what would be written, and write nothing.
+          accept:
+            type: array
+            description: >
+              Held letters a reviewer has dated. Kept on the letter, so later
+              runs do not send them back to the queue.
+            items:
+              type: object
+              properties:
+                letter_document_id: {type: string}
+                date:
+                  type: string
+                  description: YYYY-MM-DD, YYYY-MM or YYYY.
+              required: [letter_document_id, date]
+          chronology_tolerance_days:
+            type: integer
+            minimum: 0
+            description: >
+              Hold a printed date further than this from its dated neighbours.
+              Overrides the volume's metadata; applying needs one or the other.
+          strict_single_reader:
+            type: boolean
+            default: false
+            description: >
+              Hold letters whose dateline only the model could read (French,
+              day-first) instead of capping their confidence.
+          config:
+            type: object
+            description: >
+              configure mode: default_sender, excluded_ranges, alias_map,
+              chronology_tolerance_days, editor, volume, date_span.
+          schema:
+            type: string
+            default: "letter_openings:1"

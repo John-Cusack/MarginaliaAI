@@ -37,6 +37,15 @@ class EventService:
                 )
         return event
 
+    async def upsert(
+        self, tx: Transaction, draft: EventDraft, actors: list[EventActor] | None = None
+    ) -> Event:
+        """Create or replace the event of this type derived from this passage."""
+        return await self._events.upsert(tx, draft, actors)
+
+    async def delete(self, tx: Transaction, event_id: UUID) -> bool:
+        return await self._events.delete(tx, event_id)
+
     async def get(self, event_id: UUID) -> Event | None:
         return await self._events.get(event_id)
 
@@ -71,6 +80,11 @@ class EventService:
 
     async def get_actors(self, event_id: UUID) -> list[EventActor]:
         return await self._events.get_actors(event_id)
+
+    async def get_actors_many(
+        self, event_ids: list[UUID]
+    ) -> dict[UUID, list[EventActor]]:
+        return await self._events.get_actors_many(event_ids)
 
     def _group_events(self, events: list[Event], group_by: str) -> list[TimelineBucket]:
         groups: dict[str, list[Event]] = defaultdict(list)

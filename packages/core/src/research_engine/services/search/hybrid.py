@@ -42,11 +42,18 @@ class HybridSearchService:
         get_filter_extensions: Callable[[], dict[str, FilterExtension]] | None = None,
         windows: PassageWindowReader | None = None,
         hit_sources: HitSourceReader | None = None,
+        get_unsearchable_types: Callable[[], list[str]] | None = None,
     ) -> None:
         self._passages = passages
         self._embedding = embedding
         self._reranker = reranker
         self._get_filter_extensions = get_filter_extensions
+        #: Container types whose units are documents of their own — a collected
+        #: volume whose letters were split out. A search that names no document
+        #: types leaves them out, or every letter would be found twice: once as
+        #: itself and once inside the volume. A callable, read per search, so a
+        #: pack enabled after start-up takes effect.
+        self._get_unsearchable_types = get_unsearchable_types
         # Optional so a service can be constructed without the document-text and
         # node repositories — tests do, and a corpus with no canonical text has
         # nothing to widen into. The composition root always supplies one, so
@@ -70,13 +77,24 @@ class HybridSearchService:
             else None
         )
 
+        # Containers are left out unless the caller named document types —
+        # naming one is how a container is searched on purpose.
+        excluded: list[str] = []
+        if not (query.filters and query.filters.document_types):
+            excluded = list(self._get_unsearchable_types() if self._get_unsearchable_types else [])
+            if query.filters and query.filters.exclude_document_types:
+                excluded = sorted(set(excluded) | set(query.filters.exclude_document_types))
+
         if query.filters:
             filter_dict = query.filters.model_dump(exclude_none=True)
             # extension_logic has a non-None default, so it is present even when
             # nothing is actually being filtered. On its own it narrows nothing;
             # treating it as a filter would run a full-corpus candidate scan and
-            # report a filter that did no work.
-            if filter_dict.keys() - {"extension_logic"}:
+            # report a filter that did no work. An exclusion on its own is the
+            # same: it is applied inside the vector and keyword queries instead.
+            if filter_dict.keys() - {"extension_logic", "exclude_document_types"}:
+                if excluded:
+                    filter_dict["exclude_document_types"] = excluded
                 exts = self._get_filter_extensions() if self._get_filter_extensions else None
                 candidate_ids = await self._passages.filter_candidate_ids(
                     filter_dict,
@@ -87,6 +105,11 @@ class HybridSearchService:
                     return SearchResult(hits=[], total_candidates=0, applied_filters=filters_applied)
 
         total_candidates = len(candidate_ids) if candidate_ids else 0
+        # Only the unfiltered path needs the exclusion passed down: a candidate
+        # list has already applied it.
+        unfiltered_exclusion = excluded if candidate_ids is None else None
+        if excluded:
+            filters_applied = {**filters_applied, "exclude_document_types": excluded}
 
         # Handle single-mode searches
         if query.fusion_mode == FusionMode.vector_only:
@@ -94,12 +117,14 @@ class HybridSearchService:
             vec_hits = await self._passages.vector_search(
                 query_vec, self._embedding.model_name, self._embedding.model_version,
                 candidate_ids, query.k if not query.rerank else query.rerank_n,
+                **_exclusion(unfiltered_exclusion),
             )
             fused = [(pid, s, {"vector": s}) for pid, s in vec_hits]
         elif query.fusion_mode == FusionMode.keyword_only:
             kw_hits = await self._passages.keyword_search(
                 query.text, lang_config, candidate_ids,
                 query.k if not query.rerank else query.rerank_n,
+                **_exclusion(unfiltered_exclusion),
             )
             fused = [(pid, s, {"keyword": s}) for pid, s in kw_hits]
         else:
@@ -111,11 +136,13 @@ class HybridSearchService:
                 self._passages.vector_search(
                     query_vec, self._embedding.model_name, self._embedding.model_version,
                     candidate_ids, query.k_vec,
+                    **_exclusion(unfiltered_exclusion),
                 )
             )
             kw_task = asyncio.create_task(
                 self._passages.keyword_search(
                     query.text, lang_config, candidate_ids, query.k_kw,
+                    **_exclusion(unfiltered_exclusion),
                 )
             )
             vec_hits, kw_hits = await asyncio.gather(vec_task, kw_task)
@@ -187,9 +214,15 @@ class HybridSearchService:
         if not embedding:
             return []
 
+        excluded = (
+            self._get_unsearchable_types()
+            if candidate_ids is None and self._get_unsearchable_types
+            else None
+        )
         hits = await self._passages.vector_search(
             embedding, self._embedding.model_name, self._embedding.model_version,
             candidate_ids, k + 1,  # +1 to exclude self
+            **_exclusion(excluded),
         )
         # Exclude self
         hits = [(pid, s) for pid, s in hits if pid != passage_id][:k]
@@ -247,3 +280,13 @@ class HybridSearchService:
                 )
             )
         return hits
+
+
+def _exclusion(types: list[str] | None) -> dict[str, list[str]]:
+    """The exclusion keyword, only when there is something to exclude.
+
+    Passed as a keyword only when non-empty, so a passage repository that
+    predates it — a test double, an older adapter — still works for every
+    search that excludes nothing.
+    """
+    return {"exclude_document_types": types} if types else {}

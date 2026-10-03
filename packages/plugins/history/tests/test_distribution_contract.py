@@ -67,12 +67,13 @@ def test_manifest_resources_and_tool_schemas_are_complete() -> None:
     assert {tool.id for tool in manifest.provides.mcp_tools} == {
         "history.find_missing_letters",
         "history.correspondence_cadence",
+        "history.structure_letters",
     }
     assert all(tool.input_schema.get("type") == "object" for tool in manifest.provides.mcp_tools)
     assert all(plugin.resource_path(path).is_file() for path in manifest.resource_paths())
 
 
-async def test_installed_history_available_enable_loads_both_tools(tmp_path) -> None:
+async def test_installed_history_available_enable_loads_its_tools(tmp_path) -> None:
     plugin = _history_discovery()
     repository = MemoryRepo()
     manager = PluginActivationManager(repository)
@@ -92,6 +93,7 @@ async def test_installed_history_available_enable_loads_both_tools(tmp_path) -> 
     assert set(registry.get_mcp_tools()) == {
         "history.find_missing_letters",
         "history.correspondence_cadence",
+        "history.structure_letters",
     }
 
 

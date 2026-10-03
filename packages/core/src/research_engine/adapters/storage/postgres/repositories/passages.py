@@ -43,9 +43,18 @@ _LANG_CACHE_TTL_SECONDS = 60.0
 #: makes ``SearchResult.applied_filters`` honest.  A key present here without a
 #: real branch below is caught by the reflection test in
 #: ``tests/unit/services/test_passage_filters.py``.
+#: Passages of the document types a search leaves out. Shared by the vector and
+#: keyword queries so the two halves of a hybrid search exclude the same rows.
+EXCLUDED_PASSAGES_SQL = (
+    "SELECT xp.id FROM core.passages xp "
+    "JOIN core.documents xd ON xd.id = xp.document_id "
+    "WHERE xd.document_type = ANY(:excluded_types)"
+)
+
 SUPPORTED_FILTERS = frozenset(
     {
         "document_types",
+        "exclude_document_types",
         "date_range_start",
         "date_range_end",
         "author_entity_id",
@@ -96,7 +105,13 @@ def build_candidate_stmt(
 
     needs_documents = any(
         filters.get(key)
-        for key in ("document_types", "date_range_start", "date_range_end", "language")
+        for key in (
+            "document_types",
+            "exclude_document_types",
+            "date_range_start",
+            "date_range_end",
+            "language",
+        )
     ) or author_names is not None or recipient_names is not None
 
     if needs_documents:
@@ -104,6 +119,9 @@ def build_candidate_stmt(
 
     if doc_types := filters.get("document_types"):
         stmt = stmt.where(documents.c.document_type.in_(doc_types))
+
+    if excluded := filters.get("exclude_document_types"):
+        stmt = stmt.where(documents.c.document_type.not_in(excluded))
 
     if date_start := filters.get("date_range_start"):
         stmt = stmt.where(documents.c.created_date_start >= date_start)
@@ -175,6 +193,7 @@ def build_keyword_search_sql(configs: list[str]) -> str:
         WHERE pf.lang_config = '{cfg}'::regconfig
           AND pf.ts @@ q{i}.tsq
           AND (:no_filter OR pf.passage_id = ANY(:candidate_ids))
+          AND (:no_exclusion OR pf.passage_id NOT IN ({EXCLUDED_PASSAGES_SQL}))
         """
         for i, cfg in enumerate(configs)
     ]
@@ -446,7 +465,14 @@ class PGPassageRepo:
         model_version: str,
         candidate_ids: list[UUID] | None,
         k: int,
+        exclude_document_types: list[str] | None = None,
     ) -> list[tuple[UUID, float]]:
+        """Nearest passages by cosine distance.
+
+        *exclude_document_types* leaves out passages of those types — the
+        unfiltered path's way of keeping containers out of default search
+        without materializing the rest of the corpus as a candidate list.
+        """
         async with self._engine.connect() as conn:
             # SET LOCAL, so the value is scoped to this statement's transaction
             # and cannot leak onto the next borrower of a pooled connection.
@@ -456,12 +482,13 @@ class PGPassageRepo:
                 )
             # Use pgvector cosine distance
             embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
-            sql = sa.text("""
+            sql = sa.text(f"""
                 SELECT pe.passage_id,
                        1 - (pe.embedding <=> CAST(:qv AS vector)) AS vec_score
                 FROM core.passage_embeddings pe
                 WHERE pe.model = :model AND pe.model_version = :mv
                   AND (:no_filter OR pe.passage_id = ANY(:candidate_ids))
+                  AND (:no_exclusion OR pe.passage_id NOT IN ({EXCLUDED_PASSAGES_SQL}))
                 ORDER BY pe.embedding <=> CAST(:qv AS vector)
                 LIMIT :k
             """)
@@ -473,6 +500,8 @@ class PGPassageRepo:
                     "mv": model_version,
                     "no_filter": candidate_ids is None,
                     "candidate_ids": candidate_ids or [],
+                    "no_exclusion": not exclude_document_types,
+                    "excluded_types": list(exclude_document_types or []),
                     "k": k,
                 },
             )
@@ -484,11 +513,13 @@ class PGPassageRepo:
         lang: str | None,
         candidate_ids: list[UUID] | None,
         k: int,
+        exclude_document_types: list[str] | None = None,
     ) -> list[tuple[UUID, float]]:
         """Rank passages by FTS relevance, stemming each in its own language.
 
         *lang* is a Postgres regconfig (see ``services.search.langconfig``). When
         it is ``None`` the search spans every language present in the corpus.
+        *exclude_document_types* leaves out passages of those types.
         """
         if lang is not None:
             configs = [lang] if is_known_config(lang) else []
@@ -506,6 +537,8 @@ class PGPassageRepo:
                     "query": query,
                     "no_filter": candidate_ids is None,
                     "candidate_ids": candidate_ids or [],
+                    "no_exclusion": not exclude_document_types,
+                    "excluded_types": list(exclude_document_types or []),
                     "k": k,
                 },
             )

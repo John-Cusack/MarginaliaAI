@@ -135,6 +135,10 @@ class SearchFilters(BaseModel):
     """Filters for narrowing search results."""
 
     document_types: list[str] | None = None
+    #: Types to leave out. Searches that name no document_types leave out the
+    #: types registered as unsearchable — containers whose units are documents
+    #: of their own — without the caller having to know which those are.
+    exclude_document_types: list[str] | None = None
     date_range_start: str | None = None
     date_range_end: str | None = None
     author_entity_id: UUID | None = None

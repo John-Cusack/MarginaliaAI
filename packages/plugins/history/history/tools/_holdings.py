@@ -17,7 +17,11 @@ Deciding absence needs three things, and the third is easy to skip:
 from __future__ import annotations
 
 import re
+from datetime import date, datetime, timedelta
 from typing import Any
+
+from history.tools._correspondence import A_TO_B, B_TO_A, between
+from research_engine_sdk import EventFilter
 
 #: Ranks, honorifics and offices that precede a name without being part of it.
 _NOISE = {
@@ -89,14 +93,16 @@ class Holdings:
         else:
             self.undirected += 1
         who = surname(stripped)
-        if who:
-            self._by_key[(who, date_start[:10])] = stripped
+        day = day_of(date_start)
+        if who and day:
+            self._by_key[(who, day)] = stripped
 
     def held(self, who: str | None, date_start: str | None) -> str | None:
         """The title of the letter matching this correspondent and day, if any."""
-        if not who or not date_start:
+        day = day_of(date_start)
+        if not who or not day:
             return None
-        return self._by_key.get((who, date_start[:10]))
+        return self._by_key.get((who, day))
 
     @property
     def total(self) -> int:
@@ -118,6 +124,87 @@ class Holdings:
                 f"necessarily absent from it."
             )
         return None
+
+
+def day_of(value: str | None) -> str | None:
+    """The calendar day of an ISO timestamp, parsed rather than sliced.
+
+    ``value[:10]`` reads a day out of an ISO string only while every writer
+    formats one the same way; parsing it does not depend on that.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).date().isoformat()
+    except ValueError:
+        return None
+
+
+class LetterHoldings:
+    """Letters held between two correspondents, by sender, recipient and day.
+
+    Built from `letter_sent` events, whose actors are entity ids — not from
+    titles, whose surnames fail on OCR ("FAEADAT"), on two people sharing one,
+    and on direction. A reference is *held* by a letter of the same direction on
+    the same day; a letter one day either side is a *near miss* — reported, never
+    counted as held, because "yours of the 3d" and a letter dated the 4th may be
+    two letters.
+    """
+
+    def __init__(self) -> None:
+        self._by_key: dict[tuple[str, str, date], dict[str, Any]] = {}
+        self.a_to_b = 0
+        self.b_to_a = 0
+
+    def add(self, sender: str, recipient: str, day: date, letter: dict[str, Any]) -> None:
+        self._by_key.setdefault((sender, recipient, day), letter)
+
+    def held(self, sender: str, recipient: str, day: date) -> dict[str, Any] | None:
+        return self._by_key.get((sender, recipient, day))
+
+    def near_miss(self, sender: str, recipient: str, day: date) -> dict[str, Any] | None:
+        for offset in (-1, 1):
+            if hit := self._by_key.get((sender, recipient, day + timedelta(days=offset))):
+                return hit
+        return None
+
+    @property
+    def total(self) -> int:
+        return len(self._by_key)
+
+
+async def from_events(event: Any, a: str, b: str) -> LetterHoldings:
+    """Index the `letter_sent` events between *a* and *b* by direction and day."""
+    holdings = LetterHoldings()
+    if event is None:
+        return holdings
+    try:
+        events, _ = await event.query(
+            EventFilter(event_types=["letter_sent"], actor_entity_ids=[a, b]), k=10000
+        )
+    except Exception:  # noqa: BLE001 - no event store means no event holdings
+        return holdings
+    pair = await between(event, events, a, b)
+    for letter, direction in pair.letters:
+        if letter.timestamp_start is None or direction not in (A_TO_B, B_TO_A):
+            continue
+        sender, recipient = (a, b) if direction == A_TO_B else (b, a)
+        payload = letter.payload or {}
+        holdings.add(
+            sender,
+            recipient,
+            letter.timestamp_start.date(),
+            {
+                "event_id": str(letter.id),
+                "letter_document_id": payload.get("letter_document_id"),
+                "date": letter.timestamp_start.date().isoformat(),
+            },
+        )
+        if direction == A_TO_B:
+            holdings.a_to_b += 1
+        else:
+            holdings.b_to_a += 1
+    return holdings
 
 
 async def build(corpus: Any, passage_ids: list[str]) -> Holdings:
