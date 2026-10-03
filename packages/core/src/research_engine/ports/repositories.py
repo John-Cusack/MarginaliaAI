@@ -140,6 +140,7 @@ class PassageRepo(Protocol):
         model_version: str,
         candidate_ids: list[UUID] | None,
         k: int,
+        exclude_document_types: list[str] | None = None,
     ) -> list[tuple[UUID, float]]: ...
     async def keyword_search(
         self,
@@ -147,6 +148,7 @@ class PassageRepo(Protocol):
         lang: str | None,
         candidate_ids: list[UUID] | None,
         k: int,
+        exclude_document_types: list[str] | None = None,
     ) -> list[tuple[UUID, float]]: ...
     async def store_embeddings(
         self,

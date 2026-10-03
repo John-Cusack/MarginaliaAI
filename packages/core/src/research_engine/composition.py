@@ -466,6 +466,7 @@ async def build_container(settings: Settings) -> Container:
         embedding=inference.query_embedding,
         reranker=reranker,
         get_filter_extensions=registry.get_filter_extensions,
+        get_unsearchable_types=registry.unsearchable_document_types,
         windows=window_reader,
         hit_sources=HitSourceReader(
             documents=docs, document_texts=document_texts_repo

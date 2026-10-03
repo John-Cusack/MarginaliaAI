@@ -120,6 +120,12 @@ class DocumentTypeContribution(_StrictModel):
     default_chunker: str = "prose_window"
     default_ingestion_module: str | None = None
     post_hooks: list[str] = Field(default_factory=list)
+    #: False for a container whose units are documents of their own — a
+    #: collected volume whose letters have been split out. Its text would
+    #: otherwise answer every query twice, once as the volume and once as the
+    #: letter. Searches that name no document types leave it out; naming the
+    #: type includes it.
+    searchable: bool = True
 
 
 class EntityTypeContribution(_StrictModel):

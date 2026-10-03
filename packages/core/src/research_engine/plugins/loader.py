@@ -200,6 +200,7 @@ class PluginLoader:
                             contribution.default_ingestion_module
                         ),
                         "schema": contribution.schema_path,
+                        "searchable": contribution.searchable,
                     },
                     plugin_id,
                 )
