@@ -154,3 +154,35 @@ class TestEvidenceFieldNames:
             }
         }
         assert evidence_field_names(record_type) == ["quote"]
+
+
+class TestEntityRefDescription:
+    """Core's instruction comes first; the schema's own guidance follows it."""
+
+    @staticmethod
+    def description(field: dict) -> str:
+        schema = build_output_schema(
+            {
+                "record_types": [
+                    {
+                        "id": "letter_opening",
+                        "fields": {"sender": field, "quote": {"type": "evidence_span"}},
+                    }
+                ]
+            }
+        )
+        return schema["properties"]["records"]["items"]["properties"]["fields"][
+            "properties"
+        ]["sender"]["description"]
+
+    def test_the_schema_s_guidance_is_kept(self):
+        text = self.description(
+            {"type": "entity_ref", "description": "Correct obvious OCR letter-swaps."}
+        )
+        assert text.startswith("The name as written in the passage.")
+        assert text.endswith("Correct obvious OCR letter-swaps.")
+
+    def test_no_guidance_is_just_core_s_sentence(self):
+        assert self.description({"type": "entity_ref"}) == (
+            "The name as written in the passage. Do not supply an identifier."
+        )

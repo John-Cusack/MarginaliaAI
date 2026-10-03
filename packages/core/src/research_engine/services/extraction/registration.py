@@ -129,6 +129,7 @@ def validate_schema_definition(definition: dict[str, Any], prompt: str) -> None:
     for rt_id, record_type in record_types.items():
         if not record_type.get("fields"):
             raise ValidationError(f"Record type '{rt_id}' declares no fields.")
+        _check_field_options(rt_id, record_type["fields"])
         if not evidence_field_names(record_type):
             raise ValidationError(
                 f"Record type '{rt_id}' declares no '{EVIDENCE_TYPE}' field. "
@@ -148,3 +149,31 @@ def validate_schema_definition(definition: dict[str, Any], prompt: str) -> None:
             "The prompt template never interpolates {{ passage_text }}, so the "
             "model would be asked to extract from a passage it cannot see."
         )
+
+
+#: Field options the enricher acts on, by the field type they belong to. An
+#: option on the wrong type, or a value nothing reads, would otherwise be
+#: ignored silently — and a misspelt `resolve: foward` would quietly resolve
+#: every receipt date a year early.
+_FIELD_OPTIONS = {
+    "resolve": ("fuzzy_date", {"forward", "backward"}),
+    "scan": (EVIDENCE_TYPE, {"dates"}),
+}
+
+
+def _check_field_options(record_type: str, fields: dict[str, Any]) -> None:
+    for name, spec in fields.items():
+        for option, (field_type, allowed) in _FIELD_OPTIONS.items():
+            if option not in spec:
+                continue
+            if spec.get("type") != field_type:
+                raise ValidationError(
+                    f"Field '{name}' of record type '{record_type}' sets "
+                    f"'{option}', which only applies to {field_type} fields."
+                )
+            if spec[option] not in allowed:
+                raise ValidationError(
+                    f"Field '{name}' of record type '{record_type}' sets "
+                    f"{option}: {spec[option]!r}; expected one of "
+                    f"{', '.join(sorted(allowed))}."
+                )

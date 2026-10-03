@@ -21,6 +21,19 @@ Resolution is written *beside* the model's answer, never over it. ``<field>``
 stays exactly as the model wrote it and ``<field>_resolved`` carries the
 structured form, because the whole point of storing extractions is that you can
 go back and see what was actually said.
+
+Two declarations steer it:
+
+``resolve: forward`` on a ``fuzzy_date``
+    A date with no year is read as the next occurrence on or after the anchor
+    rather than the last one before it. A letter's receipt note ("Received July
+    18") comes after the letter; "yours of July 1" came before it.
+
+``scan: dates`` on an ``evidence_span``
+    The verbatim quotation is also read by the dateline scanner, and every date
+    it finds is written to ``<field>_dates``. That is a second, independent
+    reading of the same words: where the model's reading and the scanner's
+    disagree, a pack can hold the record back instead of believing either.
 """
 
 from __future__ import annotations
@@ -32,7 +45,7 @@ import structlog
 
 from research_engine.services.extraction.schemas import EVIDENCE_TYPE
 from research_engine.services.extraction.validation import ValidatedRecord
-from research_engine.services.text.dates import parse_fuzzy_date
+from research_engine.services.text.dates import parse_fuzzy_date, scan_dates
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -45,6 +58,9 @@ logger = structlog.get_logger()
 
 #: Suffix for the structured form of a resolved field.
 RESOLVED = "_resolved"
+
+#: Suffix for the dates the scanner read out of a quoted evidence field.
+SCANNED_DATES = "_dates"
 
 #: Below this, a name match is a coincidence rather than a resolution. Entity
 #: resolution is tiered exact -> alias -> trigram, and trigram similarity on
@@ -95,14 +111,23 @@ class RecordEnricher:
         fields = dict(record.fields)
         for name, spec in definition.get("fields", {}).items():
             declared = spec.get("type")
-            if declared == EVIDENCE_TYPE:
-                continue
             value = fields.get(name)
             if not isinstance(value, str) or not value.strip():
                 continue
+            if declared == EVIDENCE_TYPE:
+                if spec.get("scan") == "dates":
+                    fields[name + SCANNED_DATES] = [
+                        {**_date_to_json(date), "offset": start}
+                        for start, _end, date in scan_dates(value)
+                    ]
+                continue
             if declared == "fuzzy_date":
                 fields[name + RESOLVED] = _date_to_json(
-                    parse_fuzzy_date(value, relative_to=anchor)
+                    parse_fuzzy_date(
+                        value,
+                        relative_to=anchor,
+                        forward=spec.get("resolve") == "forward",
+                    )
                 )
             elif declared == "entity_ref":
                 fields[name + RESOLVED] = await self._resolve_entity(
