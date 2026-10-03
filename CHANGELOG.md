@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### Collected letters become dated, placed letters
+
+A volume of correspondence — *Life and Letters of Faraday*, the McClellan papers —
+is ingested as one document, but its unit of evidence is the letter. The history
+pack's new `history.structure_letters` splits a `letter_collection` volume into
+one `letter` document per letter, each with its own date, sender, recipient and
+place as written, plus a `letter_sent` event whose actors carry direction. It
+reads `letter_openings` records, checks the model's reading of each dateline
+against core's scanner, and holds anything doubtful — readers that disagree, a
+year that is not printed, a yearless date its neighbours do not bracket, a date
+out of order — in a review queue instead of guessing. `correspondence_cadence`
+and `find_missing_letters` now count only letters between the two people, read
+direction from actor roles, and match references by sender, recipient and day.
+
+Core changes it rests on:
+
+- Migration 021 gives events a natural key, `(event_type, source_passage_id)`;
+  `EventClient` gains `upsert`, `delete` and `get_actors_many`, and event writes
+  need the `write` permission. The event payload filter, which Postgres rejected
+  outright (`json @> json`), works.
+- Container types can be declared `searchable: false` and are left out of
+  searches that name no document types.
+- Packs can read a document's canonical text and passage offsets, list
+  documents by metadata, ingest with a date and edition, update a document's
+  title, type, date or metadata, and delete one they derived.
+  `query_records(schema="name:version")` reads one schema version's latest
+  extraction per passage.
+- `fuzzy_date` fields can resolve forward (`resolve: forward`); a leading weekday
+  is stripped; `scan: dates` on an evidence field writes the scanner's reading
+  of the quotation beside the model's. Relative dates in a volume's passages
+  anchor to the letter document the quotation falls in.
+- `reindex structure` and `reindex chunks` refuse to replace a node tree with
+  one less than half its size unless given `--allow-shrink`: both would have
+  collapsed Docling-sectioned books, such as the Faraday volumes, to one root.
+- `extraction run` takes `--model` and `--exclude-range`.
+
 ### GPU embed server idles at zero instead of holding the card
 
 `research-engine embed-server` takes `--idle-exit-after` (default 900 s) and
