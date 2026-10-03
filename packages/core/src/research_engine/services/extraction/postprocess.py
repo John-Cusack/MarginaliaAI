@@ -38,6 +38,7 @@ Two declarations steer it:
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -61,6 +62,20 @@ RESOLVED = "_resolved"
 
 #: Suffix for the dates the scanner read out of a quoted evidence field.
 SCANNED_DATES = "_dates"
+
+#: How unit documents say where in their parent they came from. A letter split
+#: out of a collected volume records the volume's id and its own span in the
+#: volume's canonical text, so a record extracted from the volume can be dated
+#: by the letter it falls in. The history pack's `structure_letters` writes
+#: these; any pack splitting a container into units should.
+UNIT_PARENT = "parent_document_id"
+UNIT_START = "parent_char_start"
+UNIT_END = "parent_char_end"
+
+#: How long a container's list of units is trusted. Units are created by a pass
+#: that can run while the server is up, and an anchor cached as "no units" for
+#: the life of the process would leave every later extraction undated.
+UNIT_CACHE_SECONDS = 60.0
 
 #: Below this, a name match is a coincidence rather than a resolution. Entity
 #: resolution is tiered exact -> alias -> trigram, and trigram similarity on
@@ -87,6 +102,7 @@ class RecordEnricher:
         self._nodes = document_nodes
         self._document_anchors: dict[UUID, datetime | None] = {}
         self._node_anchors: dict[UUID, datetime | None] = {}
+        self._units: dict[UUID, tuple[float, list[tuple[int, int, datetime]]]] = {}
 
     async def enrich(
         self,
@@ -97,6 +113,14 @@ class RecordEnricher:
         if not records:
             return records
         anchor = await self._anchor_for(passage)
+        if await self._units_of(passage.document_id):
+            enriched = []
+            for record in records:
+                own = await self._unit_anchor(passage, record)
+                enriched.append(
+                    await self._enrich_one(record, record_types, own or anchor)
+                )
+            return enriched
         return [
             await self._enrich_one(record, record_types, anchor) for record in records
         ]
@@ -159,6 +183,44 @@ class RecordEnricher:
             if node_anchor is not None:
                 return node_anchor
         return await self._document_anchor(passage.document_id)
+
+    async def _unit_anchor(
+        self, passage: Passage, record: ValidatedRecord
+    ) -> datetime | None:
+        """The date of the unit document the record's quotation falls in.
+
+        A container — a collected volume — is undated, and so are its sections;
+        the letters split out of it are not. A record read from the volume is
+        anchored by the letter it quotes, located by the quotation's own offset
+        rather than the passage's, because a passage can straddle two letters.
+        """
+        offset = (passage.char_start or 0) + record.evidence_start
+        for start, end, date in await self._units_of(passage.document_id):
+            if start <= offset < end:
+                return date
+        return None
+
+    async def _units_of(self, document_id: UUID) -> list[tuple[int, int, datetime]]:
+        """Dated unit documents carved from *document_id*, as (start, end, date)."""
+        cached = self._units.get(document_id)
+        if cached is not None and time.monotonic() - cached[0] < UNIT_CACHE_SECONDS:
+            return cached[1]
+        units: list[tuple[int, int, datetime]] = []
+        finder = getattr(self._documents, "find_by_metadata", None)
+        try:
+            found = await finder(UNIT_PARENT, str(document_id)) if finder else []
+        except Exception as exc:  # noqa: BLE001 - anchoring is best-effort
+            logger.warning("unit_anchor_failed", document_id=str(document_id), error=str(exc))
+            found = []
+        for unit in found:
+            meta = unit.metadata or {}
+            start, end = meta.get(UNIT_START), meta.get(UNIT_END)
+            if unit.created_date_start is None or start is None or end is None:
+                continue
+            units.append((int(start), int(end), unit.created_date_start))
+        units.sort()
+        self._units[document_id] = (time.monotonic(), units)
+        return units
 
     async def _node_anchor(self, node_id: UUID) -> datetime | None:
         if self._nodes is None:
