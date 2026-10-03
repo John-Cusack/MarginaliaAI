@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from pathlib import Path
     from uuid import UUID
 
@@ -27,7 +28,26 @@ class CorpusClient(Protocol):
 
     async def find_passages_advanced(self, query: SearchQuery) -> SearchResult: ...
 
-    async def get_document(self, document_id: UUID) -> dict[str, Any] | None: ...
+    async def get_document(self, document_id: UUID) -> dict[str, Any] | None:
+        """The document's fields and its passages, each with ``char_start`` /
+        ``char_end`` into the canonical text."""
+        ...
+
+    async def get_document_text(self, document_id: UUID) -> str | None:
+        """The canonical text passage offsets index into."""
+        ...
+
+    async def find_documents(
+        self,
+        *,
+        document_types: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        source_pattern: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Documents by type, metadata containment and source substring; no
+        passages. At least one criterion is required."""
+        ...
 
     async def get_document_outline(
         self, document_id: UUID, dated_only: bool = False
@@ -45,8 +65,23 @@ class ExtractionClient(Protocol):
     ) -> dict[str, Any]: ...
 
     async def query_records(
-        self, record_type: str, filters: dict[str, Any] | None = None, k: int = 100
-    ) -> list[dict[str, Any]]: ...
+        self,
+        record_type: str,
+        filters: dict[str, Any] | None = None,
+        k: int = 100,
+        *,
+        passage_ids: list[UUID | str] | None = None,
+        schema: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Stored records of *record_type*.
+
+        *filters* match the record data by containment; *passage_ids* narrow to
+        those passages. *schema* (``"name:version"``) scopes the read to that
+        schema version and, per passage, to its most recent successful
+        extraction — so a re-extraction replaces what is read instead of adding
+        to it.
+        """
+        ...
 
 
 @runtime_checkable
@@ -145,6 +180,10 @@ class IngestionClient(Protocol):
         metadata: dict[str, Any] | None = None,
         language: str | None = None,
         sections: list[dict[str, Any]] | None = None,
+        created_date_start: datetime | str | None = None,
+        created_date_end: datetime | str | None = None,
+        created_precision: str | None = None,
+        edition_id: UUID | str | None = None,
     ) -> dict[str, Any]: ...
 
     async def ingest_drafts(
@@ -163,3 +202,22 @@ class IngestionClient(Protocol):
     async def find_existing(
         self, *, source: str | None = None, source_pattern: str | None = None
     ) -> list[dict[str, Any]]: ...
+
+    async def update_document(
+        self,
+        document_id: UUID | str,
+        *,
+        title: str | None = None,
+        document_type: str | None = None,
+        created_date_start: datetime | str | None = None,
+        created_date_end: datetime | str | None = None,
+        created_precision: str | None = None,
+        clear_created_date: bool = False,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Change title, type, date or metadata (merged); never content."""
+        ...
+
+    async def delete_document(self, document_id: UUID | str) -> bool:
+        """Delete a document the pack derived and is replacing."""
+        ...

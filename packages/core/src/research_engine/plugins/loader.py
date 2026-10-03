@@ -363,6 +363,7 @@ class PluginLoader:
                 documents,
                 passages,
                 self._services.get("document_nodes"),
+                self._services.get("document_texts"),
             )
         else:
             corpus_client = search

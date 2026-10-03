@@ -85,6 +85,12 @@ class DeniedIngestionClient:
     async def find_existing(self, *args, **kwargs):
         raise PermissionDenied(self._plugin, "ingest")
 
+    async def update_document(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def delete_document(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
 
 class DeniedEdgeClient:
     """Edge client that always denies access (plugin lacks `write`)."""

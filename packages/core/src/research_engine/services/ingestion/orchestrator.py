@@ -22,7 +22,9 @@ from research_engine.services.search.langconfig import pg_config
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
+    from datetime import datetime
     from pathlib import Path
+    from uuid import UUID
 
     from research_engine.ports.embedding import EmbeddingPort
     from research_engine.ports.repositories import (
@@ -187,6 +189,10 @@ class IngestionOrchestrator:
         language: str | None = None,
         full_text: str | None = None,
         node_drafts: list[DocumentNodeDraft] | None = None,
+        created_date_start: datetime | None = None,
+        created_date_end: datetime | None = None,
+        created_precision: str | None = None,
+        edition_id: UUID | None = None,
     ) -> dict:
         """Ingest pre-chunked PassageDrafts directly, skipping parse/chunk stages.
 
@@ -205,6 +211,12 @@ class IngestionOrchestrator:
         passages cited the volume rather than the entry they sit in. Supplying
         it also attaches each passage to its deepest containing node, so the
         structure is usable by `locate_passage` rather than merely present.
+
+        *created_date_start* / *created_date_end* / *created_precision* date the
+        document itself — a letter split out of a collected volume carries its
+        own date, which is what search's date filters and the extraction
+        enricher's anchor read. *edition_id* places it in an existing edition;
+        an ``edition_key`` in *metadata* still takes precedence.
         """
 
         # Hash the *content*, not `source:title`. The old form meant a document
@@ -242,6 +254,10 @@ class IngestionOrchestrator:
             content_hash=content_hash,
             parser="plugin_direct",
             parser_version="1.0",
+            created_date_start=created_date_start,
+            created_date_end=created_date_end,
+            created_precision=created_precision,
+            edition_id=edition_id,
             metadata=metadata or {},
         )
 

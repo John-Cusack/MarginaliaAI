@@ -18,7 +18,11 @@ from uuid import UUID
 from research_engine.domain.extractions import ExtractionOptions
 
 if TYPE_CHECKING:
-    from research_engine.ports.repositories import ExtractionRepo, PassageRepo
+    from research_engine.ports.repositories import (
+        ExtractionRepo,
+        ExtractionSchemaRepo,
+        PassageRepo,
+    )
     from research_engine.services.extraction.executor import ExtractionExecutor
 
 _OPTION_FIELDS = set(ExtractionOptions.model_fields)
@@ -32,10 +36,12 @@ class ExtractionServiceAdapter:
         executor: ExtractionExecutor,
         passages: PassageRepo,
         extractions: ExtractionRepo,
+        schemas: ExtractionSchemaRepo | None = None,
     ) -> None:
         self._executor = executor
         self._passages = passages
         self._extractions = extractions
+        self._schemas = schemas
 
     async def extract(
         self, passage_ids: list[UUID], schema: str, options: dict | None = None
@@ -79,16 +85,43 @@ class ExtractionServiceAdapter:
         }
 
     async def query_records(
-        self, record_type: str, filters: dict | None = None, k: int = 100
+        self,
+        record_type: str,
+        filters: dict | None = None,
+        k: int = 100,
+        *,
+        passage_ids: list | None = None,
+        schema: str | None = None,
     ) -> list:
+        """Stored records; *schema* (``"name:version"``) scopes to that version
+        and to each passage's most recent successful extraction."""
+        schema_id = None
+        if schema is not None:
+            if self._schemas is None:
+                raise RuntimeError("this extraction client cannot resolve schema names")
+            name, _, version = schema.partition(":")
+            found = await self._schemas.get_by_name_version(name, int(version or 1))
+            if found is None:
+                return []
+            schema_id = found.id
         rows = await self._extractions.query_records(
-            record_type, data_filter=filters, k=k
+            record_type,
+            data_filter=filters,
+            passage_ids=(
+                [p if isinstance(p, UUID) else UUID(str(p)) for p in passage_ids]
+                if passage_ids is not None
+                else None
+            ),
+            k=k,
+            schema_id=schema_id,
+            latest_only=schema_id is not None,
         )
         return [
             {
                 "id": str(r.id),
                 "extraction_id": str(r.extraction_id),
                 "passage_id": str(r.passage_id),
+                "schema_id": str(r.schema_id),
                 "record_type": r.record_type,
                 "data": r.data,
                 "evidence_start": r.evidence_start,
