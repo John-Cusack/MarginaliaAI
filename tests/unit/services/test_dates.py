@@ -296,3 +296,77 @@ class TestPhrasesTheLettersActuallyUse:
     def test_a_bare_day_still_needs_an_anchor(self):
         """Relaxing the ordinal must not make a bare number resolvable alone."""
         assert parse_fuzzy_date("the 19") is None
+
+
+class TestForwardResolution:
+    """A date with no year that comes *after* its anchor.
+
+    The epistolary default looks back: "yours of July 1", written in April,
+    means last July. Two kinds of date point the other way — a letter's own
+    yearless dateline read against the letter before it, and a receipt note
+    read against the letter's own date. Faraday's "Geneva : July 1." sits
+    between a Rome letter of 14 April 1814 and a Geneva one of 6 August 1814;
+    read backward it lands in 1813, before he had left England.
+    """
+
+    APRIL_1814 = datetime(1814, 4, 14, tzinfo=UTC)
+
+    def test_a_yearless_dateline_after_its_anchor(self):
+        result = parse_fuzzy_date("July 1", relative_to=self.APRIL_1814, forward=True)
+        assert result is not None
+        assert result.start.date().isoformat() == "1814-07-01"
+
+    def test_backward_is_still_the_default(self):
+        result = parse_fuzzy_date("July 1", relative_to=self.APRIL_1814)
+        assert result is not None
+        assert result.start.date().isoformat() == "1813-07-01"
+
+    def test_a_receipt_note_crosses_the_new_year(self):
+        """Written 10 November 1814, "Eeceived January 17" — in 1815."""
+        written = datetime(1814, 11, 10, tzinfo=UTC)
+        result = parse_fuzzy_date("January 17", relative_to=written, forward=True)
+        assert result is not None
+        assert result.start.date().isoformat() == "1815-01-17"
+
+    def test_the_same_day_is_on_or_after(self):
+        result = parse_fuzzy_date("April 14", relative_to=self.APRIL_1814, forward=True)
+        assert result is not None
+        assert result.start.date().isoformat() == "1814-04-14"
+
+    def test_day_first_forward(self):
+        result = parse_fuzzy_date("18 July", relative_to=self.APRIL_1814, forward=True)
+        assert result is not None
+        assert result.start.date().isoformat() == "1814-07-18"
+
+    def test_a_bare_day_before_the_anchor_is_next_month(self):
+        result = parse_fuzzy_date("the 2d", relative_to=self.APRIL_1814, forward=True)
+        assert result is not None
+        assert result.start.date().isoformat() == "1814-05-02"
+
+    def test_an_explicit_year_ignores_the_direction(self):
+        result = parse_fuzzy_date(
+            "February 13, 1816", relative_to=self.APRIL_1814, forward=True
+        )
+        assert result is not None
+        assert result.start.date().isoformat() == "1816-02-13"
+
+
+class TestLeadingWeekday:
+    """A dateline's weekday is a checksum on the date, not part of it."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Sunday, July 28, 1822", "1822-07-28"),
+            ("Friday evening, February 9, 1816", "1816-02-09"),
+            ("Saturday, August 6, 1814", "1814-08-06"),
+            ("on Monday, March 3, 1862", "1862-03-03"),
+        ],
+    )
+    def test_the_weekday_is_stripped(self, text, expected):
+        result = parse_fuzzy_date(text)
+        assert result is not None
+        assert result.start.date().isoformat() == expected
+
+    def test_a_weekday_alone_is_not_a_date(self):
+        assert parse_fuzzy_date("Sunday") is None

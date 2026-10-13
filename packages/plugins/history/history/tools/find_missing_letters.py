@@ -20,11 +20,12 @@ than a clean answer you cannot trust.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
 from history.tools import _holdings
+from history.tools._correspondence import between
 from research_engine_sdk import EventFilter
 
 #: Suffix core appends when it resolves a declared field type into structured
@@ -53,15 +54,16 @@ async def tool_handler(
     """
     candidates: list[dict[str, Any]] = []
     notes: list[str] = []
-    verdicts: dict[str, list] = {"missing": [], "held": [], "undetermined": []}
+    verdicts: dict[str, list] = {"missing": [], "held": [], "near_miss": [], "undetermined": []}
 
     if method in ("all", "referenced"):
         candidates.extend(
             await _referenced(
                 corpus,
                 extraction,
-                correspondent_a_entity_id,
-                correspondent_b_entity_id,
+                event,
+                str(correspondent_a_entity_id),
+                str(correspondent_b_entity_id),
                 min_confidence,
                 notes,
                 verdicts,
@@ -86,6 +88,9 @@ async def tool_handler(
         # Referenced and found — evidence the check works, and the reason the
         # candidate list is shorter than the reference count.
         "held": verdicts["held"],
+        # A held letter one day off: possibly the referenced one, possibly not.
+        # Never counted as held, never as missing.
+        "near_miss": verdicts["near_miss"],
         # Referenced, but not checkable. Kept visible so the gap between
         # "not found" and "not looked for" stays legible.
         "undetermined": verdicts["undetermined"],
@@ -93,6 +98,7 @@ async def tool_handler(
         "summary": {
             "total_candidates": len(candidates),
             "referenced_and_held": len(verdicts["held"]),
+            "near_misses": len(verdicts["near_miss"]),
             "not_checkable": len(verdicts["undetermined"]),
             "by_method": _count_by_method(candidates),
         },
@@ -102,6 +108,7 @@ async def tool_handler(
 async def _referenced(
     corpus: Any,
     extraction: Any,
+    event: Any,
     correspondent_a_entity_id: str,
     correspondent_b_entity_id: str,
     min_confidence: float,
@@ -110,23 +117,25 @@ async def _referenced(
 ) -> list[dict[str, Any]]:
     """Letters named in letters we hold, that we do not hold.
 
-    The second half of that sentence is new. This used to return every
-    reference above the confidence threshold, which is a list of letters
-    *mentioned* — the same thing as letters *missing* only if you hold none of
-    them. Each reference is now looked up against the corpus's own dated
-    sections and sorted into held, missing, or undetermined.
+    Each reference is looked up against the letters the corpus holds between
+    the two correspondents and sorted into held, near miss, missing, or
+    undetermined. Holdings come from `letter_sent` events — sender, recipient
+    and day, as entity ids — when there are any; otherwise from dated section
+    titles, the older and weaker index.
+
+    Direction comes from the reference's kind and from who wrote the letter that
+    quotes it: "yours of the 3d" in a letter by A is a letter from B to A. When
+    the quoting letter is a letter document with a resolved sender, that is the
+    writer; otherwise correspondent A is assumed to be.
 
     Undetermined is not a failure to be tidied away. A reference whose date
     would not resolve cannot be looked up at all, and calling it missing would
     manufacture a gap out of a parsing limitation.
     """
+    a, b = correspondent_a_entity_id, correspondent_b_entity_id
     records = await extraction.query_records(
         record_type="epistolary_reference",
-        filters={
-            f"referenced_party_entity_id{RESOLVED}": {
-                "entity_id": correspondent_b_entity_id
-            }
-        },
+        filters={f"referenced_party_entity_id{RESOLVED}": {"entity_id": b}},
         k=500,
     )
     if not records:
@@ -142,31 +151,48 @@ async def _referenced(
         for record in records
         if (record.get("data") or {}).get("confidence", 0) >= min_confidence
     ]
-    holdings = await _holdings.build(
-        corpus, [record.get("passage_id") for record in considered if record.get("passage_id")]
-    )
-    if holdings.total == 0:
+    letters = await _holdings.from_events(event, a, b)
+    titles = None
+    if letters.total:
         notes.append(
-            "The corpus reports no dated sections for these documents, so no "
-            "reference could be checked against what is held. Run "
-            "`research-engine reindex structure` to date them."
+            f"Checked against {letters.total} dated letters between the two "
+            f"({letters.a_to_b} one way, {letters.b_to_a} the other)."
         )
-    elif (coverage := holdings.coverage_note()) is not None:
-        notes.append(coverage)
+    else:
+        titles = await _holdings.build(
+            corpus, [record.get("passage_id") for record in considered if record.get("passage_id")]
+        )
+        if titles.total == 0:
+            notes.append(
+                "The corpus holds no dated letters between these two: no "
+                "letter_sent events and no dated sections. Split their volume "
+                "with history.structure_letters to date them."
+            )
+        elif (coverage := titles.coverage_note()) is not None:
+            notes.append(coverage)
 
+    writers: dict[str, str | None] = {}
     missing: list[dict[str, Any]] = []
     for record in considered:
         data = record.get("data") or {}
         resolved = data.get(f"referenced_date{RESOLVED}") or {}
         when = resolved.get("start")
-        who = _holdings.surname(data.get("referenced_party_surface"))
+        direction = _holdings.direction_of(data.get("reference_type"))
+        writer = await _writer_of(corpus, record.get("passage_id"), writers) or a
+        other = b if writer == a else a
+        if direction == _holdings.SENT:
+            pairs = [(writer, other)]
+        elif direction == _holdings.RECEIVED:
+            pairs = [(other, writer)]
+        else:
+            pairs = [(writer, other), (other, writer)]
         entry = {
             "method": "referenced",
-            "expected_sender_entity_id": correspondent_b_entity_id,
-            "expected_recipient_entity_id": correspondent_a_entity_id,
+            "expected_sender_entity_id": pairs[0][0],
+            "expected_recipient_entity_id": pairs[0][1],
             "expected_date": resolved or None,
             "expected_date_as_written": data.get("referenced_date"),
-            "direction": _holdings.direction_of(data.get("reference_type")),
+            "direction": direction,
             "confidence": data.get("confidence", 0),
             "evidence": {
                 "passage_id": record.get("passage_id"),
@@ -175,7 +201,14 @@ async def _referenced(
             "content_hints": [data.get("content_hint", "")],
         }
 
-        if not when:
+        if writer not in (a, b):
+            entry["undetermined_because"] = (
+                "the letter quoting it is by neither correspondent"
+            )
+            verdicts["undetermined"].append(entry)
+            continue
+        day = _holdings.day_of(when)
+        if not day:
             entry["undetermined_because"] = (
                 "the date it gives could not be resolved, so there is nothing "
                 "to look up"
@@ -183,23 +216,61 @@ async def _referenced(
             verdicts["undetermined"].append(entry)
             continue
 
-        if (title := holdings.held(who, when)) is not None:
-            entry["held_as"] = title
-            verdicts["held"].append(entry)
-            continue
-
-        entry["absent_from"] = f"{holdings.total} dated letters in this corpus"
+        if titles is None:
+            on = date.fromisoformat(day)
+            if hit := _first(letters.held, pairs, on):
+                entry["held_as"] = hit
+                verdicts["held"].append(entry)
+                continue
+            if near := _first(letters.near_miss, pairs, on):
+                entry["near_miss_of"] = near
+                verdicts["near_miss"].append(entry)
+                continue
+            entry["absent_from"] = f"{letters.total} dated letters between the two"
+        else:
+            who = _holdings.surname(data.get("referenced_party_surface"))
+            if (title := titles.held(who, when)) is not None:
+                entry["held_as"] = title
+                verdicts["held"].append(entry)
+                continue
+            entry["absent_from"] = f"{titles.total} dated sections in this corpus"
         missing.append(entry)
 
     verdicts["missing"].extend(missing)
     if verdicts["undetermined"]:
         notes.append(
             f"{len(verdicts['undetermined'])} of {len(considered)} referenced "
-            f"letters could not be checked: their date would not resolve, and a "
-            f"reference with no date cannot be looked up. They are reported "
+            f"letters could not be checked: their date would not resolve, or the "
+            f"letter quoting them is by someone else. They are reported "
             f"separately rather than counted as missing."
         )
     return missing
+
+
+def _first(lookup: Any, pairs: list[tuple[str, str]], on: date) -> Any:
+    """The first (sender, recipient) pair *lookup* finds a letter for."""
+    for sender, recipient in pairs:
+        if (hit := lookup(sender, recipient, on)) is not None:
+            return hit
+    return None
+
+
+async def _writer_of(
+    corpus: Any, passage_id: str | None, cache: dict[str, str | None]
+) -> str | None:
+    """The resolved sender of the letter document a passage belongs to."""
+    if not passage_id:
+        return None
+    try:
+        context = await corpus.get_passage_context(passage_id)
+        document_id = context.get("document_id")
+        if document_id not in cache:
+            document = await corpus.get_document(document_id) if document_id else None
+            meta = (document or {}).get("metadata") or {}
+            cache[document_id] = meta.get("sender_entity_id")
+        return cache.get(document_id)
+    except Exception:  # noqa: BLE001 - an unplaceable passage has no known writer
+        return None
 
 
 async def _cadence(
@@ -209,17 +280,22 @@ async def _cadence(
     date_range: dict | None,
     notes: list[str],
 ) -> list[dict[str, Any]]:
-    """Stretches longer than this correspondence's own rhythm."""
+    """Stretches longer than this correspondence's own rhythm.
+
+    Only letters between the two count: the actor filter matches either
+    correspondent, and a man's letters to his mother say nothing about the
+    rhythm of his letters to a friend.
+    """
 
     # MCP hands these over as strings; `EventFilter.actor_entity_ids` is typed
     # `list[UUID]` and rejects anything else outright, so the whole tool raised
     # before it looked at a single event.
     actors = [_as_uuid(correspondent_a_entity_id), _as_uuid(correspondent_b_entity_id)]
     actors = [a for a in actors if a is not None]
-    if not actors:
+    if len(actors) < 2:
         notes.append(
-            "Cadence analysis needs at least one correspondent identified by "
-            "entity id; neither argument was a usable one."
+            "Cadence analysis needs both correspondents identified by entity id; "
+            "at least one argument was not a usable one."
         )
         return []
 
@@ -232,17 +308,18 @@ async def _cadence(
         ),
         k=10000,
     )
+    pair = await between(event, events, str(actors[0]), str(actors[1]))
 
     dated = sorted(
-        (e for e in events if e.timestamp_start is not None),
+        (e for e, _direction in pair.letters if e.timestamp_start is not None),
         key=lambda e: e.timestamp_start,
     )
     if len(dated) < 3:
         notes.append(
             f"Cadence analysis needs at least three dated letters between the "
             f"two correspondents; found {len(dated)} among {len(events)} "
-            f"letter_sent events. Without dates there is no rhythm to find a "
-            f"gap in, so this method reports nothing rather than no gaps."
+            f"letter_sent events naming either. Without dates there is no rhythm "
+            f"to find a gap in, so this method reports nothing rather than no gaps."
         )
         return []
 

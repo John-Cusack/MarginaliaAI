@@ -20,6 +20,18 @@ if TYPE_CHECKING:
     from research_engine.ports.repositories import Transaction
 
 
+#: Columns `update_fields` may set. Not content, source or identity.
+UPDATABLE_FIELDS = frozenset(
+    {
+        "title",
+        "document_type",
+        "created_date_start",
+        "created_date_end",
+        "created_precision",
+    }
+)
+
+
 class PGDocumentRepo:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -123,6 +135,43 @@ class PGDocumentRepo:
             )
             return await self._get_by_id(conn, doc_id)  # type: ignore[return-value]
 
+    async def update_fields(
+        self,
+        doc_id: UUID,
+        values: dict[str, Any],
+        metadata_patch: dict[str, Any] | None = None,
+    ) -> Document | None:
+        """Set some of a document's columns and merge a metadata patch, atomically.
+
+        *values* may name only the columns listed in ``UPDATABLE_FIELDS``; a
+        value of ``None`` clears that column. Content, source and identity are
+        not updatable: a document whose text changes is a different document.
+        Returns ``None`` when no such document exists.
+        """
+        if unknown := set(values) - UPDATABLE_FIELDS:
+            raise ValueError(
+                f"not updatable: {', '.join(sorted(unknown))}; "
+                f"updatable: {', '.join(sorted(UPDATABLE_FIELDS))}"
+            )
+        async with self._engine.begin() as conn:
+            existing = (
+                await conn.execute(
+                    sa.select(documents.c.metadata)
+                    .where(documents.c.id == doc_id)
+                    .with_for_update()
+                )
+            ).first()
+            if existing is None:
+                return None
+            update = dict(values)
+            if metadata_patch:
+                update["metadata"] = {**(existing[0] or {}), **metadata_patch}
+            if update:
+                await conn.execute(
+                    documents.update().where(documents.c.id == doc_id).values(**update)
+                )
+            return await self._get_by_id(conn, doc_id)
+
     async def iter_by_filter(self, filter: DocumentFilter) -> AsyncIterator[Document]:
         stmt = documents.select()
         stmt = self._apply_filter(stmt, filter)
@@ -153,6 +202,14 @@ class PGDocumentRepo:
             stmt = stmt.where(documents.c.language == f.language)
         if f.source_pattern:
             stmt = stmt.where(documents.c.source.ilike(f"%%{f.source_pattern}%%"))
+        if f.metadata:
+            # `metadata` is `json`; containment is a `jsonb` operator. The field
+            # was declared on the filter and silently ignored here until now.
+            stmt = stmt.where(
+                sa.cast(documents.c.metadata, JSONB).contains(
+                    sa.cast(sa.literal(f.metadata, sa.JSON), JSONB)
+                )
+            )
         return stmt
 
     @staticmethod

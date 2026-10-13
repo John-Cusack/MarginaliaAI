@@ -43,7 +43,7 @@ from research_engine.domain.errors import EmbeddingUnavailable, describe_excepti
 from research_engine.domain.nodes import attach_nodes
 from research_engine.services.ingestion.embed_batches import BatchOutcome, embed_and_store
 from research_engine.services.ingestion.pipeline import run_chunking
-from research_engine.services.ingestion.structure import node_tree_for
+from research_engine.services.ingestion.structure import check_shrink, node_tree_for
 from research_engine.services.search.langconfig import pg_config
 from research_engine.services.text.anchoring import CanonicalIndex, Span, best_overlap
 
@@ -161,8 +161,13 @@ class ReindexService:
         orphan_threshold: float = DEFAULT_ORPHAN_THRESHOLD,
         embedding_batch_size: int = 32,
         document_node_repo: Any = None,
+        allow_shrink: bool = False,
     ) -> None:
         self._engine = engine
+        #: See `structure.check_shrink`: re-chunking rebuilds the node tree from
+        #: canonical text, which would collapse a Docling-sectioned book to its
+        #: root. A document that would lose most of its nodes fails instead.
+        self._allow_shrink = allow_shrink
         self._passages = passage_repo
         self._texts = document_text_repo
         #: Optional so a caller that only wants passages re-anchored can say so,
@@ -301,12 +306,11 @@ class ReindexService:
             )
         ).scalar_one_or_none()
 
+        tree = node_tree_for(canonical_text, title=title)
+        existing = len(await self._nodes.get_tree(document_id))
+        check_shrink(document_id, existing, len(tree), allow_shrink=self._allow_shrink)
         await self._nodes.delete_for_document(tx, document_id)
-        stored = await self._nodes.insert_many(
-            tx,
-            document_id,
-            node_tree_for(canonical_text, title=title),
-        )
+        stored = await self._nodes.insert_many(tx, document_id, tree)
         if stored:
             report.nodes_written += len(stored)
             report.nodes_dated += sum(

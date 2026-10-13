@@ -174,9 +174,14 @@ def _field_json_schema(spec: dict[str, Any]) -> dict[str, Any]:
         # `epistolary_references` did, with "Resolved entity; leave null if
         # ambiguous" — guarantees the field is null or invented. Ask for the
         # name and resolve it here, where the entity store is.
+        #
+        # The schema's own description follows that sentence instead of being
+        # dropped: a schema reading scanned print needs to add "correct obvious
+        # OCR letter-swaps", and replacing it threw that instruction away.
         prop["description"] = (
-            "The name as written in the passage. Do not supply an identifier."
-        )
+            "The name as written in the passage. Do not supply an identifier. "
+            f"{prop['description']}"
+        ).strip()
     if declared == "fuzzy_date":
         prop["description"] = (
             f"{prop['description']} Give the date as the passage words it "

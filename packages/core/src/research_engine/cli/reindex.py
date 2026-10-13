@@ -122,6 +122,11 @@ def chunks(
         "--orphan-threshold",
         help="Abort if more than this fraction of passages cannot be re-anchored.",
     ),
+    allow_shrink: bool = typer.Option(
+        False,
+        "--allow-shrink",
+        help="Rebuild a structure tree even when it would lose most of its nodes.",
+    ),
 ) -> None:
     """Re-chunk documents onto current chunker versions, re-anchoring their links.
 
@@ -133,7 +138,7 @@ def chunks(
 
     ids = [UUID(d) for d in document_id] if document_id else None
     try:
-        report = asyncio.run(_reindex(ids, dry_run, orphan_threshold))
+        report = asyncio.run(_reindex(ids, dry_run, orphan_threshold, allow_shrink))
     except EmbeddingUnavailable as exc:
         # One line naming the cause, rather than a traceback under thousands of
         # halving warnings. This run previously looked healthy for hours while
@@ -150,7 +155,10 @@ def chunks(
 
 
 async def _reindex(
-    document_ids: list[UUID] | None, dry_run: bool, orphan_threshold: float
+    document_ids: list[UUID] | None,
+    dry_run: bool,
+    orphan_threshold: float,
+    allow_shrink: bool = False,
 ) -> ReindexReport:
     from research_engine.adapters.inference.gpu_host import (
         GpuHostError,
@@ -178,6 +186,7 @@ async def _reindex(
             orphan_threshold=orphan_threshold,
             embedding_batch_size=container.settings.embedding_batch_size,
             document_node_repo=container.document_nodes,
+            allow_shrink=allow_shrink,
         )
         return await service.reindex_chunks(document_ids, dry_run=dry_run)
     finally:
@@ -272,6 +281,11 @@ def structure(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Do the work and roll back; report what would happen."
     ),
+    allow_shrink: bool = typer.Option(
+        False,
+        "--allow-shrink",
+        help="Rebuild a tree even when it would lose most of its existing nodes.",
+    ),
 ) -> None:
     """Rebuild structure trees from canonical text, and date their sections.
 
@@ -286,13 +300,13 @@ def structure(
     have hundreds, and this is the level they vary at.
     """
     ids = [UUID(d) for d in document_id] if document_id else None
-    report = asyncio.run(_rebuild_structure(ids, only_missing, dry_run))
+    report = asyncio.run(_rebuild_structure(ids, only_missing, dry_run, allow_shrink))
     _print_structure(report)
     if report.failures:
         raise typer.Exit(code=1)
 
 
-async def _rebuild_structure(document_ids, only_missing, dry_run):
+async def _rebuild_structure(document_ids, only_missing, dry_run, allow_shrink=False):
     from research_engine.composition import build_container
     from research_engine.config import load_settings
     from research_engine.services.ingestion.structure import StructureService
@@ -306,7 +320,10 @@ async def _rebuild_structure(document_ids, only_missing, dry_run):
             container.transaction_factory,
         )
         return await service.rebuild(
-            document_ids, dry_run=dry_run, only_missing=only_missing
+            document_ids,
+            dry_run=dry_run,
+            only_missing=only_missing,
+            allow_shrink=allow_shrink,
         )
     finally:
         await container.close()

@@ -163,6 +163,20 @@ def run(
     estimate_only: bool = typer.Option(
         False, "--estimate", help="Report what would run and what it would cost."
     ),
+    model: str = typer.Option(
+        None,
+        "--model",
+        help="LLM model for this run, e.g. claude-sonnet-5. Defaults to the configured one.",
+    ),
+    exclude_range: list[str] = typer.Option(
+        None,
+        "--exclude-range",
+        help=(
+            "Skip passages overlapping a character range of a document's canonical "
+            "text: DOCUMENT_ID:START-END, or START-END with exactly one --document-id. "
+            "Repeatable. For a volume's catalogue, index or front matter."
+        ),
+    ),
 ) -> None:
     """Run a registered extraction schema over passages.
 
@@ -180,9 +194,22 @@ def run(
 
     ids = [UUID(d) for d in document_id] if document_id else None
     try:
+        excluded = parse_exclude_ranges(exclude_range or [], ids)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=2) from exc
+    try:
         result = asyncio.run(
             _run_extraction(
-                schema, ids, dated_only, limit, concurrency, force_refresh, estimate_only
+                schema,
+                ids,
+                dated_only,
+                limit,
+                concurrency,
+                force_refresh,
+                estimate_only,
+                model=model,
+                excluded=excluded,
             )
         )
     except LLMUnavailable as exc:
@@ -197,8 +224,58 @@ def run(
         raise typer.Exit(code=1)
 
 
+def parse_exclude_ranges(
+    values: list[str], document_ids: list[UUID] | None
+) -> dict[UUID, list[tuple[int, int]]]:
+    """``DOCUMENT_ID:START-END`` (or ``START-END`` with one document) by document."""
+    ranges: dict[UUID, list[tuple[int, int]]] = {}
+    for value in values:
+        document, _, span = value.rpartition(":")
+        if document:
+            target = UUID(document)
+        elif document_ids and len(document_ids) == 1:
+            target = document_ids[0]
+        else:
+            raise ValueError(
+                f"--exclude-range {value!r} names no document: write "
+                f"DOCUMENT_ID:START-END, or give exactly one --document-id."
+            )
+        start_text, _, end_text = span.partition("-")
+        try:
+            start, end = int(start_text), int(end_text)
+        except ValueError as exc:
+            raise ValueError(f"--exclude-range {value!r}: expected START-END") from exc
+        if start >= end:
+            raise ValueError(f"--exclude-range {value!r}: START must be below END")
+        ranges.setdefault(target, []).append((start, end))
+    return ranges
+
+
+def overlaps_excluded(
+    document_id: UUID,
+    char_start: int | None,
+    char_end: int | None,
+    excluded: dict[UUID, list[tuple[int, int]]],
+) -> bool:
+    if char_start is None or char_end is None:
+        return False
+    return any(
+        char_start < end and start < char_end
+        for start, end in excluded.get(document_id, [])
+    )
+
+
 async def _run_extraction(
-    schema, document_ids, dated_only, limit, concurrency, force_refresh, estimate_only
+    schema,
+    document_ids,
+    dated_only,
+    limit,
+    concurrency,
+    force_refresh,
+    estimate_only,
+    *,
+    model=None,
+    excluded=None,
 ):
     import sqlalchemy as sa
 
@@ -207,7 +284,7 @@ async def _run_extraction(
     container, close = await _container()
     try:
         passages = await _select_passages(
-            container.engine, document_ids, dated_only, limit
+            container.engine, document_ids, dated_only, limit, excluded=excluded
         )
         if estimate_only or not passages:
             return {
@@ -220,7 +297,9 @@ async def _run_extraction(
         batch = await container.extraction_executor.execute(
             [p[0] for p in passages],
             schema,
-            ExtractionOptions(concurrency=concurrency, force_refresh=force_refresh),
+            ExtractionOptions(
+                concurrency=concurrency, force_refresh=force_refresh, llm_model=model
+            ),
         )
         results = batch.results
         records = [record for r in results for record in r.records]
@@ -253,14 +332,20 @@ async def _run_extraction(
         await close()
 
 
-async def _select_passages(engine, document_ids, dated_only, limit):
-    """Passage ids with their size, and whether their node carries a date."""
+async def _select_passages(engine, document_ids, dated_only, limit, excluded=None):
+    """Passage ids with their size, and whether their node carries a date.
+
+    *excluded* drops passages overlapping a character range of their document
+    — a volume's publisher's catalogue, its index — before *limit* applies, so
+    the limit counts passages that will actually run.
+    """
     import sqlalchemy as sa
 
     from research_engine.services.text.tokens import approx_tokens, chars_per_token
 
     stmt = (
-        "SELECT p.id, p.text, n.metadata->>'date_start' AS dated "
+        "SELECT p.id, p.text, n.metadata->>'date_start' AS dated, "
+        "p.document_id, p.char_start, p.char_end "
         "FROM core.passages p LEFT JOIN core.document_nodes n ON n.id = p.node_id"
     )
     clauses, params = [], {}
@@ -272,10 +357,14 @@ async def _select_passages(engine, document_ids, dated_only, limit):
     if clauses:
         stmt += " WHERE " + " AND ".join(clauses)
     stmt += " ORDER BY p.document_id, p.position"
-    if limit:
+    if limit and not excluded:
         stmt += f" LIMIT {int(limit)}"
     async with engine.connect() as conn:
         rows = (await conn.execute(sa.text(stmt), params)).all()
+    if excluded:
+        rows = [row for row in rows if not overlaps_excluded(row[3], row[4], row[5], excluded)]
+        if limit:
+            rows = rows[: int(limit)]
     return [
         (row[0], approx_tokens(row[1], chars_per_token(row[1])), bool(row[2]))
         for row in rows

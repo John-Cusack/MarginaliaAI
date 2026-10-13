@@ -70,6 +70,11 @@ _LEAD = re.compile(
     r"|in\s+reply\s+to\s+"
     r"|received\s+|acknowledg\w*\s+"
     r"|dated\s+|written\s+|on\s+|of\s+|the\s+"
+    # A dateline's weekday: "Sunday, July 28, 1822", "Friday evening, Feb. 9".
+    # The weekday is a checksum on the date, not part of it, and a schema that
+    # wants it asks for it in a field of its own.
+    r"|(?:mon|tues|wednes|thurs|fri|satur|sun)day\.?"
+    r"(?:\s+(?:morning|afternoon|evening|night))?\s*[,:;]?\s*"
     r")+",
     re.IGNORECASE,
 )
@@ -116,13 +121,21 @@ _OFFSET = {"ult": -1, "inst": 0, "prox": 1}
 
 
 def parse_fuzzy_date(
-    text: str, *, relative_to: datetime | None = None
+    text: str, *, relative_to: datetime | None = None, forward: bool = False
 ) -> FuzzyDate | None:
     """Parse a written date into a span and a precision, or return None.
 
     *relative_to* is the date of the document the phrase was written in. Forms
     that name only a day — "the 15th", "the 3d ult." — mean nothing without it,
     and are refused rather than guessed.
+
+    *forward* says which way a date with no year points from its anchor. The
+    default looks back, which is right for the dates a letter mentions: "yours
+    of July 1", written in April, means last July. A letter's own yearless
+    dateline read against the letter before it, or a "Received July 18" note
+    read against the letter's own date, points the other way — the next July 1
+    on or after the anchor. Looking back there put a letter written in Geneva in
+    July 1814 a year before Faraday reached Geneva.
     """
     if not text or not text.strip():
         return None
@@ -153,7 +166,7 @@ def parse_fuzzy_date(
     # Everything below needs to know when the letter was written.
     if relative_to is None:
         return None
-    return _try_relative(cleaned, relative_to)
+    return _try_relative(cleaned, relative_to, forward=forward)
 
 
 def _try_iso(text: str) -> FuzzyDate | None:
@@ -232,8 +245,14 @@ def _try_year(text: str) -> FuzzyDate | None:
     return None
 
 
-def _try_relative(text: str, anchor: datetime) -> FuzzyDate | None:
-    """The epistolary forms, resolved against the letter's own date."""
+def _try_relative(
+    text: str, anchor: datetime, *, forward: bool = False
+) -> FuzzyDate | None:
+    """The epistolary forms, resolved against the letter's own date.
+
+    ult./inst./prox. name their month outright, so *forward* only changes the
+    forms that leave the month or the year to be inferred.
+    """
     if _TODAY.match(text):
         return _day(anchor.year, anchor.month, anchor.day)
     if _YESTERDAY.match(text):
@@ -255,23 +274,34 @@ def _try_relative(text: str, anchor: datetime) -> FuzzyDate | None:
         # writer meant last month.
         day = int(match.group(1))
         year, month = anchor.year, anchor.month
-        if day > anchor.day:
+        if forward and day < anchor.day:
+            year, month = _shift_month(year, month, 1)
+        elif not forward and day > anchor.day:
             year, month = _shift_month(year, month, -1)
         return _day(year, month, day)
 
     if match := _MONTH_DAY.match(text):
         month, day = MONTHS[match.group(1).lower()], int(match.group(2))
-        return _day(_year_for(anchor, month), month, day)
+        return _day(_year_for(anchor, month, day, forward=forward), month, day)
 
     if match := _DAY_MONTH.match(text):
         day, month = int(match.group(1)), MONTHS[match.group(2).lower()]
-        return _day(_year_for(anchor, month), month, day)
+        return _day(_year_for(anchor, month, day, forward=forward), month, day)
 
     return None
 
 
-def _year_for(anchor: datetime, month: int) -> int:
-    """A month with no year is the most recent occurrence of it."""
+def _year_for(
+    anchor: datetime, month: int, day: int = 1, *, forward: bool = False
+) -> int:
+    """The year a month (and day) with no year falls in, seen from *anchor*.
+
+    Backward, it is the most recent occurrence of the month — compared by month
+    alone, as it always has been. Forward, it is the next occurrence of the
+    month and day on or after the anchor.
+    """
+    if forward:
+        return anchor.year if (month, day) >= (anchor.month, anchor.day) else anchor.year + 1
     return anchor.year if month <= anchor.month else anchor.year - 1
 
 

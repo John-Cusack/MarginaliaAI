@@ -443,6 +443,16 @@ events = sa.Table(
 )
 
 sa.Index("events_type_idx", events.c.event_type)
+# The natural key of a derived event: one event of a given type per unit of
+# evidence. It is what lets a pass that materializes events — letter_sent from
+# a letter, say — be re-run without doubling the timeline. NULLs never conflict,
+# so events with no source passage are unconstrained. Migration 021.
+sa.Index(
+    "events_type_source_passage_uq",
+    events.c.event_type,
+    events.c.source_passage_id,
+    unique=True,
+)
 # No GIN index on this `json` column — Postgres has no default GIN operator
 # class for `json` (only `jsonb`), so the declaration was unbuildable and the
 # index never existed. See the note above `passages`.

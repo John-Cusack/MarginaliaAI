@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from uuid_utils import uuid7
 
 from research_engine.adapters.storage.postgres.schema import event_actors, events
@@ -24,20 +26,55 @@ class PGEventRepo:
 
     async def insert(self, tx: Transaction, draft: EventDraft) -> Event:
         event_id = uuid7()
-        values = {
-            "id": event_id,
-            "event_type": draft.event_type,
-            "timestamp_start": draft.timestamp_start,
-            "timestamp_end": draft.timestamp_end,
-            "precision": draft.precision.value if draft.precision else None,
-            "location_id": draft.location_id,
-            "location_text": draft.location_text,
-            "source_passage_id": draft.source_passage_id,
-            "payload": draft.payload,
-            "confidence": draft.confidence,
-        }
-        await tx.conn.execute(events.insert().values(**values))
+        await tx.conn.execute(events.insert().values(id=event_id, **_values(draft)))
         return await self._get_by_id(tx.conn, event_id)  # type: ignore[return-value]
+
+    async def upsert(
+        self,
+        tx: Transaction,
+        draft: EventDraft,
+        actors: list[EventActor] | None = None,
+    ) -> Event:
+        """Write the one event of this type derived from this passage.
+
+        Events had no natural key, so a pass that materializes them could only
+        insert, and re-running it doubled the timeline. ``(event_type,
+        source_passage_id)`` is the key: a unit of evidence — a letter, say —
+        yields one event of a given kind, and re-deriving it replaces the row in
+        place, keeping its id. *actors*, when given, replace the event's actors
+        wholesale; ``None`` leaves them as they are.
+        """
+        if draft.source_passage_id is None:
+            raise ValueError(
+                "An upserted event needs a source_passage_id: with event_type "
+                "it is the key that makes re-deriving the event idempotent."
+            )
+        values = _values(draft)
+        stmt = (
+            pg_insert(events)
+            .values(id=uuid7(), **values)
+            .on_conflict_do_update(
+                index_elements=[events.c.event_type, events.c.source_passage_id],
+                set_=values,
+            )
+            .returning(events.c.id)
+        )
+        event_id = (await tx.conn.execute(stmt)).scalar_one()
+        if actors is not None:
+            await tx.conn.execute(
+                event_actors.delete().where(event_actors.c.event_id == event_id)
+            )
+            for actor in actors:
+                await self.add_actor(
+                    tx,
+                    EventActor(event_id=event_id, entity_id=actor.entity_id, role=actor.role),
+                )
+        return await self._get_by_id(tx.conn, event_id)  # type: ignore[return-value]
+
+    async def delete(self, tx: Transaction, event_id: UUID) -> bool:
+        """Remove an event and, by cascade, its actors. True if it existed."""
+        result = await tx.conn.execute(events.delete().where(events.c.id == event_id))
+        return bool(result.rowcount)
 
     async def get(self, event_id: UUID) -> Event | None:
         async with self._engine.connect() as conn:
@@ -66,6 +103,30 @@ class PGEventRepo:
                 )
                 for row in rows
             ]
+
+    async def get_actors_many(
+        self, event_ids: list[UUID]
+    ) -> dict[UUID, list[EventActor]]:
+        """Actors of several events in one round trip, keyed by event id.
+
+        Direction lives here, in each actor's role, and nowhere else; a caller
+        reading a page of letters needs every sender and recipient at once, not
+        one query per letter.
+        """
+        found: dict[UUID, list[EventActor]] = {event_id: [] for event_id in event_ids}
+        if not event_ids:
+            return found
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    event_actors.select().where(event_actors.c.event_id.in_(event_ids))
+                )
+            ).all()
+        for row in rows:
+            found.setdefault(row.event_id, []).append(
+                EventActor(event_id=row.event_id, entity_id=row.entity_id, role=row.role)
+            )
+        return found
 
     async def add_actor(self, tx: Transaction, actor: EventActor) -> None:
         await tx.conn.execute(
@@ -129,7 +190,14 @@ class PGEventRepo:
                 )
             )
         if f.payload:
-            stmt = stmt.where(events.c.payload.op("@>")(sa.type_coerce(f.payload, sa.JSON)))
+            # `payload` is a `json` column and `@>` is a `jsonb` operator: without
+            # the casts Postgres rejects the query outright ("operator does not
+            # exist: json @> json"), so every payload filter failed.
+            stmt = stmt.where(
+                sa.cast(events.c.payload, JSONB).contains(
+                    sa.cast(sa.literal(f.payload, sa.JSON), JSONB)
+                )
+            )
         return stmt
 
     async def _get_by_id(self, conn: Any, event_id: UUID) -> Event | None:
@@ -153,3 +221,18 @@ class PGEventRepo:
             confidence=row.confidence,
             created_at=row.created_at,
         )
+
+
+def _values(draft: EventDraft) -> dict[str, Any]:
+    """The columns an event draft writes, shared by insert and upsert."""
+    return {
+        "event_type": draft.event_type,
+        "timestamp_start": draft.timestamp_start,
+        "timestamp_end": draft.timestamp_end,
+        "precision": draft.precision.value if draft.precision else None,
+        "location_id": draft.location_id,
+        "location_text": draft.location_text,
+        "source_passage_id": draft.source_passage_id,
+        "payload": draft.payload,
+        "confidence": draft.confidence,
+    }

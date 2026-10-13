@@ -297,3 +297,161 @@ class TestAnchoringToTheContainingLetter:
         )
 
         assert result.fields["referenced_date_resolved"]["start"].startswith("1862-04-03")
+
+
+#: The fields of `letter_openings` that steer resolution.
+OPENING_TYPES = {
+    "letter_opening": {
+        "id": "letter_opening",
+        "fields": {
+            "opening": {"type": "evidence_span"},
+            "dateline": {"type": "evidence_span", "scan": "dates"},
+            "received_date": {"type": "fuzzy_date", "resolve": "forward"},
+            "date_written": {"type": "fuzzy_date"},
+        },
+    }
+}
+
+
+def an_opening(**fields):
+    return ValidatedRecord(
+        record_type="letter_opening",
+        fields={"opening": "FARADAY TO HIS MOTHER.", **fields},
+        evidence_start=0,
+        evidence_end=22,
+    )
+
+
+class TestDeclaredDirection:
+    """`resolve: forward` reads a yearless date as the next occurrence."""
+
+    async def test_a_receipt_note_resolves_forward(self):
+        written = datetime(1814, 11, 10, tzinfo=UTC)
+        enricher = RecordEnricher(
+            documents=FakeDocuments(created_date_start=written), entities=FakeEntities()
+        )
+        [result] = await enricher.enrich(
+            [an_opening(received_date="January 17")], a_passage(), OPENING_TYPES
+        )
+        assert result.fields["received_date_resolved"]["start"].startswith("1815-01-17")
+
+    async def test_an_undeclared_date_still_resolves_backward(self):
+        written = datetime(1814, 11, 10, tzinfo=UTC)
+        enricher = RecordEnricher(
+            documents=FakeDocuments(created_date_start=written), entities=FakeEntities()
+        )
+        [result] = await enricher.enrich(
+            [an_opening(date_written="January 17")], a_passage(), OPENING_TYPES
+        )
+        assert result.fields["date_written_resolved"]["start"].startswith("1814-01-17")
+
+
+class TestScannedQuotation:
+    """A second, independent reading of the dateline's own words."""
+
+    async def test_every_date_in_the_quotation_is_listed(self):
+        [result] = await enrich_openings(
+            an_opening(dateline="Rome : November 10, 1814. Eeceived January 17.")
+        )
+        [scanned] = result.fields["dateline_dates"]
+        assert scanned["start"].startswith("1814-11-10")
+        assert scanned["precision"] == "day"
+        assert scanned["offset"] == 7
+
+    async def test_a_quotation_with_no_date_lists_none(self):
+        [result] = await enrich_openings(an_opening(dateline="Geneva : July 1."))
+        assert result.fields["dateline_dates"] == []
+
+    async def test_an_unscanned_quotation_is_left_alone(self):
+        [result] = await enrich_openings(an_opening(dateline="Marino : Sunday, July 28, 1822."))
+        assert "opening_dates" not in result.fields
+
+
+async def enrich_openings(*records):
+    enricher = RecordEnricher(documents=FakeDocuments(None), entities=FakeEntities())
+    return await enricher.enrich(list(records), a_passage(), OPENING_TYPES)
+
+
+class UnitDocuments(FakeDocuments):
+    """A container whose letters have been split out as their own documents."""
+
+    def __init__(self, units):
+        super().__init__(created_date_start=None)
+        self._units = units
+        self.lookups = 0
+
+    async def find_by_metadata(self, key, value):
+        self.lookups += 1
+        assert key == "parent_document_id"
+        return [
+            SimpleNamespace(
+                created_date_start=date,
+                metadata={"parent_char_start": start, "parent_char_end": end},
+            )
+            for start, end, date in self._units
+            if value == str(DOCUMENT_ID)
+        ]
+
+
+def a_volume_passage(char_start):
+    return SimpleNamespace(
+        id=new_id(), document_id=DOCUMENT_ID, text="x", node_id=None, char_start=char_start
+    )
+
+
+def a_reference_at(offset, **fields):
+    return ValidatedRecord(
+        record_type="epistolary_reference",
+        fields={"evidence": "yours of the 3d ult.", **fields},
+        evidence_start=offset,
+        evidence_end=offset + 20,
+    )
+
+
+class TestAnchoringToTheUnitDocument:
+    """A volume is undated; the letters split out of it are not."""
+
+    JULY = datetime(1814, 7, 1, tzinfo=UTC)
+    AUGUST = datetime(1814, 8, 6, tzinfo=UTC)
+
+    async def test_the_letter_the_quotation_falls_in_dates_it(self):
+        documents = UnitDocuments([(1000, 2000, self.JULY), (2000, 3000, self.AUGUST)])
+        enricher = RecordEnricher(documents=documents, entities=FakeEntities())
+
+        [july, august] = await enricher.enrich(
+            [
+                a_reference_at(100, referenced_date="the 3d ult."),
+                a_reference_at(1100, referenced_date="the 3d ult."),
+            ],
+            a_volume_passage(char_start=1500),
+            RECORD_TYPES,
+        )
+
+        # One passage straddling two letters: each quotation takes its own.
+        assert july.fields["referenced_date_resolved"]["start"].startswith("1814-06-03")
+        assert august.fields["referenced_date_resolved"]["start"].startswith("1814-07-03")
+
+    async def test_a_quotation_between_letters_falls_back(self):
+        documents = UnitDocuments([(1000, 2000, self.JULY)])
+        enricher = RecordEnricher(documents=documents, entities=FakeEntities())
+
+        [result] = await enricher.enrich(
+            [a_reference_at(0, referenced_date="the 3d ult.")],
+            a_volume_passage(char_start=5000),
+            RECORD_TYPES,
+        )
+
+        assert result.fields["referenced_date_resolved"] is None
+
+    async def test_the_unit_list_is_read_once_per_document(self):
+        documents = UnitDocuments([(1000, 2000, self.JULY)])
+        enricher = RecordEnricher(documents=documents, entities=FakeEntities())
+
+        for _ in range(3):
+            await enricher.enrich(
+                [a_reference_at(0, referenced_date="the 3d ult.")],
+                a_volume_passage(char_start=1200),
+                RECORD_TYPES,
+            )
+
+        assert documents.lookups == 1

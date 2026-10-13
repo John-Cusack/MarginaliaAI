@@ -227,8 +227,17 @@ class PGExtractionRepo:
         data_filter: dict[str, Any] | None = None,
         passage_ids: list[UUID] | None = None,
         k: int = 100,
+        *,
+        schema_id: UUID | None = None,
+        latest_only: bool = False,
     ) -> list[ExtractionRecord]:
         """Records of one type, optionally narrowed by their data or passages.
+
+        *schema_id* restricts to one schema version. *latest_only* keeps, per
+        passage and schema, only the records of the most recent successful
+        extraction: a re-run under a tuned prompt or another model is a new
+        extraction row beside the old one, and reading both would count every
+        record twice.
 
         ``data`` is a ``json`` column and ``@>`` is a ``jsonb`` operator, so the
         comparison casts. That means no index assists it — acceptable while this
@@ -249,6 +258,25 @@ class PGExtractionRepo:
             if not passage_ids:
                 return []
             stmt = stmt.where(extraction_records.c.passage_id.in_(passage_ids))
+        if schema_id is not None:
+            stmt = stmt.where(extraction_records.c.schema_id == schema_id)
+        if latest_only:
+            latest = (
+                sa.select(extractions.c.id)
+                .where(extractions.c.status == "ok")
+                .distinct(extractions.c.passage_id, extractions.c.schema_id)
+                .order_by(
+                    extractions.c.passage_id,
+                    extractions.c.schema_id,
+                    extractions.c.created_at.desc(),
+                    extractions.c.id.desc(),
+                )
+            )
+            if schema_id is not None:
+                latest = latest.where(extractions.c.schema_id == schema_id)
+            if passage_ids:
+                latest = latest.where(extractions.c.passage_id.in_(passage_ids))
+            stmt = stmt.where(extraction_records.c.extraction_id.in_(latest))
         stmt = stmt.order_by(extraction_records.c.id).limit(k)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()

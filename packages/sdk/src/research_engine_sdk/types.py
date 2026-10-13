@@ -262,6 +262,7 @@ class ExtractionRecord(BaseModel):
 
 class SearchFilters(BaseModel):
     document_types: list[str] | None = None
+    exclude_document_types: list[str] | None = None
     date_range_start: str | None = None
     date_range_end: str | None = None
     author_entity_id: UUID | None = None

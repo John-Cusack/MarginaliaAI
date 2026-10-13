@@ -18,6 +18,7 @@ from research_engine.plugins.permissions import (
     DeniedHttpClient,
     DeniedIngestionClient,
     DeniedLLMClient,
+    GatedEventClient,
     GatedHttpClient,
 )
 from research_engine_sdk import PluginContext
@@ -199,6 +200,7 @@ class PluginLoader:
                             contribution.default_ingestion_module
                         ),
                         "schema": contribution.schema_path,
+                        "searchable": contribution.searchable,
                     },
                     plugin_id,
                 )
@@ -362,6 +364,7 @@ class PluginLoader:
                 documents,
                 passages,
                 self._services.get("document_nodes"),
+                self._services.get("document_texts"),
             )
         else:
             corpus_client = search
@@ -378,7 +381,11 @@ class PluginLoader:
             ),
             "corpus": corpus_client,
             "entity": self._services.get("entity"),
-            "event": self._services.get("event"),
+            "event": (
+                GatedEventClient(self._services["event"], permissions.write, plugin_name)
+                if self._services.get("event") is not None
+                else None
+            ),
             "extraction": self._services.get("extraction"),
             "llm": (
                 self._llm
