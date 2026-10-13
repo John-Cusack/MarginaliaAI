@@ -1,0 +1,20 @@
+slices:
+  - name: m1
+    note: The Qur'an in Arabic and two translations, and the King James Bible.
+    sources:
+      - quran-tanzil-uthmani
+      - quran-pickthall-1930
+      - quran-sahih-international
+      - kjv
+  - name: m7
+    note: Hadith and tafsir, after the blind evaluation.
+    sources:
+      - hadith-bukhari
+      - hadith-muslim
+      - hadith-abu-dawud
+      - hadith-tirmidhi
+      - hadith-nasai
+      - hadith-ibn-majah
+      - tafsir-ibn-kathir
+      - tafsir-tabari
+      - tafsir-razi

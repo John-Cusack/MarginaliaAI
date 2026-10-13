@@ -1,0 +1,97 @@
+group: lds_apologetics
+title: LDS apologetics (rank 5 — steelmanning and escape hatches)
+brief: >-
+  The tradition's own best responses, retrieved rather than invented: every
+  dilemma must carry them. Online journals and wikis first; books are blocked
+  pending purchase or scan. Responses to the CES Letter belong here, not with
+  the critical literature.
+sources:
+  - key: fair-answers
+    title: FAIR Answers wiki
+    work: fair-answers
+    acquire: {method: scrape, url: https://www.fairlatterdaysaints.org}
+    verify: [terms of use, robots.txt]
+
+  - key: fair-conference-papers
+    title: FAIR conference papers
+    work: fair-conference
+    acquire: {method: scrape, url: https://www.fairlatterdaysaints.org}
+    verify: [terms of use, robots.txt]
+
+  - key: interpreter-journal
+    title: "Interpreter: A Journal of Latter-day Saint Faith and Scholarship"
+    work: interpreter-journal
+    acquire: {method: scrape, url: https://journal.interpreterfoundation.org}
+    verify: [license, robots.txt]
+
+  - key: farms-review
+    title: FARMS Review / Mormon Studies Review
+    work: farms-review
+    acquire: {method: scrape, url: https://scholarsarchive.byu.edu}
+    verify: [license per article, robots.txt]
+
+  - key: journal-of-book-of-mormon-studies
+    title: Journal of Book of Mormon Studies
+    work: journal-of-book-of-mormon-studies
+    acquire: {method: scrape, url: https://scholarsarchive.byu.edu}
+    verify: [license per article, robots.txt]
+
+  - key: byu-studies-quarterly
+    title: BYU Studies Quarterly
+    work: byu-studies-quarterly
+    acquire: {method: scrape, url: https://scholarsarchive.byu.edu,
+              notes: Also byustudies.byu.edu.}
+    verify: [license per article, robots.txt]
+
+  - key: scripture-central-knowhy
+    title: Scripture Central (Book of Mormon Central) KnoWhy articles
+    work: knowhy
+    acquire: {method: scrape, url: https://scripturecentral.org}
+    verify: [terms of use, robots.txt]
+
+  - key: ces-letter-responses
+    title: Principal LDS responses to the CES Letter
+    work: ces-letter-responses
+    acquire: {method: scrape, notes: FAIR's response and others; enumerate them before fetching.}
+    verify: [which responses, license each]
+
+  # --- Books ------------------------------------------------------------------
+  - key: gee-introduction-to-boa
+    title: An Introduction to the Book of Abraham
+    work: gee-introduction-to-boa
+    author: John Gee
+    date_published: "2017"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_ebook}
+
+  - key: givens-by-the-hand-of-mormon
+    title: "By the Hand of Mormon"
+    work: by-the-hand-of-mormon
+    author: Terryl L. Givens
+    date_published: "2002"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_ebook}
+
+  - key: bushman-rough-stone-rolling
+    title: "Joseph Smith: Rough Stone Rolling"
+    work: rough-stone-rolling
+    author: Richard Lyman Bushman
+    date_published: "2005"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_ebook}
+
+  - key: nibley-book-of-abraham
+    title: Hugh Nibley's Book of Abraham works
+    work: nibley-book-of-abraham
+    author: Hugh Nibley
+    acquire: {license: in copyright,
+              notes: Enumerate the titles before buying; some may be readable online through the Maxwell Institute.}
+    blocked: {reason: In copyright; titles to be enumerated., suggest: purchase_print}
+
+  - key: skousen-analysis-of-textual-variants
+    title: Analysis of Textual Variants of the Book of Mormon
+    work: analysis-of-textual-variants
+    author: Royal Skousen
+    acquire: {license: in copyright,
+              notes: Check whether an authorized online edition exists before buying.}
+    blocked: {reason: In copyright., suggest: purchase_print}

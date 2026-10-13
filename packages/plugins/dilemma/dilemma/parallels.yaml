@@ -1,0 +1,14 @@
+# Book of Mormon passages that reproduce Bible text, for the M3 alignment
+# pass. Each becomes a `quotation` alignment, verse by verse, between the
+# Book of Mormon editions and the KJV; the Isaiah chapters are then aligned
+# four ways, through the Masoretic text (WLC) and the Great Isaiah Scroll.
+parallels:
+  - {left: "1 Nephi 20-21", right: "Isaiah 48-49"}
+  - {left: "2 Nephi 7-8", right: "Isaiah 50:1-52:2"}
+  - {left: "2 Nephi 12-24", right: "Isaiah 2-14"}
+  - {left: "Mosiah 12:21-24", right: "Isaiah 52:7-10"}
+  - {left: "Mosiah 14", right: "Isaiah 53"}
+  - {left: "3 Nephi 12-14", right: "Matthew 5-7", kind: parallel,
+     note: "Sermon at the temple; reworded in places, so parallel, not quotation"}
+  - {left: "3 Nephi 22", right: "Isaiah 54"}
+  - {left: "3 Nephi 24-25", right: "Malachi 3-4"}

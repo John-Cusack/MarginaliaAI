@@ -1,0 +1,34 @@
+group: early_christian
+title: Early Christian sources (optional — for "Great Apostasy" claims)
+brief: >-
+  Low priority: ingest only after the other groups succeed. Public-domain Schaff
+  editions via CCEL, and the creeds.
+sources:
+  - key: ante-nicene-fathers
+    title: Ante-Nicene Fathers (Schaff, ed.)
+    work: ante-nicene-fathers
+    optional: true
+    acquire: {method: bulk_download, url: https://www.ccel.org, license: public domain — verify CCEL's terms}
+    verify: [license, format]
+
+  - key: nicene-post-nicene-fathers-1
+    title: Nicene and Post-Nicene Fathers, Series 1
+    work: nicene-post-nicene-fathers-1
+    optional: true
+    acquire: {method: bulk_download, url: https://www.ccel.org, license: public domain — verify CCEL's terms}
+    verify: [license, format]
+
+  - key: nicene-post-nicene-fathers-2
+    title: Nicene and Post-Nicene Fathers, Series 2
+    work: nicene-post-nicene-fathers-2
+    optional: true
+    acquire: {method: bulk_download, url: https://www.ccel.org, license: public domain — verify CCEL's terms}
+    verify: [license, format]
+
+  - key: creeds-nicene-chalcedonian
+    title: The Nicene Creed and the Chalcedonian Definition
+    work: creeds
+    optional: true
+    acquire: {method: bulk_download, url: https://www.ccel.org,
+              notes: "Schaff, Creeds of Christendom."}
+    verify: [license, which texts]

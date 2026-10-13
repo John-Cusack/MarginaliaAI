@@ -1,0 +1,42 @@
+# The editions this profile needs, loaded slice by slice. A slice is loaded
+# with `research-engine dilemma ingest lds --slice <name>`; anything the
+# profile gives a role to but no slice names is registered, not loaded.
+slices:
+  - name: m1
+    note: >-
+      The current standard works and the King James Bible, plus only the T2/T3
+      documents the gold set needs.
+    sources:
+      - bom-2013
+      - dc-2013
+      - pgp-2013
+      - kjv
+      - lectures-on-faith-1835
+      - kfd-bullock
+      - kfd-richards
+      - kfd-woodruff
+      - kfd-clayton
+      - jd-1852-04-09-young
+      - gc-1976-10-kimball-our-own-liahona
+      - gte-becoming-like-god
+      - gte-race-and-the-priesthood
+      - gte-book-of-abraham
+      - gte-plural-marriage
+      - gte-first-vision-accounts
+  - name: defense
+    note: Defense literature for the gold topics, before adjudication.
+    sources:
+      - fair-answers
+      - interpreter-journal
+      - scripture-central-knowhy
+      - byu-studies-quarterly
+  - name: editions
+    note: Historical editions, for edition-change findings.
+    sources:
+      - bom-1830
+      - bom-1837
+      - boc-1833
+      - dc-1835
+      - pgp-1851
+      - pgp-1880
+      - boa-times-and-seasons-1842

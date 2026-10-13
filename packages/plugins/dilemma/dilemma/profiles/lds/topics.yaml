@@ -1,0 +1,74 @@
+topics:
+  - key: nature-of-god
+    label: Nature of God
+    children:
+      - {key: corporeality, label: Corporeality}
+      - {key: unchangeability, label: Unchangeability}
+      - {key: oneness-plurality, label: Oneness vs plurality}
+      - {key: origin-once-a-man, label: Origin ("once a man")}
+      - {key: omniscience, label: Omniscience}
+  - key: godhead
+    label: Godhead / Trinity
+    children:
+      - {key: holy-ghost, label: The Holy Ghost's nature}
+  - key: exaltation
+    label: Exaltation / theosis
+    children:
+      - {key: eternal-progression, label: Eternal progression}
+  - key: scripture
+    label: Scripture
+    children:
+      - {key: bible-reliability, label: Bible reliability}
+      - {key: preservation-corruption, label: Preservation and corruption ("plain and precious")}
+      - {key: self-prophecy, label: Scripture prophesying itself}
+  - key: apostasy-restoration
+    label: Apostasy and restoration
+    children:
+      - {key: priesthood-restoration, label: Priesthood restoration accounts}
+  - key: prophetic-fallibility
+    label: Revelation and prophetic fallibility
+    children:
+      - {key: speaking-as-a-man, label: '"Speaking as a man"'}
+      - {key: cannot-lead-astray, label: The prophet cannot lead the church astray}
+  - key: translation-method
+    label: Translation method
+    children:
+      - {key: plates, label: Plates}
+      - {key: urim-and-thummim, label: Urim and Thummim}
+      - {key: seer-stone, label: Seer stone}
+      - {key: catalyst, label: '"Catalyst"'}
+  - key: book-of-abraham
+    label: Book of Abraham
+    children:
+      - {key: papyri, label: Papyri}
+      - {key: facsimiles, label: Facsimiles}
+      - {key: dates, label: Dates}
+  - key: plural-marriage
+    label: Plural marriage
+    children:
+      - {key: jacob-2-vs-dc-132, label: Jacob 2 vs D&C 132}
+      - {key: manifesto, label: Manifesto}
+      - {key: post-manifesto, label: Post-Manifesto marriages}
+  - key: adam-god
+    label: Adam–God teaching
+  - key: blood-atonement
+    label: Blood atonement
+  - key: race-and-priesthood
+    label: Race and priesthood
+    children:
+      - {key: ban-rationales, label: Ban rationales}
+      - {key: revelation-1978, label: The 1978 revelation}
+      - {key: disavowal-2013, label: The 2013 disavowal}
+  - key: dated-prophecy
+    label: Prophecies with dates or places
+    children:
+      - {key: independence-temple, label: Temple in Independence (D&C 84)}
+      - {key: second-coming-timing, label: Second Coming timing (D&C 130:14–17)}
+      - {key: civil-war, label: Civil War}
+  - key: lamanite-identity
+    label: Lamanite identity / Native American origins / DNA
+  - key: afterlife
+    label: Afterlife
+    children:
+      - {key: degrees-of-glory, label: Degrees of glory}
+      - {key: baptism-for-the-dead, label: Baptism for the dead}

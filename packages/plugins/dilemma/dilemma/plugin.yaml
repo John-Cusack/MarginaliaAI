@@ -1,0 +1,136 @@
+schema_version: 2
+plugin_id: dilemma
+
+requires:
+  core_api: ">=0.6,<0.7"
+  python: ">=3.11"
+
+# Frozen: source readers are discovered in code (dilemma/sources/), so adding
+# one never changes this file or the approval hash. A host missing from the
+# allowlist is reported back, added here, and re-approved — never worked
+# around. Hosts whose terms forbid automated access (churchofjesuschrist.org,
+# josephsmithpapers.org) are deliberately absent: their pages reach the pack
+# only as files the operator saves into an edition's inbox.
+permissions:
+  network: egress
+  network_allowlist:
+    - archive.org
+    - hathitrust.org
+    - gutenberg.org
+    - wikisource.org
+    - github.com
+    - githubusercontent.com
+    - jsdelivr.net
+    - ebible.org
+    - sblgnt.com
+    - deadseascrolls.org.il
+    - imj.org.il
+    - tanzil.net
+    - quran.com
+    - byu.edu
+    - fairlatterdaysaints.org
+    - interpreterfoundation.org
+    - scripturecentral.org
+    - bookofmormoncentral.org
+    - dialoguejournal.com
+    - sunstonemagazine.com
+    - signaturebookslibrary.org
+    - utlm.org
+    - cesletter.org
+    - ccel.org
+  filesystem: read_write_plugin_data
+  ingest: true
+
+provides:
+  document_types:
+    # Units (verses, ayat, numbered paragraphs) laid out one per blank-line
+    # block by research_engine_sdk.units; re-chunked by core's unit_window.
+    - id: versified_text
+      default_chunker: unit_window
+    # Unversified sources (sermons, essays, letters) laid out the same way,
+    # their units being paragraphs located by volume and page.
+    - id: source_document
+      default_chunker: unit_window
+
+  mcp_tools:
+    - id: dilemma.profile_load
+      entry: dilemma.tools:profile_load
+      description: >
+        Load a reader profile: register every edition it names (terms, work,
+        and — for a source known to be unobtainable — a blocked status with
+        the way to get it), then store its roles whole under the hash of its
+        data. Safe to re-run; it never resets an edition's progress.
+      input_schema:
+        type: object
+        properties:
+          key:
+            type: string
+            description: The profile key, e.g. lds.
+        required: [key]
+    - id: dilemma.profile_show
+      entry: dilemma.tools:profile_show
+      description: >
+        A loaded profile: its hash (and whether it matches the profile data
+        now in the pack), settings and roles — optionally only those in force
+        on one date.
+      input_schema:
+        type: object
+        properties:
+          key:
+            type: string
+          "on":
+            type: string
+            description: ISO date; only roles in force that day.
+        required: [key]
+    - id: dilemma.ingest
+      entry: dilemma.tools:ingest
+      description: >
+        Acquire, parse, check and ingest one edition, or every edition in one
+        of a profile's slices, as one recorded run. Fetches obey robots.txt
+        and a per-host rate limit; raw bytes are kept by digest outside any
+        repository; a load whose counts do not match the edition's known
+        shape is refused unless the mismatch is accepted by name.
+      input_schema:
+        type: object
+        properties:
+          profile:
+            type: string
+            description: The profile whose slice or edition to load.
+          slice:
+            type: string
+            description: One slice of the profile's manifest.
+          source_key:
+            type: string
+            description: One edition the profile names.
+          stage_only:
+            type: boolean
+            default: false
+            description: Acquire, parse and check, but write nothing to the corpus.
+          accept_mismatch:
+            type: boolean
+            default: false
+            description: Load even though coverage does not match; recorded as accepted.
+        required: [profile]
+    - id: dilemma.coverage
+      entry: dilemma.tools:coverage
+      description: >
+        Report one edition's acquisition status, raw artifacts and coverage
+        history against its known shape.
+      input_schema:
+        type: object
+        properties:
+          source_key:
+            type: string
+            description: The catalog edition key.
+        required: [source_key]
+    - id: dilemma.blocked_queue
+      entry: dilemma.tools:blocked_queue
+      description: >
+        The scan and purchase list: every blocked edition with why it is
+        blocked and how it could be had, highest tier first.
+      input_schema:
+        type: object
+        properties:
+          profile:
+            type: string
+            description: Only the editions this profile names.

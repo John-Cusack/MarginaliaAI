@@ -1,0 +1,42 @@
+[project]
+name = "marginalia-ai-plugin-dilemma"
+dynamic = ["version"]
+description = "Dilemma Finder data: editions catalog, reader profiles and source readers"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MarginaliaAI" }]
+keywords = ["contradiction", "corpus", "mcp", "marginalia-ai", "scripture"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Text Processing :: Indexing",
+    # Workspace-only: its loaders fetch texts under private-use terms, so the
+    # distribution is not published. PyPI refuses uploads carrying this.
+    "Private :: Do Not Upload",
+]
+dependencies = [
+    "marginalia-ai-sdk>=0.6,<0.7",
+    "pydantic>=2.5,<3",
+    "pyyaml>=6,<7",
+]
+
+[project.entry-points."research_engine.plugins"]
+dilemma = "dilemma"
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "dilemma/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dilemma"]
+
+[tool.hatch.build.targets.sdist]
+include = ["dilemma", "tests", "README.md", "LICENSE", "pyproject.toml"]

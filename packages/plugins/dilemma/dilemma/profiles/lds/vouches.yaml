@@ -1,0 +1,29 @@
+# Seed vouch passages: where a binding text affirms the reliability or
+# authority of another text, or of itself. Locators only — each is checked
+# against the loaded edition, and a seed that does not resolve is reported,
+# not repaired. Seeds tune and test the vouch extractor; the run itself
+# promotes nothing from this file.
+vouches:
+  - at: {edition: bom-2013, locator: "Mormon 7:9"}
+    kind: affirms_reliability
+    target: bible
+    note: The Book of Mormon is written that its readers may believe the Bible.
+  - at: {edition: bom-2013, locator: "1 Nephi 13:39-40"}
+    kind: affirms_reliability
+    target: bible
+    note: The later records "shall establish the truth of the first".
+  - at: {edition: pgp-2013, locator: "Articles of Faith 1:8"}
+    kind: affirms_authority
+    target: book_of_mormon
+  - at: {edition: pgp-2013, locator: "Articles of Faith 1:8"}
+    kind: affirms_reliability
+    target: bible
+    note: >-
+      Qualified — "as far as it is translated correctly" — so the same verse
+      both vouches for the Bible and opens the transmission hatch.
+  - at: {edition: history-of-the-church, locator: "4:461"}
+    kind: affirms_reliability
+    target: book_of_mormon
+    note: >-
+      Joseph Smith's "most correct of any book on earth" (28 November 1841),
+      as recorded in History of the Church. Not loaded in M1.
