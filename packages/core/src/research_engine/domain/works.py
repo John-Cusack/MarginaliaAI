@@ -41,6 +41,8 @@ class Edition(BaseModel):
     edition_key: str
     csl: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    #: The work this is an edition of; editions sharing it are one text.
+    work_key: str | None = None
 
 
 class Work(BaseModel):

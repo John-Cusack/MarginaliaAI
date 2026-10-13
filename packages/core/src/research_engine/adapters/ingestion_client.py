@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from research_engine.domain.acquisitions import DocumentMarkDraft
 from research_engine.domain.nodes import DocumentNodeDraft, build_node_tree
 from research_engine.services.ingestion.pipeline import run_chunking
-from research_engine_sdk import NodeDraft, PassageDraft
+from research_engine_sdk import MarkDraft, NodeDraft, PassageDraft
 
 if TYPE_CHECKING:
     from research_engine.plugins.registry import PluginRegistry
@@ -83,6 +84,9 @@ class IngestionServiceAdapter:
         language: str | None = None,
         full_text: str | None = None,
         node_drafts: list[NodeDraft] | None = None,
+        parser: str = "plugin_direct",
+        parser_version: str = "1.0",
+        mark_drafts: list[MarkDraft] | None = None,
     ) -> dict[str, Any]:
         self._registry.validate_document_type(document_type)
         if full_text is not None:
@@ -101,6 +105,16 @@ class IngestionServiceAdapter:
             if node_drafts
             else None
         )
+        core_marks = (
+            [
+                DocumentMarkDraft.model_validate(
+                    draft.model_dump() if isinstance(draft, MarkDraft) else draft
+                )
+                for draft in mark_drafts
+            ]
+            if mark_drafts
+            else None
+        )
         return await self._orchestrator.ingest_drafts(
             title,
             document_type,
@@ -110,6 +124,9 @@ class IngestionServiceAdapter:
             language=language,
             full_text=full_text,
             node_drafts=core_nodes,
+            parser=parser,
+            parser_version=parser_version,
+            mark_drafts=core_marks,
         )
 
     async def find_existing(

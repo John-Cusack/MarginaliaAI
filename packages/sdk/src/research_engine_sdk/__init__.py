@@ -12,6 +12,7 @@ from research_engine_sdk.chunking import (
     trim_span,
 )
 from research_engine_sdk.clients import (
+    BibliographyClient,
     CorpusClient,
     EdgeClient,
     EntityClient,
@@ -20,6 +21,7 @@ from research_engine_sdk.clients import (
     HttpClient,
     IngestionClient,
     LLMClient,
+    ProfileClient,
 )
 from research_engine_sdk.decorators import hook, tool
 from research_engine_sdk.errors import (
@@ -77,6 +79,7 @@ from research_engine_sdk.types import (
     FusionMode,
     FuzzyDate,
     IngestAction,
+    MarkDraft,
     Mention,
     NodeDraft,
     NodeKind,
@@ -100,6 +103,7 @@ __all__ = [
     "ABSOLUTE_MAX_TOKENS",
     "DEFAULT_CHARS_PER_TOKEN",
     "Availability",
+    "BibliographyClient",
     "Chunker",
     "ChunkerContribution",
     "ConfigurationError",
@@ -134,6 +138,7 @@ __all__ = [
     "IngestionModule",
     "IngestionModuleContribution",
     "LLMClient",
+    "MarkDraft",
     "Mention",
     "NetworkPermission",
     "NodeDraft",
@@ -150,6 +155,7 @@ __all__ = [
     "PluginPermissions",
     "PluginRequirement",
     "PostIngestionHook",
+    "ProfileClient",
     "RelationTypeContribution",
     "ResearchEngineError",
     "SearchFilters",

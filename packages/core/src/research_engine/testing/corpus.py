@@ -16,10 +16,15 @@ from research_engine.adapters.storage.postgres.repositories.authored import (
 from research_engine.adapters.storage.postgres.repositories.claims import PGClaimRepo
 from research_engine.adapters.storage.postgres.repositories.spans import PGSourceSpanRepo
 from research_engine.adapters.storage.postgres.schema import (
+    acquisitions,
     claim_edges,
     claims,
     documents,
+    editions,
     passages,
+    profiles,
+    runs,
+    source_roles,
     source_spans,
     works,
 )
@@ -58,6 +63,8 @@ class Corpus:
         self._document_ids: list[UUID] = []
         self._claim_ids: list[UUID] = []
         self._span_ids: list[UUID] = []
+        self._edition_ids: list[UUID] = []
+        self._profile_ids: list[UUID] = []
         self._extra: list[tuple[Any, UUID]] = []
 
     def track(self, table: Any, row_id: UUID) -> UUID:
@@ -137,6 +144,21 @@ class Corpus:
         """
         self._document_ids.append(document_id)
         return document_id
+
+    def adopt_edition(self, edition_id: UUID) -> UUID:
+        """Track an edition created by something else, with everything it owns.
+
+        An edition outlives its documents and is referenced RESTRICT by its
+        acquisition and by every profile role naming it, so cleanup removes
+        those first and the edition after the documents.
+        """
+        self._edition_ids.append(edition_id)
+        return edition_id
+
+    def adopt_profile(self, profile_id: UUID) -> UUID:
+        """Track a profile loaded by something else, with its roles and runs."""
+        self._profile_ids.append(profile_id)
+        return profile_id
 
     async def add_span(
         self, document_id: UUID, char_start: int, char_end: int
@@ -229,6 +251,25 @@ class Corpus:
                 )
             for table, row_id in reversed(first):
                 await conn.execute(table.delete().where(table.c.id == row_id))
+            if self._profile_ids:
+                # Runs RESTRICT their profile; roles cascade from it.
+                await conn.execute(
+                    runs.delete().where(runs.c.profile_id.in_(self._profile_ids))
+                )
+                await conn.execute(
+                    profiles.delete().where(profiles.c.id.in_(self._profile_ids))
+                )
+            if self._edition_ids:
+                await conn.execute(
+                    source_roles.delete().where(
+                        source_roles.c.edition_id.in_(self._edition_ids)
+                    )
+                )
+                await conn.execute(
+                    acquisitions.delete().where(
+                        acquisitions.c.edition_id.in_(self._edition_ids)
+                    )
+                )
             if self._span_ids:
                 await conn.execute(
                     source_spans.delete().where(source_spans.c.id.in_(self._span_ids))
@@ -237,10 +278,16 @@ class Corpus:
                 await conn.execute(
                     documents.delete().where(documents.c.id.in_(self._document_ids))
                 )
+            if self._edition_ids:
+                await conn.execute(
+                    editions.delete().where(editions.c.id.in_(self._edition_ids))
+                )
             for table, row_id in reversed(rest):
                 await conn.execute(table.delete().where(table.c.id == row_id))
         self._claim_ids.clear()
         self._span_ids.clear()
+        self._edition_ids.clear()
+        self._profile_ids.clear()
         self._document_ids.clear()
         self._extra.clear()
 

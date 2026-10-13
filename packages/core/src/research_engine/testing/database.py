@@ -150,7 +150,7 @@ class CorpusFootprint:
 
     #: Schemas the guard covers. `core` from the start; each migration that
     #: adds a schema extends this list, so the guard keeps its meaning.
-    SCHEMAS = ("core", "evidence", "argument", "authored", "bibliography")
+    SCHEMAS = ("core", "evidence", "argument", "authored", "bibliography", "dilemma")
 
     @classmethod
     async def measure(cls, engine: AsyncEngine) -> CorpusFootprint:

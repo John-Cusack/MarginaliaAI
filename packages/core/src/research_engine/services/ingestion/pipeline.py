@@ -12,6 +12,7 @@ from research_engine.services.ingestion.chunking.fixed_window import FixedWindow
 from research_engine.services.ingestion.chunking.prose_window import ProseWindowChunker
 from research_engine.services.ingestion.chunking.structural import StructuralChunker
 from research_engine.services.ingestion.chunking.whole_or_paragraph import WholeOrParagraphChunker
+from research_engine_sdk.units import UnitWindowChunker
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,6 +31,9 @@ CORE_CHUNKERS: dict[str, type] = {
     "structural": StructuralChunker,
     "whole_or_paragraph": WholeOrParagraphChunker,
     "fixed_window": FixedWindowChunker,
+    # Already-structured sources (verses, ayat, numbered sections) laid out by
+    # `research_engine_sdk.units`: whole units per window, never split.
+    "unit_window": UnitWindowChunker,
 }
 
 

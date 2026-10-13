@@ -14,10 +14,12 @@ from packaging.version import Version
 from research_engine.domain.errors import PluginLoadError
 from research_engine.plugins.discovery import DiscoveredPlugin, scan_plugins
 from research_engine.plugins.permissions import (
+    DeniedBibliographyClient,
     DeniedEdgeClient,
     DeniedHttpClient,
     DeniedIngestionClient,
     DeniedLLMClient,
+    DeniedProfileClient,
     GatedHttpClient,
 )
 from research_engine_sdk import PluginContext
@@ -399,6 +401,16 @@ class PluginLoader:
                 self._services["edge"]
                 if permissions.write and self._services.get("edge") is not None
                 else DeniedEdgeClient(plugin_name)
+            ),
+            "bibliography": (
+                self._services["bibliography"]
+                if permissions.ingest and self._services.get("bibliography") is not None
+                else DeniedBibliographyClient(plugin_name)
+            ),
+            "profiles": (
+                self._services["profiles"]
+                if permissions.ingest and self._services.get("profiles") is not None
+                else DeniedProfileClient(plugin_name)
             ),
         }
         return clients

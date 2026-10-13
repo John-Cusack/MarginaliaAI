@@ -16,6 +16,7 @@ app = typer.Typer(
 from research_engine.cli.backup import backup_app
 from research_engine.cli.config import config_app
 from research_engine.cli.database import database_app
+from research_engine.cli.dilemma import dilemma_app
 from research_engine.cli.doctor import doctor_app
 from research_engine.cli.embed_server import embed_server_app
 from research_engine.cli.embeddings import embeddings_app
@@ -26,6 +27,7 @@ from research_engine.cli.plugin import plugin_app
 from research_engine.cli.reindex import reindex_app
 from research_engine.cli.search import search_command
 from research_engine.cli.serve import serve_app
+from research_engine.cli.tool import tool_app
 from research_engine.cli.usage import usage_app
 from research_engine.cli.verify import verify_quote_command
 from research_engine.cli.work import work_app
@@ -46,6 +48,8 @@ app.add_typer(eval_app, name="eval", help="Measure retrieval quality.")
 app.add_typer(usage_app, name="usage", help="Report LLM spend.")
 app.add_typer(reindex_app, name="reindex", help="Re-chunk and re-anchor the corpus.")
 app.add_typer(extraction_app, name="extraction", help="Register extraction schemas.")
+app.add_typer(tool_app, name="tool", help="Run a core or plugin tool from the shell.")
+app.add_typer(dilemma_app, name="dilemma", help="Find contradictions and dilemmas in a tradition's texts.")
 
 
 

@@ -49,13 +49,20 @@ class PGEditionRepo:
         csl: dict[str, Any] | None = None,
         *,
         lock: bool = False,
+        work_key: str | None = None,
     ) -> Edition:
-        """Return one edition row, optionally locked through the ingest transaction."""
-        stmt = pg_insert(editions).values(id=uuid7(), edition_key=edition_key)
-        if csl is not None:
+        """Return one edition row, optionally locked through the ingest transaction.
+
+        ``csl`` and ``work_key`` overwrite what is stored only when given.
+        """
+        given = {
+            k: v for k, v in {"csl": csl, "work_key": work_key}.items() if v is not None
+        }
+        stmt = pg_insert(editions).values(id=uuid7(), edition_key=edition_key, **given)
+        if given:
             stmt = stmt.on_conflict_do_update(
                 index_elements=[editions.c.edition_key],
-                set_={"csl": csl},
+                set_=given,
             )
         else:
             stmt = stmt.on_conflict_do_nothing(
@@ -85,4 +92,5 @@ class PGEditionRepo:
             edition_key=row.edition_key,
             csl=dict(row.csl or {}),
             created_at=row.created_at,
+            work_key=row.work_key,
         )

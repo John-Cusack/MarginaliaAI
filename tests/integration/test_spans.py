@@ -545,7 +545,7 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                             sa.text(
                                 "SELECT schema_name FROM information_schema.schemata "
                                 "WHERE schema_name IN ('evidence', 'argument', "
-                                "'authored', 'bibliography')"
+                                "'authored', 'bibliography', 'dilemma')"
                             )
                         )
                     ).all()
@@ -563,7 +563,7 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                             "SELECT table_schema, table_name "
                             "FROM information_schema.tables "
                             "WHERE table_schema IN ('evidence', 'argument', "
-                            "'authored', 'bibliography') "
+                            "'authored', 'bibliography', 'dilemma') "
                             "ORDER BY table_schema, table_name"
                         )
                     )
@@ -580,7 +580,13 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                 ("authored", "work_blocks"),
                 ("authored", "work_revisions"),
                 ("authored", "works"),
+                ("bibliography", "acquisitions"),
+                ("bibliography", "artifacts"),
+                ("bibliography", "coverage_reports"),
                 ("bibliography", "editions"),
+                ("dilemma", "profiles"),
+                ("dilemma", "runs"),
+                ("dilemma", "source_roles"),
                 ("evidence", "source_spans"),
             ]
         finally:

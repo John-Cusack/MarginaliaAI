@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import MetaData
+from sqlalchemy.dialects.postgresql import DATERANGE, JSONB, ExcludeConstraint
 
 metadata = MetaData(schema="core")
 
@@ -226,6 +227,37 @@ sa.Index("words_document_idx", words.c.document_id)
 # node of some *other* edition a word sits in — and the number to re-measure
 # before anything multiplies this table by an order of magnitude.
 sa.Index("words_doc_span_idx", words.c.document_id, words.c.char_start, words.c.char_end)
+
+# Ranges over the canonical text that do not nest, so cannot be nodes: a page
+# break cuts across chapters, a translator's supplied words cut across verses.
+# Addressed like `words` — recomputable from the source, so CASCADE with the
+# document. `kind` is the loader's vocabulary (`page`, `supplied`, `line`).
+# Mirrors 021_provenance.
+document_marks = sa.Table(
+    "document_marks",
+    metadata,
+    sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    sa.Column(
+        "document_id",
+        sa.Uuid,
+        sa.ForeignKey("core.documents.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("char_start", sa.Integer, nullable=False),
+    sa.Column("char_end", sa.Integer, nullable=False),
+    sa.Column("attrs", JSONB, nullable=False, server_default="{}"),
+    sa.CheckConstraint(
+        "char_start >= 0 AND char_end >= char_start", name="document_marks_span_ck"
+    ),
+)
+
+sa.Index(
+    "document_marks_doc_kind_idx",
+    document_marks.c.document_id,
+    document_marks.c.kind,
+    document_marks.c.char_start,
+)
 
 # --- Versification: how editions disagree about where a verse sits ---
 #
@@ -786,8 +818,218 @@ editions = sa.Table(
     sa.Column("edition_key", sa.Text, nullable=False, unique=True),
     sa.Column("csl", sa.JSON, nullable=False, server_default="{}"),
     sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    # The work this is an edition of (021): editions sharing it are one text
+    # in several forms, not several texts.
+    sa.Column("work_key", sa.Text),
     schema="bibliography",
 )
+
+sa.Index("editions_work_key_idx", editions.c.work_key)
+
+# --- Bibliography: where an edition came from ---
+
+# One row per edition: how it was (or will be) got, on what licence, and — when
+# it cannot be got — why not and how it could be. `blocked` rows are the scan
+# and purchase queue. `collection='heldout_eval'` marks a source kept out of
+# every analysis so it can score one. Mirrors 021_provenance.
+acquisitions = sa.Table(
+    "acquisitions",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "edition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    sa.Column("collection", sa.Text, nullable=False, server_default="main"),
+    sa.Column("status", sa.Text, nullable=False, server_default="planned"),
+    sa.Column("method", sa.Text),
+    sa.Column("url", sa.Text),
+    sa.Column("license", sa.Text),
+    sa.Column("license_notes", sa.Text),
+    sa.Column("retrieved_at", sa.DateTime(timezone=True)),
+    sa.Column("blocked_reason", sa.Text),
+    sa.Column("suggested_acquisition", sa.Text),
+    sa.Column("manifest_ref", sa.Text),
+    sa.Column("attributes", JSONB, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "status IN ('planned','acquired','loaded','blocked','failed')",
+        name="acquisitions_status_ck",
+    ),
+    sa.CheckConstraint(
+        "collection IN ('main','heldout_eval')", name="acquisitions_collection_ck"
+    ),
+    sa.CheckConstraint(
+        "status <> 'blocked' OR blocked_reason IS NOT NULL",
+        name="acquisitions_blocked_has_reason",
+    ),
+    schema="bibliography",
+)
+
+sa.Index("acquisitions_status_idx", acquisitions.c.status)
+
+# The raw bytes an acquisition fetched, by digest. `path` is where the file sits
+# under the engine's data directory — never inside a repository.
+artifacts = sa.Table(
+    "artifacts",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "acquisition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.acquisitions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("sha256", sa.LargeBinary, nullable=False),
+    sa.Column("path", sa.Text, nullable=False),
+    sa.Column("bytes", sa.BigInteger, nullable=False),
+    sa.Column("url", sa.Text),
+    sa.Column("media_type", sa.Text),
+    sa.Column("retrieved_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.UniqueConstraint("acquisition_id", "sha256"),
+    sa.CheckConstraint("octet_length(sha256) = 32", name="artifacts_sha256_len"),
+    sa.CheckConstraint("bytes >= 0", name="artifacts_bytes_ck"),
+    schema="bibliography",
+)
+
+# A loader's count of what it loaded against what the source's known structure
+# says it should hold — 114 surahs, 31,102 verses. Append-only history.
+coverage_reports = sa.Table(
+    "coverage_reports",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "acquisition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.acquisitions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("expected_units", sa.Integer),
+    sa.Column("loaded_units", sa.Integer, nullable=False),
+    sa.Column("anomalies", JSONB, nullable=False, server_default="[]"),
+    sa.Column("ok", sa.Boolean, nullable=False),
+    sa.Column("checker", sa.Text, nullable=False),
+    sa.Column("checker_version", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    schema="bibliography",
+)
+
+sa.Index(
+    "coverage_reports_acquisition_idx",
+    coverage_reports.c.acquisition_id,
+    coverage_reports.c.created_at,
+)
+
+# --- Dilemma: reader profiles, the roles they give editions, and runs ---
+
+# One row per profile key; `profile_hash` is the hash of the profile data last
+# loaded. Mirrors 022_dilemma_profiles.
+profiles = sa.Table(
+    "profiles",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("key", sa.Text, nullable=False, unique=True),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("profile_hash", sa.Text, nullable=False),
+    sa.Column("title", sa.Text),
+    sa.Column("settings", JSONB, nullable=False, server_default="{}"),
+    sa.Column("loaded_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint("key ~ '^[a-z][a-z0-9_]*$'", name="profiles_key_ck"),
+    sa.CheckConstraint("version >= 1", name="profiles_version_ck"),
+    sa.CheckConstraint("profile_hash ~ '^[0-9a-f]{64}$'", name="profiles_hash_ck"),
+    schema="dilemma",
+)
+
+#: What an edition is to a profile. The vocabulary is the engine's: Stage 0 of
+#: the funnel reads it to decide what may be a horn.
+SOURCE_ROLES = ("binding", "external", "reference", "defense", "critical", "fact")
+
+# One role of a kind per (profile, edition, scope) at any date; an edition may
+# hold several different roles at once. `scope` narrows a role to part of the
+# edition by locator (`{"books": [...]}`); `{}` is the whole edition.
+source_roles = sa.Table(
+    "source_roles",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "profile_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.profiles.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "edition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("role", sa.Text, nullable=False),
+    sa.Column("tier", sa.SmallInteger),
+    sa.Column("validity", DATERANGE, nullable=False, server_default=sa.text("'(,)'")),
+    sa.Column("scope", JSONB, nullable=False, server_default="{}"),
+    sa.Column("notes", sa.Text),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "role IN (" + ", ".join(f"'{r}'" for r in SOURCE_ROLES) + ")",
+        name="source_roles_role_ck",
+    ),
+    sa.CheckConstraint("tier BETWEEN 1 AND 9", name="source_roles_tier_ck"),
+    sa.CheckConstraint("NOT isempty(validity)", name="source_roles_validity_ck"),
+    ExcludeConstraint(
+        (sa.column("profile_id"), "="),
+        (sa.column("edition_id"), "="),
+        (sa.column("role"), "="),
+        (sa.text("(md5(scope::text))"), "="),
+        (sa.column("validity"), "&&"),
+        name="source_roles_no_overlap",
+        using="gist",
+    ),
+    schema="dilemma",
+)
+
+sa.Index("source_roles_edition_idx", source_roles.c.edition_id)
+
+# The versioning spine: every derived row points at the run that made it, and
+# the run records what it ran under — the profile hash, its config and that
+# config's hash, model versions — and what the cost gate estimated. Actual
+# spend is `core.llm_calls`'s, not duplicated here.
+runs = sa.Table(
+    "runs",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "profile_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("stage", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False, server_default="running"),
+    sa.Column("profile_hash", sa.Text, nullable=False),
+    sa.Column("config", JSONB, nullable=False, server_default="{}"),
+    sa.Column("config_hash", sa.Text, nullable=False),
+    sa.Column("code_version", sa.Text),
+    sa.Column("model_versions", JSONB, nullable=False, server_default="{}"),
+    sa.Column("items_in", sa.Integer),
+    sa.Column("items_out", sa.Integer),
+    sa.Column("cost_estimate", sa.Numeric(12, 4)),
+    sa.Column("stats", JSONB, nullable=False, server_default="{}"),
+    sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.Column("finished_at", sa.DateTime(timezone=True)),
+    sa.CheckConstraint("status IN ('running','finished','failed')", name="runs_status_ck"),
+    sa.CheckConstraint(
+        "(status = 'running') = (finished_at IS NULL)", name="runs_finished_ck"
+    ),
+    schema="dilemma",
+)
+
+sa.Index("runs_profile_stage_idx", runs.c.profile_id, runs.c.stage, runs.c.started_at)
 
 # --- Authored: works from their first freeze ---
 
