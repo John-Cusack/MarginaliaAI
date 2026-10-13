@@ -333,6 +333,7 @@ async def test_the_edition_s_sender_fills_a_heading_that_names_none():
     abbott = next(d for d in letters_of(world) if d["metadata"]["parent_char_start"] == AT["abbott"])
     assert abbott["metadata"]["sender_entity_id"] == FARADAY
     assert "sender_by_edition_convention" in abbott["metadata"]["flags"]
+    assert abbott["metadata"]["confidence"] <= 0.8, "the writer is inferred, not printed"
 
 
 async def test_a_second_run_changes_nothing():

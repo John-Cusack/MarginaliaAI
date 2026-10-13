@@ -36,6 +36,9 @@ CAP_SINGLE_READER = 0.75
 CAP_INFERRED_YEAR = 0.75
 CAP_WEEKDAY_MISMATCH = 0.6
 CAP_REVIEWED = 0.9
+#: A writer filled in from the edition, not read from the page. The date may be
+#: certain; who wrote the letter is an inference.
+CAP_EDITION_SENDER = 0.8
 
 #: How many dated letters either side set the local chronology.
 NEIGHBOURS = 3

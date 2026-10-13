@@ -113,25 +113,55 @@ def resolve_actors(
     that names no writer at all, the edition's default sender. A name that was
     written but would not resolve is never replaced by the default: it may be
     someone else.
+
+    Nor is the default used for a letter addressed to the edition's subject.
+    "TO MR. FARADAY." names no writer because the writer is someone else —
+    Davy, here — and filling in Faraday would record him writing to himself.
+    The recipient is the subject when it resolves to the default's entity, or,
+    unresolved, when its name carries the default's surname. That second test
+    also catches "TO MRS. FARADAY." until the alias map says who she is; an
+    unknown writer is the safer mistake.
     """
     aliases = {normalized(key).strip(" ."): value for key, value in (alias_map or {}).items()}
     flags: list[str] = []
-    resolved = []
-    for role in ("sender", "recipient"):
-        surface = opening.get(role)
-        found = opening.get(f"{role}_resolved") or {}
-        actor = {"surface": surface, "entity_id": None, "name": None, "how": None}
-        if found.get("entity_id"):
-            actor.update(entity_id=str(found["entity_id"]), name=found.get("canonical_name"), how="resolved")
-        elif surface and (mapped := _entity(aliases.get(normalized(surface).strip(" .")))):
-            actor.update(entity_id=mapped["entity_id"], name=mapped["name"], how="alias_map")
-        elif role == "sender" and not surface and (default := _entity(default_sender)):
-            actor.update(entity_id=default["entity_id"], name=default["name"], how="default_sender")
+    sender = _resolve("sender", opening, aliases)
+    recipient = _resolve("recipient", opening, aliases)
+    default = _entity(default_sender)
+    if sender["entity_id"] is None and not sender["surface"] and default:
+        if _is_subject(recipient, default):
+            flags.append("addressed_to_edition_subject")
+        else:
+            sender.update(
+                entity_id=default["entity_id"], name=default["name"], how="default_sender"
+            )
             flags.append("sender_by_edition_convention")
-        if actor["entity_id"] is None and "actor_unresolved" not in flags:
-            flags.append("actor_unresolved")
-        resolved.append(actor)
-    return resolved[0], resolved[1], flags
+    if sender["entity_id"] is None or recipient["entity_id"] is None:
+        flags.append("actor_unresolved")
+    return sender, recipient, flags
+
+
+def _resolve(role: str, opening: Opening, aliases: dict[str, Any]) -> dict[str, Any]:
+    surface = opening.get(role)
+    found = opening.get(f"{role}_resolved") or {}
+    actor = {"surface": surface, "entity_id": None, "name": None, "how": None}
+    if found.get("entity_id"):
+        actor.update(
+            entity_id=str(found["entity_id"]), name=found.get("canonical_name"), how="resolved"
+        )
+    elif surface and (mapped := _entity(aliases.get(normalized(surface).strip(" .")))):
+        actor.update(entity_id=mapped["entity_id"], name=mapped["name"], how="alias_map")
+    return actor
+
+
+def _is_subject(recipient: dict[str, Any], default: dict[str, Any]) -> bool:
+    """Is this letter addressed to the edition's default sender?"""
+    if recipient["entity_id"] is not None:
+        return recipient["entity_id"] == default["entity_id"]
+    words = re.findall(r"\w+", (default.get("name") or "").lower())
+    surname = words[-1] if words else ""
+    if len(surname) < 3 or not recipient["surface"]:
+        return False
+    return surname in re.findall(r"\w+", normalized(recipient["surface"]))
 
 
 def title_for(unit: Unit) -> str:

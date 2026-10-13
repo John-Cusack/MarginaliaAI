@@ -168,6 +168,8 @@ async def _structure(
             alias_map=meta.get("alias_map"),
             default_sender=meta.get("default_sender"),
         )
+        if "sender_by_edition_convention" in flags and decision.materialized:
+            decision.confidence = min(decision.confidence, dating.CAP_EDITION_SENDER)
         letters.append(
             units.Unit(
                 index=index,

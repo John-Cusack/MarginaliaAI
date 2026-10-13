@@ -136,8 +136,9 @@ class TestActors:
         )
 
     def test_a_heading_naming_only_the_recipient_takes_the_edition_s_sender(self):
+        """r.n22, "TO MR. E. ABBOTT.": Faraday's letter to Abbott."""
         sender, _, flags = units.resolve_actors(
-            self.opening(recipient="Mrs. Faraday"),
+            self.opening(recipient="Mr. E. Abbott"),
             default_sender={"entity_id": "f-1", "name": "Michael Faraday"},
         )
         assert (sender["entity_id"], sender["how"]) == ("f-1", "default_sender")
@@ -231,3 +232,55 @@ def test_two_readings_of_one_opening_that_disagree_are_merged_and_held():
     assert len(placed.openings) == 1
     [decision] = decide([Reading.of(placed.openings[0].data)], tolerance_days=None)
     assert decision.hold == "reader_disagreement"
+
+
+class TestLettersToTheSubject:
+    """r.n9, "TO MR. FARADAY.": Davy's letter, so Faraday is not its writer."""
+
+    FARADAY = {"entity_id": "f-1", "name": "Michael Faraday"}
+
+    def opening(self, **data):
+        return openings.Opening(start=0, record_ids=["r"], passage_id="p", data=data)
+
+    def test_a_recipient_resolved_to_the_subject_gets_no_default_writer(self):
+        sender, recipient, flags = units.resolve_actors(
+            self.opening(
+                recipient="Mr. Faraday",
+                recipient_resolved={"entity_id": "f-1", "canonical_name": "Michael Faraday"},
+            ),
+            default_sender=self.FARADAY,
+        )
+        assert sender["entity_id"] is None
+        assert recipient["entity_id"] == "f-1"
+        assert "addressed_to_edition_subject" in flags
+        assert "sender_by_edition_convention" not in flags
+
+    def test_an_unresolved_recipient_bearing_the_subject_s_name_gets_none_either(self):
+        sender, _, flags = units.resolve_actors(
+            self.opening(recipient="Mr. Faraday"), default_sender=self.FARADAY
+        )
+        assert sender["entity_id"] is None
+        assert "addressed_to_edition_subject" in flags
+
+    def test_his_wife_mapped_by_the_volume_still_gets_him_as_writer(self):
+        """"TO MRS. FARADAY.": once the alias map says she is Sarah, he wrote it."""
+        sender, recipient, flags = units.resolve_actors(
+            self.opening(recipient="Mrs. Faraday"),
+            alias_map={"Mrs. Faraday": {"entity_id": "s-1", "name": "Sarah Faraday"}},
+            default_sender=self.FARADAY,
+        )
+        assert (sender["entity_id"], recipient["entity_id"]) == ("f-1", "s-1")
+        assert "sender_by_edition_convention" in flags
+
+    def test_an_unmapped_mrs_faraday_leaves_the_writer_unknown(self):
+        """Wrong-way round would be worse than unknown."""
+        sender, _, _ = units.resolve_actors(
+            self.opening(recipient="Mrs. Faraday"), default_sender=self.FARADAY
+        )
+        assert sender["entity_id"] is None
+
+    def test_a_default_given_as_a_bare_id_matches_only_by_id(self):
+        sender, _, _ = units.resolve_actors(
+            self.opening(recipient="Mr. Faraday"), default_sender="f-1"
+        )
+        assert sender["entity_id"] == "f-1", "no name to compare surnames with"
