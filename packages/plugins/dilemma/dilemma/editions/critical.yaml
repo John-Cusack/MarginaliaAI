@@ -1,0 +1,133 @@
+group: critical
+title: Critical, secular and evangelical scholarship (rank 6 — leads and evaluation only)
+brief: >-
+  Never a horn: these sources suggest where to look and score what the finder
+  surfaces. Free online archives first; copyrighted books are blocked pending
+  purchase or scan.
+sources:
+  - key: ritner-jsp-egyptian-papyri
+    title: "The Joseph Smith Egyptian Papyri: A Complete Edition"
+    work: ritner-papyri
+    author: Robert K. Ritner
+    date_published: "2011"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_print}
+
+  - key: vogel-early-mormon-documents
+    title: Early Mormon Documents (5 vols)
+    work: early-mormon-documents
+    author: Dan Vogel (ed.)
+    acquire: {license: in copyright,
+              notes: Check signaturebookslibrary.org for an authorized online edition first.}
+    blocked: {reason: In copyright unless an authorized online edition is found., suggest: purchase_print}
+
+  - key: vogel-making-of-a-prophet
+    title: "Joseph Smith: The Making of a Prophet"
+    work: making-of-a-prophet
+    author: Dan Vogel
+    date_published: "2004"
+    acquire: {license: in copyright,
+              notes: Check signaturebookslibrary.org for an authorized online edition first.}
+    blocked: {reason: In copyright unless an authorized online edition is found., suggest: purchase_ebook}
+
+  - key: metcalfe-new-approaches
+    title: "New Approaches to the Book of Mormon"
+    work: new-approaches
+    author: Brent Lee Metcalfe (ed.)
+    date_published: "1993"
+    acquire: {license: in copyright,
+              notes: Check signaturebookslibrary.org for an authorized online edition first.}
+    blocked: {reason: In copyright unless an authorized online edition is found., suggest: purchase_print}
+
+  - key: brodie-no-man-knows
+    title: "No Man Knows My History"
+    work: no-man-knows-my-history
+    author: Fawn M. Brodie
+    date_published: "1945"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_ebook}
+
+  - key: palmer-insiders-view
+    title: "An Insider's View of Mormon Origins"
+    work: insiders-view
+    author: Grant H. Palmer
+    date_published: "2002"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_print}
+
+  - key: alexander-reconstruction-1980
+    title: '"The Reconstruction of Mormon Doctrine" (Sunstone, 1980)'
+    work: reconstruction-of-mormon-doctrine
+    author: Thomas G. Alexander
+    date_published: "1980"
+    acquire: {method: scrape, url: https://www.sunstonemagazine.com,
+              notes: The Sunstone archive; the key paper on the evolution of LDS teaching on God.}
+    verify: [url, license]
+
+  - key: widmer-nature-of-god
+    title: "Mormonism and the Nature of God"
+    work: mormonism-and-the-nature-of-god
+    author: Kurt Widmer
+    date_published: "2000"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_print}
+
+  - key: tanner-shadow-or-reality
+    title: "Mormonism: Shadow or Reality?"
+    work: shadow-or-reality
+    author: Jerald and Sandra Tanner
+    acquire: {method: scrape, url: https://www.utlm.org,
+              notes: Utah Lighthouse Ministry; check what is online and on what terms.}
+    verify: [availability, license]
+
+  - key: tanner-3913-changes
+    title: "3,913 Changes in the Book of Mormon"
+    work: tanner-3913-changes
+    author: Jerald and Sandra Tanner
+    acquire: {method: scrape, url: https://www.utlm.org}
+    verify: [availability, license]
+    notes: Evaluation set for the edition-diff pass.
+
+  - key: dialogue-archive
+    title: "Dialogue: A Journal of Mormon Thought (archive)"
+    work: dialogue-journal
+    acquire: {method: scrape, url: https://www.dialoguejournal.com}
+    verify: [license, robots.txt]
+
+  - key: sunstone-archive
+    title: Sunstone (archive)
+    work: sunstone
+    acquire: {method: scrape, url: https://www.sunstonemagazine.com}
+    verify: [license, robots.txt]
+
+  - key: new-mormon-challenge
+    title: "The New Mormon Challenge"
+    work: new-mormon-challenge
+    author: Francis J. Beckwith, Carl Mosser and Paul Owen (eds.)
+    date_published: "2002"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_ebook}
+
+  - key: how-wide-the-divide
+    title: "How Wide the Divide?"
+    work: how-wide-the-divide
+    author: Craig L. Blomberg and Stephen E. Robinson
+    date_published: "1997"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright., suggest: purchase_ebook}
+
+  - key: ces-letter
+    title: The CES Letter
+    work: ces-letter
+    acquire: {method: bulk_download, url: https://cesletter.org,
+              notes: Free PDF; responses to it are in lds_apologetics.}
+    verify: [license]
+
+  - key: johnson-sharing-good-news
+    title: "Sharing the Good News with Mormons"
+    work: sharing-good-news-with-mormons
+    author: Eric Johnson and Sean McDowell (eds.)
+    date_published: "2018"
+    acquire: {method: manual, license: in copyright,
+              notes: Operator-provided Kindle text in the edition inbox; private research use only.}
+    verify: [license]

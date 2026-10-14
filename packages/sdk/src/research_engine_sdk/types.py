@@ -137,6 +137,29 @@ class NodeDraft(BaseModel):
         return self
 
 
+class MarkDraft(BaseModel):
+    """A range over the canonical text that does not nest in the node tree.
+
+    A page break cuts across chapters and a translator's supplied words cut
+    across verses, so neither can be a node. ``kind`` is the loader's own word
+    (``page``, ``supplied``, ``line``); a zero-width mark is a point, such as a
+    page break.
+    """
+
+    kind: str
+    char_start: int = Field(ge=0)
+    char_end: int
+    attrs: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _span_is_well_formed(self) -> MarkDraft:
+        if self.char_end < self.char_start:
+            raise ValueError(
+                f"char_end ({self.char_end}) precedes char_start ({self.char_start})"
+            )
+        return self
+
+
 class PluginContext(BaseModel):
     plugin_id: str
     data_dir: Path

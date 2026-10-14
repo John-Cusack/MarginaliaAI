@@ -26,9 +26,17 @@ class EntityService:
         name: str,
         entity_type: str | None = None,
         k: int = 5,
+        *,
+        exact: bool = False,
     ) -> list[EntityCandidate]:
-        """Tiered entity resolution: exact → alias → trigram fuzzy."""
-        return await self._entities.search_by_name(name, entity_type, k)
+        """Tiered entity resolution: exact → alias → trigram fuzzy.
+
+        With ``exact=True`` only case-insensitive equality against the
+        canonical name or an alias counts — for callers (seeded ids, hint
+        lists) who already know the name as the store writes it and would
+        rather get nothing than a near miss.
+        """
+        return await self._entities.search_by_name(name, entity_type, k, exact=exact)
 
     async def get(self, entity_id: UUID) -> Entity | None:
         return await self._entities.get(entity_id)

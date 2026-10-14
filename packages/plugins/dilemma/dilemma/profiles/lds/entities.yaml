@@ -1,0 +1,36 @@
+# Seed entities with exact ids. Names that several people bear are kept apart
+# here so the resolver can never merge them on spelling: a mention it cannot
+# place is recorded as unresolved, not guessed.
+entities:
+  - {id: god_the_father, label: God the Father, kind: deity,
+     aliases: [Heavenly Father, Elohim, the Father]}
+  - {id: jesus_christ, label: Jesus Christ, kind: deity,
+     aliases: [Jesus, Christ, Jehovah, the Son, the Son of God]}
+  - {id: holy_ghost, label: The Holy Ghost, kind: deity,
+     aliases: [Holy Spirit, Spirit of God, the Comforter]}
+  - {id: adam, label: Adam, kind: person, aliases: [Michael, the Ancient of Days]}
+  - {id: joseph_smith, label: Joseph Smith Jr., kind: person,
+     aliases: [Joseph Smith, the Prophet Joseph]}
+  - {id: brigham_young, label: Brigham Young, kind: person}
+  - {id: lehi, label: Lehi, kind: person}
+  - {id: nephi_son_of_lehi, label: "Nephi, son of Lehi", kind: person,
+     note: The narrator of 1 and 2 Nephi.}
+  - {id: nephi_son_of_helaman, label: "Nephi, son of Helaman", kind: person,
+     note: Prophet in the Book of Helaman.}
+  - {id: nephi_disciple, label: "Nephi, son of Nephi", kind: person,
+     note: Chief of the twelve disciples in 3 Nephi.}
+  - {id: nephi_son_of_nephi_disciple, label: "Nephi, son of the disciple Nephi", kind: person,
+     note: Keeper of the record in 4 Nephi.}
+  - {id: alma_the_elder, label: Alma the Elder, kind: person}
+  - {id: alma_the_younger, label: Alma the Younger, kind: person}
+  - {id: helaman_son_of_alma, label: "Helaman, son of Alma", kind: person}
+  - {id: helaman_son_of_helaman, label: "Helaman, son of Helaman", kind: person}
+  - {id: moroni_captain, label: Captain Moroni, kind: person,
+     note: The military commander in Alma.}
+  - {id: moroni_son_of_mormon, label: "Moroni, son of Mormon", kind: person,
+     note: The last author of the Book of Mormon.}
+  - {id: mormon, label: Mormon, kind: person}
+  - {id: book_of_mormon, label: The Book of Mormon, kind: scripture,
+     denotes: {edition: bom-2013}}
+  - {id: bible, label: The Bible, kind: scripture, aliases: [the Bible],
+     denotes: {edition: kjv}}

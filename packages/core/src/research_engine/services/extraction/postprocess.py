@@ -106,7 +106,9 @@ class RecordEnricher:
                 )
             elif declared == "entity_ref":
                 fields[name + RESOLVED] = await self._resolve_entity(
-                    value, spec.get("entity_type")
+                    value,
+                    spec.get("entity_type"),
+                    exact=spec.get("resolution") == "exact",
                 )
         if fields == record.fields:
             return record
@@ -115,6 +117,7 @@ class RecordEnricher:
             fields=fields,
             evidence_start=record.evidence_start,
             evidence_end=record.evidence_end,
+            evidence_spans=record.evidence_spans,
         )
 
     async def _anchor_for(self, passage: Passage) -> datetime | None:
@@ -172,16 +175,24 @@ class RecordEnricher:
         return anchor
 
     async def _resolve_entity(
-        self, surface: str, entity_type: str | None
+        self, surface: str, entity_type: str | None, *, exact: bool = False
     ) -> dict[str, Any] | None:
         """Match a name as written against the entity store.
 
         Returns None rather than a best guess when nothing clears the bar. A
         wrongly resolved correspondent silently reassigns a letter to the wrong
         person, and nothing downstream can tell that from a real attribution.
+
+        ``exact`` (a field spec's ``resolution: exact``) narrows the search to
+        case-insensitive equality on a canonical name or alias: a
+        merely-similar name is refused even when it would clear the fuzzy
+        threshold, which is the point — the schema is saying the surface form
+        is expected to be the name as the store writes it.
         """
         try:
-            candidates = await self._entities.search_by_name(surface, entity_type, 2)
+            candidates = await self._entities.search_by_name(
+                surface, entity_type, 2, exact=exact
+            )
         except Exception as exc:  # noqa: BLE001 - resolution is best-effort
             logger.warning("entity_resolution_failed", surface=surface, error=str(exc))
             return None

@@ -86,6 +86,61 @@ class DeniedIngestionClient:
         raise PermissionDenied(self._plugin, "ingest")
 
 
+class DeniedBibliographyClient:
+    """Bibliography client that always denies access.
+
+    Registering sources and recording their provenance is part of building the
+    corpus, so it rides on the ``ingest`` permission rather than a new one.
+    """
+
+    def __init__(self, plugin_name: str) -> None:
+        self._plugin = plugin_name
+
+    async def register_source(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def mark_blocked(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def set_status(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def attach_artifact(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def report_coverage(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def get_source(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def list_sources(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+
+class DeniedProfileClient:
+    """Profile client that always denies access.
+
+    Loading a profile declares how the corpus is to be read, and its runs are
+    how it is processed — both part of building it, so both ride on ``ingest``.
+    """
+
+    def __init__(self, plugin_name: str) -> None:
+        self._plugin = plugin_name
+
+    async def load_profile(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def get_profile(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def start_run(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+    async def finish_run(self, *args, **kwargs):
+        raise PermissionDenied(self._plugin, "ingest")
+
+
 class DeniedEdgeClient:
     """Edge client that always denies access (plugin lacks `write`)."""
 

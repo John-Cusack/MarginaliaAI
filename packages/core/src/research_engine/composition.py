@@ -7,6 +7,7 @@ from functools import partial
 from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any
 
+from research_engine.adapters.bibliography_client import BibliographyServiceAdapter
 from research_engine.adapters.clock import SystemClock
 from research_engine.adapters.edge_client import EdgeServiceAdapter
 from research_engine.adapters.entity_client import EntityServiceAdapter
@@ -16,10 +17,14 @@ from research_engine.adapters.http.httpx_adapter import HttpxAdapter
 from research_engine.adapters.inference import InferenceBackends, build_inference
 from research_engine.adapters.ingestion_client import IngestionServiceAdapter
 from research_engine.adapters.llm.budget_guard import BudgetGuard
+from research_engine.adapters.profile_client import ProfileServiceAdapter
 from research_engine.adapters.storage.postgres.engine import build_engine, transaction
 from research_engine.adapters.storage.postgres.repositories import (
+    PGAcquisitionRepo,
     PGCitationRepo,
+    PGClaimEmbeddingRepo,
     PGClaimRepo,
+    PGDocumentMarkRepo,
     PGDocumentNodeRepo,
     PGDocumentRepo,
     PGDocumentTextRepo,
@@ -31,9 +36,13 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGExtractionSchemaRepo,
     PGIngestionRunRepo,
     PGLLMCallLogRepo,
+    PGMachineClaimRepo,
     PGMentionRepo,
+    PGPairScoreRepo,
     PGPassageRepo,
     PGPluginActivationRepo,
+    PGProfileRepo,
+    PGRunRepo,
     PGSourceSpanRepo,
     PGWaiverRepo,
     PGWorkBlockRepo,
@@ -102,6 +111,21 @@ class Container:
     llm_calls: PGLLMCallLogRepo
     ingestion_runs: PGIngestionRunRepo
     plugin_activations: PGPluginActivationRepo
+    #: Where each edition came from, and its non-nesting ranges.
+    acquisitions: PGAcquisitionRepo
+    document_marks: PGDocumentMarkRepo
+    #: The SDK face of acquisitions, as packs see it.
+    bibliography: BibliographyServiceAdapter
+    #: Reader profiles, the roles they give editions, and the runs under them.
+    profiles: PGProfileRepo
+    #: Cited addresses, and the machine claims anchored to them.
+    spans: PGSourceSpanRepo
+    machine_claims: PGMachineClaimRepo
+    claim_embeddings: PGClaimEmbeddingRepo
+    pair_scores: PGPairScoreRepo
+    runs: PGRunRepo
+    #: The SDK face of the two above.
+    profile_client: ProfileServiceAdapter
     ingestion: IngestionOrchestrator
     search: HybridSearchService
     verification: QuoteVerifier
@@ -231,6 +255,7 @@ async def build_container(settings: Settings) -> Container:
     docs = PGDocumentRepo(sql_engine)
     document_texts_repo = PGDocumentTextRepo(sql_engine)
     document_nodes_repo = PGDocumentNodeRepo(sql_engine)
+    document_marks_repo = PGDocumentMarkRepo(sql_engine)
     passages_repo = PGPassageRepo(sql_engine, ef_search=settings.hnsw_ef_search)
     entities_repo = PGEntityRepo(sql_engine)
     mentions_repo = PGMentionRepo(sql_engine)
@@ -343,6 +368,12 @@ async def build_container(settings: Settings) -> Container:
     tx_factory = partial(transaction, sql_engine)
     claims_repo = PGClaimRepo(sql_engine)
     editions_repo = PGEditionRepo(sql_engine)
+    acquisitions_repo = PGAcquisitionRepo(sql_engine)
+    profiles_repo = PGProfileRepo(sql_engine)
+    machine_claims_repo = PGMachineClaimRepo(sql_engine)
+    claim_embeddings_repo = PGClaimEmbeddingRepo(sql_engine)
+    pair_scores_repo = PGPairScoreRepo(sql_engine)
+    runs_repo = PGRunRepo(sql_engine)
     claim_audit_service = ClaimAuditService(claims_repo)
     claim_service = ClaimService(
         claims_repo=claims_repo,
@@ -490,6 +521,7 @@ async def build_container(settings: Settings) -> Container:
         document_nodes=document_nodes_repo,
         editions=editions_repo,
         forbidden_roots=[settings.vault_dir] if settings.vault_dir else [],
+        document_marks=document_marks_repo,
     )
 
     # Plugin-facing adapters are the only objects crossing the SDK boundary.
@@ -500,6 +532,18 @@ async def build_container(settings: Settings) -> Container:
         extraction_service, passages_repo, extractions_repo
     )
     ingestion_client = IngestionServiceAdapter(ingestion_service, registry)
+    bibliography_client = BibliographyServiceAdapter(
+        editions=editions_repo,
+        acquisitions=acquisitions_repo,
+        transaction_factory=tx_factory,
+        data_dir=settings.data_dir,
+    )
+    profile_client = ProfileServiceAdapter(
+        editions=editions_repo,
+        profiles=profiles_repo,
+        runs=runs_repo,
+        transaction_factory=tx_factory,
+    )
 
     # Plugin loader
     plugin_loader = PluginLoader(
@@ -518,6 +562,8 @@ async def build_container(settings: Settings) -> Container:
         extraction=extraction_client,
         edge=edge_client,
         ingestion=ingestion_client,
+        bibliography=bibliography_client,
+        profiles=profile_client,
     )
     await plugin_loader.load_enabled()
 
@@ -542,6 +588,16 @@ async def build_container(settings: Settings) -> Container:
         llm_calls=llm_calls_repo,
         ingestion_runs=ingestion_runs_repo,
         plugin_activations=plugin_activations_repo,
+        acquisitions=acquisitions_repo,
+        document_marks=document_marks_repo,
+        bibliography=bibliography_client,
+        profiles=profiles_repo,
+        runs=runs_repo,
+        profile_client=profile_client,
+        spans=spans_repo,
+        machine_claims=machine_claims_repo,
+        claim_embeddings=claim_embeddings_repo,
+        pair_scores=pair_scores_repo,
         ingestion=ingestion_service,
         search=search_service,
         verification=quote_verifier,

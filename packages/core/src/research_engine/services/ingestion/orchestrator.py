@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
     from pathlib import Path
 
+    from research_engine.domain.acquisitions import DocumentMarkDraft
     from research_engine.ports.embedding import EmbeddingPort
     from research_engine.ports.repositories import (
         DocumentRepo,
@@ -53,8 +54,12 @@ class IngestionOrchestrator:
         document_nodes: object | None = None,
         editions: EditionRepo | None = None,
         forbidden_roots: Sequence[Path] = (),
+        document_marks: object | None = None,
     ) -> None:
         self._document_texts = document_texts
+        #: Optional like ``document_nodes``: only callers that hand over marks
+        #: (page breaks, supplied words) need it.
+        self._document_marks = document_marks
         #: Optional like ``document_texts``: without it ingested edition keys
         #: never reach `bibliography.editions` and row citations cannot join
         #: them. The migration backfill covered the keys already stored.
@@ -187,6 +192,9 @@ class IngestionOrchestrator:
         language: str | None = None,
         full_text: str | None = None,
         node_drafts: list[DocumentNodeDraft] | None = None,
+        parser: str = "plugin_direct",
+        parser_version: str = "1.0",
+        mark_drafts: list[DocumentMarkDraft] | None = None,
     ) -> dict:
         """Ingest pre-chunked PassageDrafts directly, skipping parse/chunk stages.
 
@@ -205,6 +213,15 @@ class IngestionOrchestrator:
         passages cited the volume rather than the entry they sit in. Supplying
         it also attaches each passage to its deepest containing node, so the
         structure is usable by `locate_passage` rather than merely present.
+
+        *parser* / *parser_version* name what produced *full_text*. They are
+        stamped on the document, its canonical text and every span later cited
+        in it, which is how `source_spans.stale()` notices a re-parse; a pack
+        that leaves the defaults gives every one of its parsers one identity.
+
+        *mark_drafts* are ranges the node tree cannot hold — page breaks, a
+        translator's supplied words. They need *full_text*, and are written in
+        the same transaction as the text they address.
         """
 
         # Hash the *content*, not `source:title`. The old form meant a document
@@ -240,10 +257,21 @@ class IngestionOrchestrator:
             language=language,
             source=source,
             content_hash=content_hash,
-            parser="plugin_direct",
-            parser_version="1.0",
+            parser=parser,
+            parser_version=parser_version,
             metadata=metadata or {},
         )
+        if mark_drafts:
+            if full_text is None:
+                raise ValueError("mark_drafts address full_text; pass full_text= too")
+            for mark in mark_drafts:
+                if mark.char_end > len(full_text):
+                    raise ValueError(
+                        f"{mark.kind} mark [{mark.char_start}, {mark.char_end}) runs "
+                        f"past the end of the text ({len(full_text)} characters)"
+                    )
+            if self._document_marks is None:
+                raise ValueError("mark_drafts given but no document_marks repository")
 
         async with transaction(self._engine) as tx:
             edition = await self._record_edition(tx, metadata)
@@ -252,7 +280,7 @@ class IngestionOrchestrator:
             doc = await self._docs.insert(tx, doc_draft)
             if full_text is not None and self._document_texts is not None:
                 await self._document_texts.put(
-                    tx, doc.id, full_text, "plugin_direct", "1.0"
+                    tx, doc.id, full_text, parser, parser_version
                 )
             elif full_text is None:
                 logger.warning(
@@ -264,6 +292,8 @@ class IngestionOrchestrator:
                         "Pass full_text= to make them verifiable and re-anchorable."
                     ),
                 )
+            if mark_drafts:
+                await self._document_marks.insert_many(tx, doc.id, mark_drafts)
             # Before the passages: `attach_nodes` needs the nodes' ids, which
             # only exist once they are written.
             if node_drafts and self._document_nodes is not None:
@@ -310,6 +340,7 @@ class IngestionOrchestrator:
             "document_id": str(doc.id),
             "passage_count": len(saved_passages),
             "node_count": len(node_drafts or []),
+            "mark_count": len(mark_drafts or []),
         }
 
     async def _store_file_document(

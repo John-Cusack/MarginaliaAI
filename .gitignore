@@ -215,3 +215,7 @@ __marimo__/
 scratch/
 #   Browser session dumps from the Playwright MCP server; regenerated per run.
 .playwright-mcp/
+#   The Dilemma Finder's sealed evaluation file belongs outside every repository
+#   (~/.research-engine/plugin-data/dilemma/sealed/); this is the backstop for
+#   the brief's in-repo path.
+eval/sealed/

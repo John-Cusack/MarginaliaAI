@@ -7,6 +7,7 @@ dependencies = [
     "marginalia-ai[full]",
     "marginalia-ai-sdk",
     "marginalia-ai-plugin-history",
+    "marginalia-ai-plugin-dilemma",
 ]
 
 [tool.uv]
@@ -30,9 +31,15 @@ plugins = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/core", "packages/sdk", "packages/plugins/history"]
+members = [
+    "packages/core",
+    "packages/sdk",
+    "packages/plugins/history",
+    "packages/plugins/dilemma",
+]
 
 [tool.uv.sources]
 marginalia-ai = { workspace = true }
 marginalia-ai-sdk = { workspace = true }
 marginalia-ai-plugin-history = { workspace = true }
+marginalia-ai-plugin-dilemma = { workspace = true }

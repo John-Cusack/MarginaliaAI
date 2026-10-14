@@ -1,0 +1,174 @@
+group: islam
+title: Qur'an, hadith and tafsir
+brief: >-
+  The Qur'an in Arabic plus a public-domain and a modern English translation,
+  aligned by ayah; the six canonical hadith collections in Arabic and English
+  with their gradings; classical tafsir where openly available. Hadith come
+  from fawazahmed0/hadith-api, which the operator has permission to use.
+  Never scrape sunnah.com: its terms forbid scraping and mass reproduction.
+  Christian apologetics addressed to Islam go only to the held-out collection,
+  never into the analysed corpus.
+sources:
+  - key: quran-tanzil-uthmani
+    title: The Qur'an — Uthmani Arabic text (Tanzil)
+    work: quran
+    language: ar
+    acquire:
+      method: bulk_download
+      url: https://tanzil.net/pub/download/index.php?quranType=uthmani&outType=txt-2&marks=true&sajdah=true&tatweel=true&agree=true
+      license: >-
+        Tanzil Project, Creative Commons Attribution 3.0: verbatim copies only,
+        no changes, the source indicated and the copyright block kept
+      notes: >-
+        The Uthmani text with pause and sajdah marks, as Tanzil offers it
+        ("Text, with aya numbers"); the version line in the file is recorded.
+    expect: {surah: 114, ayah: 6236}
+    verify: [text variant and version]
+
+  - key: quran-pickthall-1930
+    title: The Meaning of the Glorious Koran (Pickthall, 1930)
+    work: quran
+    translator: Marmaduke Pickthall
+    date_published: "1930"
+    acquire:
+      method: bulk_download
+      url: https://tanzil.net/trans/?transID=en.pickthall&type=txt-2
+      license: >-
+        public domain in the US since 2026; Tanzil's copy is offered for
+        non-commercial use
+      notes: Align to the Arabic ayah by ayah.
+    expect: {surah: 114, ayah: 6236}
+    verify: [which printing Tanzil's text follows]
+
+  - key: quran-sahih-international
+    title: The Qur'an, Saheeh International translation
+    work: quran
+    translator: Saheeh International
+    date_published: "1997"
+    acquire:
+      method: bulk_download
+      url: https://tanzil.net/trans/?transID=en.sahih&type=txt-2
+      license: >-
+        © Saheeh International; Tanzil offers its translations for
+        non-commercial use only — private research use
+      notes: The modern translation; align to the Arabic ayah by ayah.
+    expect: {surah: 114, ayah: 6236}
+    verify: [which revision Tanzil's text follows]
+
+  - key: hadith-bukhari
+    title: "Sahih al-Bukhari (Arabic and English, with grading)"
+    work: sahih-al-bukhari
+    acquire:
+      method: bulk_download
+      url: https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1
+      license: "permission: the operator obtained permission to use this content by email, 2026-10-13; the compilation is released under the Unlicense. Private research use."
+      notes: >-
+        fawazahmed0/hadith-api editions ara-bukhari, ara-bukhari1 and eng-bukhari,
+        with sections and per-narration grades. Record the exact version or
+        commit fetched. Compiled from several sites (sunnah.com and
+        al-maktaba.org among them); the English translation's identity must be
+        recorded from the data, not assumed.
+    verify: [which English translation this is, grading sources and graders, hadith numbering scheme]
+
+  - key: hadith-muslim
+    title: "Sahih Muslim (Arabic and English, with grading)"
+    work: sahih-muslim
+    acquire:
+      method: bulk_download
+      url: https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1
+      license: "permission: the operator obtained permission to use this content by email, 2026-10-13; the compilation is released under the Unlicense. Private research use."
+      notes: >-
+        fawazahmed0/hadith-api editions ara-muslim, ara-muslim1 and eng-muslim,
+        with sections and per-narration grades. Record the exact version or
+        commit fetched. Compiled from several sites (sunnah.com and
+        al-maktaba.org among them); the English translation's identity must be
+        recorded from the data, not assumed.
+    verify: [which English translation this is, grading sources and graders, hadith numbering scheme]
+
+  - key: hadith-abu-dawud
+    title: "Sunan Abi Dawud"
+    work: sunan-abi-dawud
+    acquire:
+      method: bulk_download
+      url: https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1
+      license: "permission: the operator obtained permission to use this content by email, 2026-10-13; the compilation is released under the Unlicense. Private research use."
+      notes: >-
+        fawazahmed0/hadith-api editions ara-abudawud, ara-abudawud1 and eng-abudawud,
+        with sections and per-narration grades. Record the exact version or
+        commit fetched. Compiled from several sites (sunnah.com and
+        al-maktaba.org among them); the English translation's identity must be
+        recorded from the data, not assumed.
+    verify: [which English translation this is, grading sources and graders, hadith numbering scheme]
+
+  - key: hadith-tirmidhi
+    title: "Jami' at-Tirmidhi"
+    work: jami-at-tirmidhi
+    acquire:
+      method: bulk_download
+      url: https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1
+      license: "permission: the operator obtained permission to use this content by email, 2026-10-13; the compilation is released under the Unlicense. Private research use."
+      notes: >-
+        fawazahmed0/hadith-api editions ara-tirmidhi, ara-tirmidhi1 and eng-tirmidhi,
+        with sections and per-narration grades. Record the exact version or
+        commit fetched. Compiled from several sites (sunnah.com and
+        al-maktaba.org among them); the English translation's identity must be
+        recorded from the data, not assumed.
+    verify: [which English translation this is, grading sources and graders, hadith numbering scheme]
+
+  - key: hadith-nasai
+    title: "Sunan an-Nasa'i"
+    work: sunan-an-nasai
+    acquire:
+      method: bulk_download
+      url: https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1
+      license: "permission: the operator obtained permission to use this content by email, 2026-10-13; the compilation is released under the Unlicense. Private research use."
+      notes: >-
+        fawazahmed0/hadith-api editions ara-nasai, ara-nasai1 and eng-nasai,
+        with sections and per-narration grades. Record the exact version or
+        commit fetched. Compiled from several sites (sunnah.com and
+        al-maktaba.org among them); the English translation's identity must be
+        recorded from the data, not assumed.
+    verify: [which English translation this is, grading sources and graders, hadith numbering scheme]
+
+  - key: hadith-ibn-majah
+    title: "Sunan Ibn Majah"
+    work: sunan-ibn-majah
+    acquire:
+      method: bulk_download
+      url: https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1
+      license: "permission: the operator obtained permission to use this content by email, 2026-10-13; the compilation is released under the Unlicense. Private research use."
+      notes: >-
+        fawazahmed0/hadith-api editions ara-ibnmajah, ara-ibnmajah1 and eng-ibnmajah,
+        with sections and per-narration grades. Record the exact version or
+        commit fetched. Compiled from several sites (sunnah.com and
+        al-maktaba.org among them); the English translation's identity must be
+        recorded from the data, not assumed.
+    verify: [which English translation this is, grading sources and graders, hadith numbering scheme]
+
+  - key: tafsir-ibn-kathir
+    title: Tafsir Ibn Kathir
+    work: tafsir-ibn-kathir
+    acquire: {method: api, url: https://quran.com,
+              notes: quran.com API or another open source; record which abridgement or translation.}
+    verify: [availability, license, which abridgement]
+
+  - key: tafsir-tabari
+    title: Tafsir al-Tabari
+    work: tafsir-al-tabari
+    language: ar
+    acquire: {method: api, notes: Openly available sources only.}
+    verify: [availability, license]
+
+  - key: tafsir-razi
+    title: Tafsir al-Razi (Mafatih al-Ghayb)
+    work: tafsir-al-razi
+    language: ar
+    acquire: {method: api, notes: Openly available sources only.}
+    verify: [availability, license]
+
+  - key: christian-apologetics-to-islam-heldout
+    title: Christian apologetics addressed to Islam (held out)
+    work: christian-apologetics-to-islam
+    collection: heldout_eval
+    acquire: {notes: The operator chooses these. They are kept for evaluation and never enter the analysed corpus.}
+    verify: [which works]

@@ -16,6 +16,7 @@ resolution-markers = [
 [manifest]
 members = [
     "marginalia-ai",
+    "marginalia-ai-plugin-dilemma",
     "marginalia-ai-plugin-history",
     "marginalia-ai-sdk",
     "marginalia-ai-workspace",
@@ -1459,6 +1460,22 @@ wheels = [
 ]
 
 [[package]]
+name = "marginalia-ai-plugin-dilemma"
+source = { editable = "packages/plugins/dilemma" }
+dependencies = [
+    { name = "marginalia-ai-sdk" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "marginalia-ai-sdk", editable = "packages/sdk" },
+    { name = "pydantic", specifier = ">=2.5,<3" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+]
+
+[[package]]
 name = "marginalia-ai-plugin-history"
 source = { editable = "packages/plugins/history" }
 dependencies = [
@@ -1492,7 +1509,7 @@ auth = [
 
 [[package]]
 name = "marginalia-ai-plugin-yourcloudlibrary"
-version = "0.3.0"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -1502,9 +1519,9 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "structlog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/0d/378261cf15f49272e118d8bb83d883431aba9cd866b95722f675e9e55d7c/marginalia_ai_plugin_yourcloudlibrary-0.3.0.tar.gz", hash = "sha256:25076a53ea2e89b595e3b1fe8fb985003305b394b4fd1b85137fe381be17b242", size = 106437, upload-time = "2026-09-18T12:56:12.053Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/29/243aa847bfa3ea69bc505488c3fabdeb2cfe535d8180c64b453f3f1c6390/marginalia_ai_plugin_yourcloudlibrary-0.3.1.tar.gz", hash = "sha256:5c5f7b32ceda0f0988996c421011cecec0dcb1b6c4ed245627362ff455d486e8", size = 106787, upload-time = "2026-10-14T16:11:53.906Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/2c/1849cc04b54ecd3ab21eb3c819c7e59948c90039dc073b3ec67066fc5c1b/marginalia_ai_plugin_yourcloudlibrary-0.3.0-py3-none-any.whl", hash = "sha256:be38bbc08d19484fa8a506d9c1f11541be2c11fbba6c4507fb13e78df6c73423", size = 81727, upload-time = "2026-09-18T12:56:10.527Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/94/1d2875d43f4b5136430eccb428c7c5aa437399d34cd76a59cb96ce5c13a1/marginalia_ai_plugin_yourcloudlibrary-0.3.1-py3-none-any.whl", hash = "sha256:11a082354b07a311d2b75b1ed0c897f450fb698c0541460565f652c0e5a11a8f", size = 81870, upload-time = "2026-10-14T16:11:52.338Z" },
 ]
 
 [[package]]
@@ -1529,6 +1546,7 @@ version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
     { name = "marginalia-ai", extra = ["full"] },
+    { name = "marginalia-ai-plugin-dilemma" },
     { name = "marginalia-ai-plugin-history" },
     { name = "marginalia-ai-sdk" },
 ]
@@ -1550,6 +1568,7 @@ plugins = [
 [package.metadata]
 requires-dist = [
     { name = "marginalia-ai", extras = ["full"], editable = "packages/core" },
+    { name = "marginalia-ai-plugin-dilemma", editable = "packages/plugins/dilemma" },
     { name = "marginalia-ai-plugin-history", editable = "packages/plugins/history" },
     { name = "marginalia-ai-sdk", editable = "packages/sdk" },
 ]

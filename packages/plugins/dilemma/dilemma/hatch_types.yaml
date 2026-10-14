@@ -1,0 +1,56 @@
+# Generic escape-hatch types: the shapes of answer a tradition gives when two
+# of its binding texts appear to conflict. Every profile's hatch instances name
+# one of these, so scoring and evaluation read the same across traditions. A
+# blind profile ships no instances at all — only these types, which name no
+# tradition and no text.
+types:
+  - key: temporal_supersession
+    label: Temporal supersession
+    description: >-
+      A later binding text replaces or completes an earlier one, which was
+      true or binding for its own time.
+  - key: transmission_error
+    label: Transmission error
+    description: >-
+      The text as we now have it is not the text as originally given: it was
+      mistranslated, miscopied or altered in transmission.
+  - key: interpretive_error
+    label: Interpretive error
+    description: >-
+      The apparent conflict comes from a misreading of one text; read rightly,
+      it does not say what the other denies.
+  - key: non_authoritative_speaker
+    label: Non-authoritative speaker
+    description: >-
+      One horn was spoken or written without the authority that would make it
+      binding — an opinion, a subordinate standard that admits it may err.
+  - key: mystery_or_antinomy
+    label: Mystery or antinomy
+    description: >-
+      Both horns are affirmed and their reconciliation is held to exceed human
+      understanding.
+  - key: will_distinction
+    label: Distinction within the divine will
+    description: >-
+      The horns describe different aspects of what God wills (what he decrees
+      as against what he commands or desires).
+  - key: scope_distinction
+    label: Scope distinction
+    description: >-
+      The horns have different subjects, audiences, conditions or senses, so
+      they do not meet; an exception clause in one text is the usual closer.
+  - key: conditional_prophecy
+    label: Conditional prophecy
+    description: >-
+      A prediction depended on conditions that were not met, so its
+      non-fulfilment does not falsify it.
+  - key: multiple_accounts
+    label: Multiple accounts
+    description: >-
+      Accounts of one event differ in what they emphasise, not in what they
+      assert.
+  - key: accommodation
+    label: Accommodation
+    description: >-
+      A text speaks in terms its first hearers could grasp, not as a literal or
+      complete description.

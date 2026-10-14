@@ -48,6 +48,7 @@ from research_engine.services.ingestion.chunking.whole_or_paragraph import (
 )
 from research_engine.services.ingestion.pipeline import CORE_CHUNKERS
 from research_engine.services.text.sections import sections_from_markdown
+from research_engine_sdk.units import UnitWindowChunker
 
 pytestmark = pytest.mark.unit
 
@@ -67,6 +68,8 @@ def text_chunkers() -> list[Any]:
         WholeOrParagraphChunker(),
         StructuralChunker(max_tokens=20, overlap_tokens=5),
         StructuralChunker(),
+        UnitWindowChunker(window_tokens=20),
+        UnitWindowChunker(),
     ]
 
 

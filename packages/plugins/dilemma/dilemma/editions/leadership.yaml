@@ -1,0 +1,226 @@
+group: leadership
+title: Post-Smith leadership and official statements
+brief: >-
+  Journal of Discourses, Conference Reports, First Presidency statements,
+  the Gospel Topics essays (every recoverable revision, e.g. from the Wayback
+  Machine) and church-published reference works. Attach to the Journal of
+  Discourses the authority caveats the church itself raises — they feed the
+  "speaking as a man" hatch. Church website content is © Intellectual Reserve:
+  private research use only, and respect its terms and robots.txt.
+sources:
+  - key: journal-of-discourses
+    title: Journal of Discourses (26 vols, 1854–1886)
+    work: journal-of-discourses
+    date_published: "1854-1886"
+    acquire: {method: scrape, license: public domain (verify the copy's terms),
+              notes: "archive.org scans volume by volume; units are paragraphs, located by volume and page."}
+    verify: [url, OCR accuracy, page breaks preserved]
+
+  - key: jd-1852-04-09-young
+    title: >-
+      Brigham Young, "Self-Government—Mysteries, etc.", 9 April 1852,
+      Journal of Discourses 1:46–53
+    work: jd-1852-04-09-young
+    author: Brigham Young
+    date_composed: "1852-04-09"
+    date_published: "1854"
+    acquire:
+      method: api
+      url: https://en.wikisource.org/wiki/Journal_of_Discourses/Volume_1/Self-Government—Mysteries,_etc.
+      license: public domain (1854); Wikisource transcription under CC BY-SA
+      notes: >-
+        Wikisource's transcription of the 1854 Liverpool printing, read through
+        the MediaWiki API. One unit per paragraph, located by volume and page.
+    select: {pages: [46, 53]}
+    expect: {discourse: 1}
+    verify: [transcription against the 1854 scan, the printed heading (kept only in the page header)]
+
+  - key: conference-reports-historical
+    title: Conference Reports (historical, through 1970)
+    work: conference-reports
+    acquire: {method: scrape, notes: archive.org scans.}
+    verify: [url, license per year, OCR accuracy]
+
+  - key: general-conference-1971-present
+    title: General Conference talks, 1971–present
+    work: general-conference
+    date_published: "1971-"
+    acquire: {method: manual, url: https://www.churchofjesuschrist.org,
+              license: "© Intellectual Reserve — private research use only"}
+    verify: [terms of use, robots.txt]
+
+  - key: gc-1976-10-kimball-our-own-liahona
+    title: Spencer W. Kimball, "Our Own Liahona", October 1976 general conference
+    work: gc-1976-10-kimball-our-own-liahona
+    author: Spencer W. Kimball
+    date_composed: "1976-10-03"
+    date_published: "1976-11"
+    acquire:
+      method: manual
+      url: https://www.churchofjesuschrist.org/study/general-conference/1976/10/our-own-liahona?lang=eng
+      license: "© Intellectual Reserve — private research use only"
+      notes: >-
+        The Church's terms forbid automated access but allow personal
+        downloads: the operator saves the page as HTML into the inbox.
+    verify: [that this is the address the gold set means, exact wording]
+
+  - key: fp-origin-of-man-1909
+    title: '"The Origin of Man", First Presidency (1909)'
+    work: fp-origin-of-man
+    date_published: "1909"
+    acquire: {method: scrape, notes: Improvement Era printing; archive.org or church sources.}
+    verify: [url, license]
+
+  - key: fp-father-and-son-1916
+    title: '"The Father and the Son: A Doctrinal Exposition", First Presidency and Twelve (1916)'
+    work: fp-father-and-son
+    date_published: "1916"
+    acquire: {method: scrape, notes: Improvement Era printing; archive.org or church sources.}
+    verify: [url, license]
+
+  # --- Gospel Topics essays ---------------------------------------------------
+  - key: gte-book-of-mormon-translation
+    title: 'Gospel Topics essay: "Book of Mormon Translation"'
+    work: gte-book-of-mormon-translation
+    acquire: {method: manual, url: https://www.churchofjesuschrist.org,
+              license: "© Intellectual Reserve — private research use only",
+              notes: Store each recoverable revision as its own edition (Wayback Machine).}
+    verify: [terms of use, revision history]
+
+  - key: gte-book-of-abraham
+    title: 'Gospel Topics essay: "Translation and Historicity of the Book of Abraham"'
+    work: gte-book-of-abraham
+    acquire:
+      method: manual
+      url: https://www.churchofjesuschrist.org/study/manual/gospel-topics-essays/translation-and-historicity-of-the-book-of-abraham?lang=eng
+      license: "© Intellectual Reserve — private research use only"
+      notes: >-
+        The Church's terms forbid automated access but allow personal
+        downloads: the operator saves the page as HTML into the inbox. Earlier
+        revisions, where they matter, come from the Wayback Machine the same way.
+    verify: [terms of use, revision history]
+
+  - key: gte-first-vision-accounts
+    title: 'Gospel Topics essay: "First Vision Accounts"'
+    work: gte-first-vision-accounts
+    acquire:
+      method: manual
+      url: https://www.churchofjesuschrist.org/study/manual/gospel-topics-essays/first-vision-accounts?lang=eng
+      license: "© Intellectual Reserve — private research use only"
+      notes: >-
+        The Church's terms forbid automated access but allow personal
+        downloads: the operator saves the page as HTML into the inbox. Earlier
+        revisions, where they matter, come from the Wayback Machine the same way.
+    verify: [terms of use, revision history]
+
+  - key: gte-becoming-like-god
+    title: 'Gospel Topics essay: "Becoming Like God"'
+    work: gte-becoming-like-god
+    acquire:
+      method: manual
+      url: https://www.churchofjesuschrist.org/study/manual/gospel-topics-essays/becoming-like-god?lang=eng
+      license: "© Intellectual Reserve — private research use only"
+      notes: >-
+        The Church's terms forbid automated access but allow personal
+        downloads: the operator saves the page as HTML into the inbox. Earlier
+        revisions, where they matter, come from the Wayback Machine the same way.
+    verify: [terms of use, revision history]
+
+  - key: gte-race-and-the-priesthood
+    title: 'Gospel Topics essay: "Race and the Priesthood"'
+    work: gte-race-and-the-priesthood
+    acquire:
+      method: manual
+      url: https://www.churchofjesuschrist.org/study/manual/gospel-topics-essays/race-and-the-priesthood?lang=eng
+      license: "© Intellectual Reserve — private research use only"
+      notes: >-
+        The Church's terms forbid automated access but allow personal
+        downloads: the operator saves the page as HTML into the inbox. Earlier
+        revisions, where they matter, come from the Wayback Machine the same way.
+    verify: [terms of use, revision history]
+
+  - key: gte-plural-marriage
+    title: 'Gospel Topics essay: "Plural Marriage in Kirtland and Nauvoo"'
+    work: gte-plural-marriage
+    acquire:
+      method: manual
+      url: https://www.churchofjesuschrist.org/study/manual/gospel-topics-essays/plural-marriage-in-kirtland-and-nauvoo?lang=eng
+      license: "© Intellectual Reserve — private research use only"
+      notes: >-
+        The Church's terms forbid automated access but allow personal
+        downloads: the operator saves the page as HTML into the inbox. Earlier
+        revisions, where they matter, come from the Wayback Machine the same way.
+    verify: [which essays make up the series, terms of use, revision history]
+
+  - key: gte-bom-dna
+    title: 'Gospel Topics essay: "Book of Mormon and DNA Studies"'
+    work: gte-bom-dna
+    acquire: {method: manual, url: https://www.churchofjesuschrist.org,
+              license: "© Intellectual Reserve — private research use only",
+              notes: Store each recoverable revision (Wayback Machine).}
+    verify: [terms of use, revision history]
+
+  # --- Church-published works ------------------------------------------------
+  - key: gospel-principles
+    title: Gospel Principles (manual)
+    work: gospel-principles
+    acquire: {method: manual, url: https://www.churchofjesuschrist.org,
+              license: "© Intellectual Reserve — private research use only"}
+    verify: [edition, terms of use]
+
+  - key: teachings-of-presidents
+    title: Teachings of Presidents of the Church (series)
+    work: teachings-of-presidents
+    acquire: {method: manual, url: https://www.churchofjesuschrist.org,
+              license: "© Intellectual Reserve — private research use only",
+              notes: One edition entry per volume once the series is enumerated.}
+    verify: [volume list, terms of use]
+
+  - key: talmage-jesus-the-christ-1915
+    title: Jesus the Christ (James E. Talmage, 1915)
+    work: jesus-the-christ
+    author: James E. Talmage
+    date_published: "1915"
+    acquire: {method: scrape, license: public domain (1915) — verify the copy's terms,
+              notes: archive.org or Project Gutenberg.}
+    verify: [url]
+
+  - key: talmage-articles-of-faith-1899
+    title: The Articles of Faith (James E. Talmage, 1899)
+    work: talmage-articles-of-faith
+    author: James E. Talmage
+    date_published: "1899"
+    acquire: {method: scrape, license: public domain (1899) — verify the copy's terms,
+              notes: archive.org or Project Gutenberg.}
+    verify: [url]
+
+  - key: lds-bible-dictionary
+    title: LDS Bible Dictionary
+    work: lds-bible-dictionary
+    acquire: {method: manual, url: https://www.churchofjesuschrist.org,
+              license: "© Intellectual Reserve — private research use only"}
+    verify: [edition, terms of use]
+
+  - key: jfs-doctrines-of-salvation
+    title: Doctrines of Salvation (Joseph Fielding Smith)
+    work: doctrines-of-salvation
+    author: Joseph Fielding Smith
+    date_published: "1954-1956"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright; print only., suggest: purchase_print}
+
+  - key: mcconkie-mormon-doctrine-1958
+    title: Mormon Doctrine (Bruce R. McConkie, first edition 1958)
+    work: mormon-doctrine
+    author: Bruce R. McConkie
+    date_published: "1958"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright; print only. Diff against the 1966 edition once both are in., suggest: purchase_print}
+
+  - key: mcconkie-mormon-doctrine-1966
+    title: Mormon Doctrine (Bruce R. McConkie, second edition 1966)
+    work: mormon-doctrine
+    author: Bruce R. McConkie
+    date_published: "1966"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright; print only., suggest: purchase_print}

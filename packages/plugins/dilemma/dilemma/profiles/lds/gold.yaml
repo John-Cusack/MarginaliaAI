@@ -1,0 +1,162 @@
+# Gold pairs and negatives for this profile — DRAFT: the items come from the
+# brief's candidates; the splits, negatives and `famous` flags are proposals
+# for the operator to confirm before any tuning.
+#
+# `split: tune` items may tune thresholds; `split: test` items never do. Every
+# locator is checked against its loaded edition; an item whose `requires` are
+# not loaded is skipped with a note, never silently dropped. Negatives look
+# contradictory but are not by the tradition's own lights; they measure
+# precision. Nearly every positive here is famous — in any model's training
+# data — so lesser-known pairs and planted pairs carry the real measurement.
+items:
+  - id: lds-01
+    split: tune
+    kind: contradiction
+    pair_type: internal
+    famous: true
+    a: {edition: lectures-on-faith-1835, locator: "Lecture 5:2"}
+    b: {edition: dc-2013, locator: "D&C 130:22"}
+    notes: >-
+      The Father "a personage of spirit" against "a body of flesh and bones as
+      tangible as man's". Co-canonical 1880–1921: section 130 entered the 1876
+      edition, canonized in 1880; the lectures left in 1921.
+
+  - id: lds-02
+    split: test
+    kind: contradiction
+    pair_type: internal
+    famous: true
+    a:
+      - {edition: bom-2013, locator: "Alma 11:26-29"}
+      - {edition: bom-2013, locator: "Mosiah 15:1-5"}
+      - {edition: bom-2013, locator: "Moroni 8:18"}
+      - {edition: bom-2013, locator: "Mormon 9:9-10"}
+    b:
+      - {edition: kfd-bullock, locator: "God himself was once as we are now"}
+    notes: >-
+      One God, unchangeable from eternity to eternity, against God having once
+      been a man. The KFD locator is a phrase to find in each report.
+
+  - id: lds-03
+    split: test
+    kind: contradiction
+    pair_type: edition_change
+    famous: true
+    a: {edition: bom-1830, locator: "1 Nephi 11:18"}
+    b: {edition: bom-1837, locator: "1 Nephi 11:18"}
+    requires: [bom-1830, bom-1837]
+    notes: '"the mother of God" became "the mother of the Son of God".'
+
+  - id: lds-04
+    split: tune
+    kind: contradiction
+    pair_type: edition_change
+    famous: true
+    a: {edition: boc-1833, locator: "Book of Commandments 4:2"}
+    b: {edition: dc-2013, locator: "D&C 5:4"}
+    requires: [boc-1833]
+
+  - id: lds-05
+    split: tune
+    kind: contradiction
+    pair_type: internal
+    famous: true
+    a: {edition: bom-2013, locator: "Jacob 2:23-27"}
+    b: {edition: dc-2013, locator: "D&C 132:38-39"}
+    notes: David and Solomon's many wives "abominable", against given them of God.
+
+  - id: lds-06
+    split: test
+    kind: contradiction
+    pair_type: internal
+    famous: true
+    a: {edition: jd-1852-04-09-young, locator: "JD 1:50"}
+    b: {edition: gc-1976-10-kimball-our-own-liahona, locator: "Adam-God theory"}
+    notes: The Kimball locator is a phrase to find in the talk.
+
+  - id: lds-07
+    split: test
+    kind: contradiction
+    pair_type: internal
+    famous: true
+    a: {edition: gte-race-and-the-priesthood, locator: "disavows the theories"}
+    b: {edition: gte-race-and-the-priesthood, locator: "rationales"}
+    requires: [priesthood-ban-statements]
+    notes: >-
+      The rationale statements themselves (1949 and 1969 First Presidency
+      statements, sermons) are not yet in the catalog; skipped until they are.
+
+  - id: lds-08
+    split: test
+    kind: contradiction
+    pair_type: failed_prophecy
+    famous: true
+    a: {edition: dc-2013, locator: "D&C 84:2-5"}
+    b: {edition: dc-2013, locator: "D&C 84:2-5"}
+    requires: [fact]
+    notes: Needs a `fact` source on the temple site; scored apart from claim pairs.
+
+  - id: lds-09
+    split: tune
+    kind: contradiction
+    pair_type: parallel_anomaly
+    famous: true
+    a: {edition: bom-2013, locator: "1 Nephi 13:26-29"}
+    b: {edition: kjv, locator: "Isaiah 2-14"}
+    requires: [alignments]
+    notes: >-
+      Book of Mormon chapters reproducing KJV-specific readings, italics
+      included (see parallels.yaml). Scored apart from claim pairs.
+
+  - id: lds-10
+    split: test
+    kind: contradiction
+    pair_type: internal
+    famous: true
+    a: {edition: pgp-2013, locator: "Abraham 1:1"}
+    b: {edition: gte-book-of-abraham, locator: "translation"}
+    notes: >-
+      Translation claims for the Book of Abraham against the essay's account
+      of the papyri. Verify how the source represents the book's heading,
+      which carries the strongest translation claim.
+
+  # --- Negatives: apparent conflict the tradition resolves in its own texts ---
+  - id: lds-n01
+    split: tune
+    kind: negative
+    pair_type: internal
+    a: {edition: bom-2013, locator: "2 Nephi 2:25"}
+    b: {edition: bom-2013, locator: "Mosiah 3:19"}
+    notes: The Fall necessary, against the natural man an enemy to God.
+
+  - id: lds-n02
+    split: tune
+    kind: negative
+    pair_type: internal
+    a: {edition: bom-2013, locator: "Alma 40:11-14"}
+    b: {edition: kjv, locator: "Luke 23:43"}
+    notes: '"Paradise" read as the spirit world in both.'
+
+  - id: lds-n03
+    split: test
+    kind: negative
+    pair_type: internal
+    a: {edition: kjv, locator: "Matthew 22:30"}
+    b: {edition: dc-2013, locator: "D&C 132:15-16"}
+    notes: Section 132 itself answers the Matthew text.
+
+  - id: lds-n04
+    split: test
+    kind: negative
+    pair_type: internal
+    a: {edition: dc-2013, locator: "D&C 19:6-7"}
+    b: {edition: bom-2013, locator: "Mosiah 2:38-39"}
+    notes: '"Endless torment" glossed in D&C 19:10-12 as God''s punishment.'
+
+  - id: lds-n05
+    split: test
+    kind: negative
+    pair_type: internal
+    a: {edition: pgp-2013, locator: "Joseph Smith—History 1:17"}
+    b: {edition: gte-first-vision-accounts, locator: "different emphases"}
+    notes: Two accounts of one vision that differ in emphasis only.

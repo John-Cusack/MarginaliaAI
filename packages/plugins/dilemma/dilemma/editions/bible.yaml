@@ -1,0 +1,78 @@
+group: bible
+title: Bible and textual witnesses
+brief: >-
+  A KJV that preserves the italicized (supplied) words — essential to the Book
+  of Mormon / KJV analysis, so the italics become `supplied` marks, never lost
+  in normalization. The Hebrew Masoretic text is already in the corpus as WLC.
+  Greek NT, an openly licensed Septuagint if one exists, and the Great Isaiah
+  Scroll. The KJV is LDS rank-1 scripture (with the Articles of Faith 8
+  caveat), and an outside text for any profile whose scripture names its
+  books.
+sources:
+  - key: kjv
+    title: King James Version (1769 Oxford text) with supplied words marked
+    work: bible
+    date_published: "1769"
+    acquire:
+      method: bulk_download
+      url: https://ebible.org/Scriptures/eng-kjv2006_usfm.zip
+      license: >-
+        public domain outside the UK (eBible.org: the Crown's letters patent
+        bind only UK printing)
+      notes: >-
+        eBible.org's eng-kjv2006: the standardized 1769 text, protocanon only.
+        Supplied (italic) words become `supplied` marks if the USFM marks them
+        with \add … \add*; Strong's tagging and footnotes are dropped from the
+        text, never folded into it.
+    expect: {chapter: 1189, verse: 31102}
+    verify: [italics preserved as supplied marks]
+
+  - key: WLC
+    title: Westminster Leningrad Codex
+    work: hebrew-bible
+    language: he
+    existing: true
+    acquire:
+      method: bulk_download
+      url: https://github.com/openscriptures/morphhb
+      license: public domain (morphhb)
+      notes: Already ingested (929 chapters, verse nodes, `edition_key='WLC'`). Register only.
+    expect: {chapter: 929}
+
+  - key: sblgnt
+    title: SBL Greek New Testament
+    work: greek-new-testament
+    language: grc
+    acquire:
+      method: bulk_download
+      url: https://sblgnt.com
+      notes: Verify the current license and the distribution format.
+    expect: {book: 27}
+    verify: [license, format]
+
+  - key: lxx
+    title: Septuagint (an openly licensed edition)
+    work: septuagint
+    language: grc
+    optional: true
+    acquire: {method: bulk_download,
+              notes: Find an openly licensed electronic text; record exactly which edition it is.}
+    verify: [an openly licensed text exists, edition identity]
+
+  - key: dss-1qisaa
+    title: The Great Isaiah Scroll (1QIsaᵃ) — transcription and images
+    work: great-isaiah-scroll
+    language: he
+    acquire:
+      method: scrape
+      url: https://www.deadseascrolls.org.il
+      notes: Leon Levy Dead Sea Scrolls Digital Library and the Israel Museum's digital Dead Sea Scrolls; verify terms for each.
+    verify: [terms of use, transcription source and its license]
+
+  - key: dss-bible-abegg
+    title: "The Dead Sea Scrolls Bible"
+    work: dead-sea-scrolls-bible
+    author: Martin Abegg Jr., Peter Flint and Eugene Ulrich
+    date_published: "1999"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright; print only., suggest: purchase_print}

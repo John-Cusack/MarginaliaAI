@@ -239,6 +239,14 @@ sandbox against malicious Python. Install and enable only trusted plugins.
 Mutable plugin state is passed through `PluginContext.data_dir` under
 `~/.research-engine/plugin-data/`, never stored in site-packages.
 
+Any core or plugin tool also runs from the shell, with the same scoped clients
+it gets over MCP and without the server running:
+
+```bash
+research-engine tool call dilemma_blocked_queue --json '{"profile": "lds"}'
+research-engine tool call find_passages --json '{"query": "covenant"}'
+```
+
 ### Writing a Plugin
 
 A plugin keeps its schema-v2 manifest inside its top-level import package and

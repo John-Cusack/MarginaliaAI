@@ -151,13 +151,214 @@ class MockLLMClient:
         return {"records": []}
 
 
+class MockBibliographyClient:
+    """An in-memory ``BibliographyClient`` that keeps what it is told.
+
+    Mirrors the core adapter's rules that a plugin can trip over: a
+    re-registration without ``status`` keeps the source's progress, a blocked
+    source needs a reason, and nothing but ``register_source`` creates one.
+    """
+
+    _STATUSES = frozenset({"planned", "acquired", "loaded", "blocked", "failed"})
+
+    def __init__(self) -> None:
+        self.sources: dict[str, dict[str, Any]] = {}
+
+    async def register_source(
+        self, edition_key: str, *, status: str | None = None, **declared: Any
+    ) -> dict[str, Any]:
+        source = self.sources.setdefault(
+            edition_key,
+            {
+                "edition_key": edition_key,
+                "status": "planned",
+                "collection": "main",
+                "artifacts": [],
+                "coverage": [],
+            },
+        )
+        # Partial, like the real adapter: what is not passed is not erased.
+        source.update({k: v for k, v in declared.items() if k != "csl" and v is not None})
+        if status is not None:
+            if status not in self._STATUSES:
+                raise ValueError(f"unknown status {status!r}")
+            if status == "blocked" and not declared.get("blocked_reason"):
+                raise ValueError("a blocked acquisition needs a blocked_reason")
+            source["status"] = status
+        return self._public(source)
+
+    async def mark_blocked(
+        self, edition_key: str, *, reason: str, suggested_acquisition: str, **declared: Any
+    ) -> dict[str, Any]:
+        return await self.register_source(
+            edition_key,
+            status="blocked",
+            blocked_reason=reason,
+            suggested_acquisition=suggested_acquisition,
+            **declared,
+        )
+
+    async def set_status(
+        self, edition_key: str, status: str, *, retrieved_at: Any = None
+    ) -> dict[str, Any]:
+        source = self._require(edition_key)
+        if status == "blocked":
+            raise ValueError("use mark_blocked to block a source: it needs a reason")
+        if status not in self._STATUSES:
+            raise ValueError(f"unknown status {status!r}")
+        source["status"] = status
+        source["blocked_reason"] = None
+        if retrieved_at is not None:
+            source["retrieved_at"] = retrieved_at
+        return self._public(source)
+
+    async def attach_artifact(
+        self, edition_key: str, path: Any, *, sha256: str | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
+        artifact = {"path": str(path), "sha256": sha256, **kwargs}
+        self._require(edition_key)["artifacts"].append(artifact)
+        return artifact
+
+    async def report_coverage(
+        self,
+        edition_key: str,
+        *,
+        unit: str,
+        loaded_units: int,
+        checker: str,
+        checker_version: str,
+        expected_units: int | None = None,
+        anomalies: list[Any] | None = None,
+    ) -> dict[str, Any]:
+        anomalies = list(anomalies or [])
+        report = {
+            "unit": unit,
+            "loaded_units": loaded_units,
+            "expected_units": expected_units,
+            "anomalies": anomalies,
+            "ok": (expected_units is None or loaded_units == expected_units)
+            and not anomalies,
+            "checker": checker,
+            "checker_version": checker_version,
+        }
+        self._require(edition_key)["coverage"].append(report)
+        return report
+
+    async def get_source(self, edition_key: str) -> dict[str, Any] | None:
+        source = self.sources.get(edition_key)
+        return dict(source) if source is not None else None
+
+    async def list_sources(
+        self, *, status: str | None = None, collection: str | None = None
+    ) -> list[dict[str, Any]]:
+        return [
+            self._public(source)
+            for key, source in sorted(self.sources.items())
+            if (status is None or source["status"] == status)
+            and (collection is None or source.get("collection") == collection)
+        ]
+
+    def _require(self, edition_key: str) -> dict[str, Any]:
+        if edition_key not in self.sources:
+            raise LookupError(
+                f"edition {edition_key!r} has no acquisition; register_source first"
+            )
+        return self.sources[edition_key]
+
+    @staticmethod
+    def _public(source: dict[str, Any]) -> dict[str, Any]:
+        return {
+            k: v for k, v in source.items()
+            if k not in {"artifacts", "coverage"}
+        }
+
+
+class MockProfileClient:
+    """An in-memory ``ProfileClient``.
+
+    Mirrors the core adapter's rules: every role names a known edition (pass
+    ``editions`` to say which exist, or ``None`` to accept any), loading
+    replaces a profile's roles whole, and a run is closed once.
+    """
+
+    ROLES = frozenset({"binding", "external", "reference", "defense", "critical", "fact"})
+
+    def __init__(self, editions: set[str] | None = None) -> None:
+        self.editions = editions
+        self.profiles: dict[str, dict[str, Any]] = {}
+        self.runs: dict[str, dict[str, Any]] = {}
+
+    async def load_profile(
+        self,
+        key: str,
+        *,
+        version: int,
+        profile_hash: str,
+        roles: list[dict[str, Any]],
+        title: str | None = None,
+        settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        for role in roles:
+            if role.get("role") not in self.ROLES:
+                raise ValueError(f"unknown role {role.get('role')!r}")
+            if self.editions is not None and role["edition_key"] not in self.editions:
+                raise LookupError(f"edition {role['edition_key']!r} is not registered")
+        self.profiles[key] = {
+            "key": key,
+            "version": version,
+            "profile_hash": profile_hash,
+            "title": title,
+            "settings": dict(settings or {}),
+            "roles": [dict(role) for role in roles],
+        }
+        return {**self._public(key), "roles": len(roles)}
+
+    async def get_profile(self, key: str, *, on: Any = None) -> dict[str, Any] | None:
+        if key not in self.profiles:
+            return None
+        return {**self._public(key), "roles": [dict(r) for r in self.profiles[key]["roles"]]}
+
+    async def start_run(
+        self, profile_key: str, *, stage: str, config: dict[str, Any] | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
+        if profile_key not in self.profiles:
+            raise LookupError(f"profile {profile_key!r} is not loaded")
+        run_id = f"run-{len(self.runs) + 1}"
+        self.runs[run_id] = {
+            "id": run_id,
+            "profile_key": profile_key,
+            "stage": stage,
+            "status": "running",
+            "profile_hash": self.profiles[profile_key]["profile_hash"],
+            "config": dict(config or {}),
+            **kwargs,
+        }
+        return dict(self.runs[run_id])
+
+    async def finish_run(
+        self, run_id: Any, *, status: str = "finished", **kwargs: Any
+    ) -> dict[str, Any]:
+        run = self.runs.get(str(run_id))
+        if run is None or run["status"] != "running":
+            raise ValueError(f"run {run_id} does not exist or is already closed")
+        if status not in {"finished", "failed"}:
+            raise ValueError("finish a run as finished or failed, not running")
+        run.update({"status": status, **{k: v for k, v in kwargs.items() if v is not None}})
+        return dict(run)
+
+    def _public(self, key: str) -> dict[str, Any]:
+        return {k: v for k, v in self.profiles[key].items() if k != "roles"}
+
+
 __all__ = [
     "ABSOLUTE_MAX_TOKENS",
     "CONTRACT_TEXTS",
     "MAX_AMPLIFICATION",
     "OVERSHOOT_TOLERANCE",
+    "MockBibliographyClient",
     "MockCorpusClient",
     "MockLLMClient",
+    "MockProfileClient",
     "assert_chunker_contract",
     "call_chunker",
 ]

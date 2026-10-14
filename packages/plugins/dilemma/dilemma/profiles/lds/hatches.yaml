@@ -1,0 +1,109 @@
+# The tradition's standard responses to an apparent contradiction. Each hatch
+# is *applicable* when its triggers describe the pair, and *closed* when a
+# binding text matches one of its defeaters. These are descriptions an
+# adjudicator reads, not regular expressions; closers must be found in the
+# corpus and cited, never assumed. `known_closers` are leads, verified against
+# the loaded text before use. Each instance names its generic type from
+# hatch_types.yaml.
+hatches:
+  - key: progressive-revelation
+    type: temporal_supersession
+    name: Progressive / continuing revelation
+    description: >-
+      Later revelation supersedes or adds to earlier; the earlier text was true
+      for its time.
+    triggers:
+      - the two texts are separated in time and the later one claims revelation
+    defeaters:
+      - a binding text asserting that God, or the specific doctrine, does not change
+    known_closers: [Moroni 8:18, Mormon 9:9-10]
+
+  - key: translated-correctly
+    type: transmission_error
+    name: '"As far as it is translated correctly"'
+    description: >-
+      Articles of Faith 8 — the Bible is the word of God only as far as it is
+      translated correctly, so a Bible passage can be set aside as corrupted.
+    triggers:
+      - one horn is a Bible passage
+    defeaters:
+      - a binding text vouching for the specific Bible passage or reading
+      - the Book of Mormon or JST reproducing the passage without correction
+
+  - key: speaking-as-a-man
+    type: non_authoritative_speaker
+    name: Prophet speaking as a man / not official doctrine
+    description: >-
+      A leader's statement was personal opinion, not revelation or doctrine.
+    triggers:
+      - one horn is a sermon or statement rather than canonized scripture
+    defeaters:
+      - the statement claims revelation or prophetic authority for itself
+      - a binding text says the prophet cannot lead the church astray
+      - the statement was taught repeatedly or by multiple leaders as doctrine
+
+  - key: folk-doctrine
+    type: non_authoritative_speaker
+    name: Folk doctrine
+    description: >-
+      The teaching was popular belief among members, never official.
+    triggers:
+      - one horn is a manual, talk or popular teaching
+    defeaters:
+      - the teaching appears in rank 1–2 sources or was published by the church
+
+  - key: scribal-correction
+    type: transmission_error
+    name: Scribal, printer or grammatical correction
+    description: >-
+      An edition change fixed a transcription, printing or grammar error and
+      changed no doctrine.
+    triggers:
+      - the two horns are different editions of the same unit
+    defeaters:
+      - the change alters a doctrinal proposition, not its wording
+      - the earlier reading is attested in the original manuscript
+
+  - key: catalyst-translation
+    type: interpretive_error
+    name: Catalyst / revelatory translation
+    description: >-
+      The source document was a catalyst for revelation rather than a text
+      literally translated (chiefly the Book of Abraham).
+    triggers:
+      - one horn is a claim about what a source document says or means
+    defeaters:
+      - a binding text describing the work as a translation of the specific document
+      - contemporary statements identifying specific characters with specific meanings
+
+  - key: context-limited-commandment
+    type: scope_distinction
+    name: Context- or audience-limited commandment
+    description: >-
+      A command applied only to a particular people, time or circumstance.
+    triggers:
+      - the horns are commands addressed to different audiences or times
+    defeaters:
+      - the command is stated as universal or eternal
+    known_closers: [Jacob 2:30 (the exception clause the hatch relies on)]
+
+  - key: multiple-accounts
+    type: multiple_accounts
+    name: Multiple accounts emphasize different details
+    description: >-
+      Differing accounts of one event each emphasize different details and do
+      not contradict.
+    triggers:
+      - the horns are accounts of the same event by the same or different narrators
+    defeaters:
+      - the accounts make incompatible claims about the same detail
+
+  - key: conditional-prophecy
+    type: conditional_prophecy
+    name: Conditional prophecy
+    description: >-
+      The prophecy's fulfilment depended on conditions the people did not meet.
+    triggers:
+      - one horn is a dated or located prophecy and the other its non-fulfilment
+    defeaters:
+      - the prophecy is stated unconditionally or with a fixed time

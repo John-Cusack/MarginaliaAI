@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ExcludeConstraint
 
 from research_engine.adapters.storage.postgres.schema import metadata
 
@@ -115,12 +116,19 @@ async def test_every_index_the_database_has_is_declared(engine: AsyncEngine) -> 
 
 
 def _constraint_index_names(table: sa.Table) -> set[str]:
-    """Index names Postgres creates to back a primary key or unique constraint."""
+    """Index names Postgres creates to back a primary key, unique or exclusion
+    constraint.
+
+    An exclusion constraint is backed by an index of its own name, exactly as a
+    unique constraint is, so it is declared — as a constraint, not an index.
+    """
     names = set()
     if table.primary_key is not None and table.primary_key.columns:
         names.add(table.primary_key.name or f"{table.name}_pkey")
     for constraint in table.constraints:
-        if isinstance(constraint, sa.UniqueConstraint):
+        if isinstance(constraint, ExcludeConstraint) and constraint.name:
+            names.add(constraint.name)
+        elif isinstance(constraint, sa.UniqueConstraint):
             names.add(constraint.name or _default_unique_name(table, constraint))
     return names
 

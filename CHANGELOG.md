@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### Provenance, reader profiles, and text marks
+
+Migration `021_provenance` gives the corpus a record of where each edition
+came from:
+
+- **`bibliography.acquisitions`** — method, URL, licence and retrieval time
+  per edition, with a `blocked` status that must say why and how the source
+  could be had. Blocked rows are the scan and purchase queue.
+- **`bibliography.artifacts` / `coverage_reports`** — raw files by SHA-256
+  (computed by core, not trusted from the caller), and loaded-vs-expected
+  counts against a source's known shape.
+- **`bibliography.editions.work_key`** — the work an edition is an edition of,
+  so seven printings of one book are one text, not seven agreeing witnesses.
+- **`core.document_marks`** — ranges the node tree cannot hold: page breaks,
+  a translator's supplied words.
+
+Migration `022_dilemma_profiles` adds the `dilemma` schema. A **profile** is a
+reader's view of the library: `source_roles` gives each edition a role
+(`binding`, `external`, `reference`, `defense`, `critical`, `fact`) with a
+tier, a date window and an optional scope, and refuses the same role twice
+over overlapping dates. `runs` records the profile hash, config hash, model
+versions and counts of every run. Needs `btree_gist`, which the migration
+creates.
+
+Packs reach these through two new SDK clients granted with the existing
+`ingest` permission: `BibliographyClient` and `ProfileClient`.
+`IngestionClient.ingest_drafts` gains `parser`, `parser_version` and
+`mark_drafts`; before, every plugin document was stamped `plugin_direct 1.0`,
+which hid re-parses from `source_spans.stale()`.
+
+`research_engine_sdk.units` is a structured importer shared by every pack: it
+lays verbatim units (verses, ayat, numbered paragraphs) out as canonical text,
+nodes, windows and marks. Core's new `unit_window` chunker rebuilds those
+windows from stored text on reindex.
+
+`research-engine tool call <tool> --json '{…}'` runs any core or plugin tool
+from the shell, through the same dispatch the MCP server uses.
+`research-engine dilemma profile load|show`, `dilemma ingest`, `dilemma
+coverage` and `dilemma blocked` drive the Dilemma Finder.
+
+The workspace gains a private pack, `packages/plugins/dilemma` (not
+published): the editions catalog, the `lds` and blind `sunni_islam` profiles,
+the generic hatch types, and readers for Scriptures in JSON, USFM, Tanzil,
+Wikisource and operator-saved pages. See
+[Decision 003](docs/design/decision-003-dilemma-finder-v2.md).
+
 ### GPU embed server idles at zero instead of holding the card
 
 `research-engine embed-server` takes `--idle-exit-after` (default 900 s) and

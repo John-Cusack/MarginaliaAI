@@ -1,0 +1,158 @@
+# The Church of Jesus Christ of Latter-day Saints, as a reader of the library.
+#
+# Each role says what an edition is to this profile: `binding` (T1 standard
+# works as canonized at the date in question; T2 First Presidency and other
+# formal statements; T3 sermons of prophets and apostles), `reference` (T4
+# manuals and reference works), `defense` (T5 faithful apologetics) or
+# `critical` (T6, leads and evaluation only). `valid_from` is inclusive and
+# `valid_to` exclusive; a window left open is unknown, not unlimited — the
+# notes say what still needs verifying.
+key: lds
+version: 1
+title: The Church of Jesus Christ of Latter-day Saints
+internal_tiers: [T1, T2, T3]
+cost_notes: >-
+  Horns that are both T1 and canonical at the same date cost the most. Horns
+  that are T3 against T1 are partly absorbed by the "speaking as a man" hatch.
+roles:
+  # --- Canon and its editions ---
+  - {edition: bom-1830, role: binding, tier: T1, valid_from: 1830-04-06,
+     notes: "Canon from the church's organization; this printing was the text then in use. End of its currency not set — verify."}
+  - {edition: bom-1837, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: bom-1840, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: bom-1879, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: bom-1920, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: bom-1981, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: bom-2013, role: binding, tier: T1, valid_from: 2013-01-01,
+     notes: "Approximate start: the 2013 edition's release year — verify."}
+  - {edition: boc-1833, role: binding, tier: T1,
+     notes: "Partial printing destroyed in 1833; its standing as canon before 1835 — verify."}
+  - {edition: dc-1835, role: binding, tier: T1, valid_from: 1835-08-17,
+     notes: "Accepted by a general assembly in Kirtland, 17 August 1835."}
+  - {edition: dc-1844, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: dc-1876, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: dc-1921, role: binding, tier: T1,
+     notes: "Window of currency not set — verify."}
+  - {edition: dc-2013, role: binding, tier: T1, valid_from: 2013-01-01,
+     notes: "Approximate start — verify."}
+  - {edition: pgp-1880, role: binding, tier: T1, valid_from: 1880-10-10,
+     notes: "Canonized at the October 1880 general conference."}
+  - {edition: pgp-2013, role: binding, tier: T1, valid_from: 2013-01-01,
+     notes: "Approximate start — verify."}
+  - {edition: boa-times-and-seasons-1842, role: binding, tier: T1, valid_from: 1880-10-10,
+     notes: "Canonized with the Pearl of Great Price in 1880; before that its standing — verify."}
+  - {edition: od-1, role: binding, tier: T2, valid_from: 1890-10-06,
+     notes: "Sustained at the October 1890 conference; printed in the D&C since — verify edition."}
+  - {edition: od-2, role: binding, tier: T2, valid_from: 1978-09-30,
+     notes: "Sustained 30 September 1978."}
+  - {edition: jst-manuscripts, role: binding, tier: T3,
+     notes: "Excerpts in LDS Bible footnotes; Moses and JS–Matthew canonized in the PGP — verify standing of the rest."}
+
+  # --- Joseph Smith and early-church documents ---
+  - {edition: jsp-journals, role: binding, tier: T3,
+     notes: "Joseph Smith's own records; rank by genre — verify per document."}
+  - {edition: jsp-documents, role: binding, tier: T3,
+     notes: "Rank by genre — verify per document."}
+  - {edition: jsp-histories, role: binding, tier: T3}
+  - {edition: first-vision-1832, role: binding, tier: T3}
+  - {edition: first-vision-1835, role: binding, tier: T3}
+  - {edition: first-vision-1838, role: binding, tier: T3,
+     notes: "The manuscript; the canonized text is Joseph Smith–History in the PGP."}
+  - {edition: first-vision-1842-wentworth, role: binding, tier: T3}
+  - {edition: kfd-bullock, role: binding, tier: T3}
+  - {edition: kfd-richards, role: binding, tier: T3}
+  - {edition: kfd-woodruff, role: binding, tier: T3}
+  - {edition: kfd-clayton, role: binding, tier: T3}
+  - {edition: sermon-in-the-grove-1844, role: binding, tier: T3}
+  - {edition: words-of-joseph-smith, role: binding, tier: T3,
+     notes: "Compiles the contemporary reports of Joseph Smith's Nauvoo discourses."}
+  - {edition: lectures-on-faith-1835, role: binding, tier: T1, valid_from: 1835-08-17, valid_to: 1921-01-01,
+     notes: "Canon as part of the D&C until the 1921 edition dropped them; end date approximate — verify."}
+  - {edition: history-of-the-church, role: binding, tier: T3}
+
+  # --- Later leadership and official statements ---
+  - {edition: journal-of-discourses, role: binding, tier: T3,
+     notes: "The church distinguishes these sermons from doctrine; capture its statements on the JD's standing."}
+  - {edition: jd-1852-04-09-young, role: binding, tier: T3,
+     notes: "One discourse of the Journal of Discourses, loaded on its own for the gold set."}
+  - {edition: conference-reports-historical, role: binding, tier: T3}
+  - {edition: general-conference-1971-present, role: binding, tier: T3}
+  - {edition: gc-1976-10-kimball-our-own-liahona, role: binding, tier: T3}
+  - {edition: fp-origin-of-man-1909, role: binding, tier: T2}
+  - {edition: fp-father-and-son-1916, role: binding, tier: T2}
+  - {edition: gte-book-of-mormon-translation, role: binding, tier: T2}
+  - {edition: gte-book-of-mormon-translation, role: defense, tier: T5,
+     notes: "The essays are the church's own answer to the questions they address."}
+  - {edition: gte-book-of-abraham, role: binding, tier: T2}
+  - {edition: gte-book-of-abraham, role: defense, tier: T5,
+     notes: "The essays are the church's own answer to the questions they address."}
+  - {edition: gte-first-vision-accounts, role: binding, tier: T2}
+  - {edition: gte-first-vision-accounts, role: defense, tier: T5,
+     notes: "The essays are the church's own answer to the questions they address."}
+  - {edition: gte-becoming-like-god, role: binding, tier: T2}
+  - {edition: gte-becoming-like-god, role: defense, tier: T5,
+     notes: "The essays are the church's own answer to the questions they address."}
+  - {edition: gte-race-and-the-priesthood, role: binding, tier: T2}
+  - {edition: gte-race-and-the-priesthood, role: defense, tier: T5,
+     notes: "The essays are the church's own answer to the questions they address."}
+  - {edition: gte-plural-marriage, role: binding, tier: T2}
+  - {edition: gte-plural-marriage, role: defense, tier: T5,
+     notes: "The essays are the church's own answer to the questions they address."}
+  - {edition: gte-bom-dna, role: binding, tier: T2}
+  - {edition: gte-bom-dna, role: defense, tier: T5,
+     notes: "The essays are the church's own answer to the questions they address."}
+  - {edition: gospel-principles, role: reference, tier: T4}
+  - {edition: teachings-of-presidents, role: reference, tier: T4}
+  - {edition: talmage-jesus-the-christ-1915, role: reference, tier: T4}
+  - {edition: talmage-articles-of-faith-1899, role: reference, tier: T4}
+  - {edition: lds-bible-dictionary, role: reference, tier: T4}
+  - {edition: jfs-doctrines-of-salvation, role: reference, tier: T4,
+     notes: "Compiled by Bruce R. McConkie; standing as a reference work — verify."}
+  - {edition: mcconkie-mormon-doctrine-1958, role: reference, tier: T4,
+     notes: "Published by Bookcraft, not the church; its standing — verify."}
+  - {edition: mcconkie-mormon-doctrine-1966, role: reference, tier: T4,
+     notes: "Published by Bookcraft, not the church; its standing — verify."}
+
+  # --- Bible ---
+  - {edition: kjv, role: binding, tier: T1, valid_from: 1830-04-06,
+     notes: "Articles of Faith 8: 'as far as it is translated correctly'."}
+
+  # --- Defense: apologetics ---
+  - {edition: fair-answers, role: defense, tier: T5}
+  - {edition: fair-conference-papers, role: defense, tier: T5}
+  - {edition: interpreter-journal, role: defense, tier: T5}
+  - {edition: farms-review, role: defense, tier: T5}
+  - {edition: journal-of-book-of-mormon-studies, role: defense, tier: T5}
+  - {edition: byu-studies-quarterly, role: defense, tier: T5}
+  - {edition: scripture-central-knowhy, role: defense, tier: T5}
+  - {edition: ces-letter-responses, role: defense, tier: T5}
+  - {edition: gee-introduction-to-boa, role: defense, tier: T5}
+  - {edition: givens-by-the-hand-of-mormon, role: defense, tier: T5}
+  - {edition: bushman-rough-stone-rolling, role: defense, tier: T5}
+  - {edition: nibley-book-of-abraham, role: defense, tier: T5}
+  - {edition: skousen-analysis-of-textual-variants, role: defense, tier: T5}
+
+  # --- Critical scholarship ---
+  - {edition: ritner-jsp-egyptian-papyri, role: critical, tier: T6}
+  - {edition: vogel-early-mormon-documents, role: critical, tier: T6}
+  - {edition: vogel-making-of-a-prophet, role: critical, tier: T6}
+  - {edition: metcalfe-new-approaches, role: critical, tier: T6}
+  - {edition: brodie-no-man-knows, role: critical, tier: T6}
+  - {edition: palmer-insiders-view, role: critical, tier: T6}
+  - {edition: alexander-reconstruction-1980, role: critical, tier: T6}
+  - {edition: widmer-nature-of-god, role: critical, tier: T6}
+  - {edition: tanner-shadow-or-reality, role: critical, tier: T6}
+  - {edition: tanner-3913-changes, role: critical, tier: T6}
+  - {edition: dialogue-archive, role: critical, tier: T6}
+  - {edition: sunstone-archive, role: critical, tier: T6}
+  - {edition: new-mormon-challenge, role: critical, tier: T6}
+  - {edition: how-wide-the-divide, role: critical, tier: T6}
+  - {edition: ces-letter, role: critical, tier: T6}
+  - {edition: johnson-sharing-good-news, role: critical, tier: T6}

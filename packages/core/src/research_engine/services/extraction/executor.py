@@ -90,17 +90,11 @@ class ExtractionExecutor:
     ) -> ExtractionBatch:
         options = options or ExtractionOptions()
 
-        parts = schema_ref.split(":")
-        name = parts[0]
-        version = int(parts[1]) if len(parts) > 1 else 1
-        schema = await self._schemas.get_by_name_version(name, version)
-        if not schema:
-            raise ValueError(f"Schema not found: {schema_ref}")
-
+        schema, name, version = await self._resolve_schema(schema_ref)
         output_schema = build_output_schema(schema)
         record_types = record_type_definitions(schema)
         model = options.llm_model or self._default_model
-        version_key = extractor_version(schema.version, schema.prompt_template, model)
+        version_key = self._version_key(schema, model, options)
         semaphore = asyncio.Semaphore(options.concurrency)
 
         results: list[ExtractionResult] = []
@@ -126,6 +120,84 @@ class ExtractionExecutor:
             results=results, schema_name=name, schema_version=version
         )
 
+    async def import_records(
+        self,
+        records_by_passage: Mapping[UUID, list[dict]],
+        schema_ref: str,
+        *,
+        model: str,
+        options: ExtractionOptions | None = None,
+    ) -> ExtractionBatch:
+        """Store records produced outside this process, as if a model said them.
+
+        The records take exactly the path an LLM answer takes — validation
+        against their target passage, enrichment, storage under the same
+        ``extractor_version`` a live run with these options would write — so an
+        imported batch is indistinguishable downstream from an extracted one,
+        except that there is no LLM call behind it (``llm_call_id`` is None).
+        *model* is the label of whatever produced the records; it is part of
+        the cache key, because who said it is part of what was said.
+
+        There is no corrective retry: there is nobody to correct. A passage
+        whose records fail validation stores a failed row and yields a failed
+        result, as on the LLM path.
+        """
+        options = options or ExtractionOptions()
+
+        schema, name, version = await self._resolve_schema(schema_ref)
+        record_types = record_type_definitions(schema)
+        version_key = self._version_key(schema, model, options)
+        semaphore = asyncio.Semaphore(options.concurrency)
+
+        items = list(records_by_passage.items())
+        results: list[ExtractionResult] = []
+        for i in range(0, len(items), options.batch_size):
+            batch = items[i : i + options.batch_size]
+            results.extend(
+                await asyncio.gather(*[
+                    self._import_one(
+                        pid,
+                        records,
+                        schema,
+                        record_types,
+                        options,
+                        semaphore,
+                        model,
+                        version_key,
+                    )
+                    for pid, records in batch
+                ])
+            )
+
+        return ExtractionBatch(
+            results=results, schema_name=name, schema_version=version
+        )
+
+    async def _resolve_schema(
+        self, schema_ref: str
+    ) -> tuple[ExtractionSchema, str, int]:
+        parts = schema_ref.split(":")
+        name = parts[0]
+        version = int(parts[1]) if len(parts) > 1 else 1
+        schema = await self._schemas.get_by_name_version(name, version)
+        if not schema:
+            raise ValueError(f"Schema not found: {schema_ref}")
+        return schema, name, version
+
+    @staticmethod
+    def _version_key(
+        schema: ExtractionSchema, model: str, options: ExtractionOptions
+    ) -> str:
+        return extractor_version(
+            schema.version,
+            schema.prompt_template,
+            model,
+            schema_def=schema.schema_def,
+            context_before=options.context_before,
+            context_after=options.context_after,
+            entity_hints=options.entity_hints,
+        )
+
     async def _extract_one(
         self,
         passage_id: UUID,
@@ -138,28 +210,22 @@ class ExtractionExecutor:
         version_key: str,
     ) -> ExtractionResult:
         async with semaphore:
-            passage = await self._passages.get(passage_id)
-            if not passage:
-                # Nothing to write: `extractions.passage_id` is a foreign key,
-                # so there is no row this failure could hang from.
-                return ExtractionResult(
-                    passage_id=passage_id,
-                    status=ExtractionStatus.failed,
-                    error="Passage not found",
-                )
+            passage, settled = await self._passage_and_cache(
+                passage_id, schema, version_key, options
+            )
+            if settled is not None:
+                return settled
+            assert passage is not None  # settled covers the missing case
 
-            if not options.force_refresh:
-                cached = await self._extractions.get_by_key(
-                    passage_id, schema.id, version_key
-                )
-                # A cached failure is a record of what happened, not an answer.
-                # Serving it back would make a transient provider outage
-                # permanent for every passage it touched.
-                if cached and cached.status == ExtractionStatus.ok:
-                    return ExtractionResult.from_cached(cached)
-
+            context_before, context_after = await self._context_texts(
+                passage_id, options
+            )
             prompt = render_prompt(
-                template=schema.prompt_template, passage_text=passage.text
+                template=schema.prompt_template,
+                passage_text=passage.text,
+                entity_hints=options.entity_hints,
+                context_before=context_before,
+                context_after=context_after,
             )
             try:
                 validated, llm_call_id = await self._ask(
@@ -176,45 +242,164 @@ class ExtractionExecutor:
                 )
                 raise
             except (LLMError, ValidationError) as exc:
-                logger.warning(
-                    "extraction_failed",
-                    passage_id=str(passage_id),
-                    schema=schema.name,
-                    error=str(exc),
-                )
-                await self._store(
-                    passage_id, schema, version_key, model, ExtractionStatus.failed,
-                    records=[], validated=[], llm_call_id=None, error=str(exc),
-                )
-                return ExtractionResult(
-                    passage_id=passage_id,
-                    status=ExtractionStatus.failed,
-                    error=str(exc),
+                return await self._store_failure(
+                    passage_id, schema, version_key, model, exc
                 )
 
-            if self._enricher is not None:
-                validated = await self._enricher.enrich(
-                    validated, passage, record_types
-                )
-            records = [_serialize(record) for record in validated]
-            await self._store(
-                passage_id, schema, version_key, model, ExtractionStatus.ok,
-                records=records, validated=validated, llm_call_id=llm_call_id,
-                error=None,
-            )
-            logger.info(
-                "extraction_complete",
-                passage_id=str(passage_id),
-                schema=schema.name,
-                records_count=len(records),
-            )
-            return ExtractionResult(
-                passage_id=passage_id,
-                status=ExtractionStatus.ok,
-                records=records,
-                from_cache=False,
+            return await self._store_success(
+                passage, schema, version_key, model, validated, record_types,
                 llm_call_id=llm_call_id,
             )
+
+    async def _import_one(
+        self,
+        passage_id: UUID,
+        records: list[dict],
+        schema: ExtractionSchema,
+        record_types: Mapping[str, dict],
+        options: ExtractionOptions,
+        semaphore: asyncio.Semaphore,
+        model: str,
+        version_key: str,
+    ) -> ExtractionResult:
+        async with semaphore:
+            passage, settled = await self._passage_and_cache(
+                passage_id, schema, version_key, options
+            )
+            if settled is not None:
+                return settled
+            assert passage is not None  # settled covers the missing case
+
+            try:
+                validated = validate_records(
+                    records, passage.text, passage.id, record_types
+                )
+            except ValidationError as exc:
+                return await self._store_failure(
+                    passage_id, schema, version_key, model, exc
+                )
+
+            return await self._store_success(
+                passage, schema, version_key, model, validated, record_types,
+                llm_call_id=None,
+            )
+
+    async def _passage_and_cache(
+        self,
+        passage_id: UUID,
+        schema: ExtractionSchema,
+        version_key: str,
+        options: ExtractionOptions,
+    ) -> tuple[Any, ExtractionResult | None]:
+        """The passage to work on, or a finished result if there is no work.
+
+        ``(None, failed)`` for a passage that does not exist — nothing to
+        write, since ``extractions.passage_id`` is a foreign key and there is
+        no row such a failure could hang from. ``(passage, cached)`` for a
+        cache hit. ``(passage, None)`` means: proceed.
+        """
+        passage = await self._passages.get(passage_id)
+        if not passage:
+            return None, ExtractionResult(
+                passage_id=passage_id,
+                status=ExtractionStatus.failed,
+                error="Passage not found",
+            )
+
+        if not options.force_refresh:
+            cached = await self._extractions.get_by_key(
+                passage_id, schema.id, version_key
+            )
+            # A cached failure is a record of what happened, not an answer.
+            # Serving it back would make a transient provider outage
+            # permanent for every passage it touched.
+            if cached and cached.status == ExtractionStatus.ok:
+                return passage, ExtractionResult.from_cached(cached)
+
+        return passage, None
+
+    async def _context_texts(
+        self, passage_id: UUID, options: ExtractionOptions
+    ) -> tuple[str, str]:
+        """Neighbouring passage texts for the prompt, "" when not requested.
+
+        Context only: these texts reach the prompt and nothing else. Evidence
+        validation searches the target passage alone, so a quotation that
+        exists only in a neighbour fails rather than anchoring to offsets
+        that do not address the passage the record is stored against.
+        """
+        if not (options.context_before or options.context_after):
+            return "", ""
+        before, _target, after = await self._passages.get_context(
+            passage_id,
+            before=options.context_before,
+            after=options.context_after,
+        )
+        return (
+            "\n\n".join(p.text for p in before),
+            "\n\n".join(p.text for p in after),
+        )
+
+    async def _store_success(
+        self,
+        passage: Any,
+        schema: ExtractionSchema,
+        version_key: str,
+        model: str,
+        validated: list[ValidatedRecord],
+        record_types: Mapping[str, dict],
+        *,
+        llm_call_id: UUID | None,
+    ) -> ExtractionResult:
+        """Enrich, store, and report one passage's validated records."""
+        if self._enricher is not None:
+            validated = await self._enricher.enrich(
+                validated, passage, record_types
+            )
+        records = [_serialize(record) for record in validated]
+        await self._store(
+            passage.id, schema, version_key, model, ExtractionStatus.ok,
+            records=records, validated=validated, llm_call_id=llm_call_id,
+            error=None,
+        )
+        logger.info(
+            "extraction_complete",
+            passage_id=str(passage.id),
+            schema=schema.name,
+            records_count=len(records),
+        )
+        return ExtractionResult(
+            passage_id=passage.id,
+            status=ExtractionStatus.ok,
+            records=records,
+            from_cache=False,
+            llm_call_id=llm_call_id,
+        )
+
+    async def _store_failure(
+        self,
+        passage_id: UUID,
+        schema: ExtractionSchema,
+        version_key: str,
+        model: str,
+        exc: Exception,
+    ) -> ExtractionResult:
+        """A run that failed is a finding: store it, then report it."""
+        logger.warning(
+            "extraction_failed",
+            passage_id=str(passage_id),
+            schema=schema.name,
+            error=str(exc),
+        )
+        await self._store(
+            passage_id, schema, version_key, model, ExtractionStatus.failed,
+            records=[], validated=[], llm_call_id=None, error=str(exc),
+        )
+        return ExtractionResult(
+            passage_id=passage_id,
+            status=ExtractionStatus.failed,
+            error=str(exc),
+        )
 
     async def _ask(
         self,
@@ -339,6 +524,10 @@ def _serialize(record: ValidatedRecord) -> dict[str, Any]:
         "fields": record.fields,
         "evidence_start": record.evidence_start,
         "evidence_end": record.evidence_end,
+        "evidence_spans": [
+            [field_name, start, end]
+            for field_name, start, end in record.evidence_spans
+        ],
     }
 
 
@@ -346,3 +535,4 @@ def _serialize(record: ValidatedRecord) -> dict[str, Any]:
 #: placeholder never reaches a column. The row read back after the write carries
 #: the real timestamp.
 _NOW = datetime.fromtimestamp(0, UTC)
+

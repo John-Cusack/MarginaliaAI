@@ -1,0 +1,38 @@
+# Sunni Islam, as a reader of the library — the blind validation profile.
+#
+# Blind: this profile ships roles, a manifest and an entity map, and nothing
+# else. No topics, hatch instances, vouch seeds or gold may live here; the
+# guard test fails the build if any appear. Everything tunable is tuned on
+# other profiles and frozen before this one's output is viewed.
+#
+# The Qur'an binds in Arabic. The two English translations are read for their
+# meaning and inherit its rank for processing only.
+key: sunni_islam
+version: 1
+title: Sunni Islam (blind validation profile)
+blind: true
+internal_tiers: [T1, T2, T3]
+roles:
+  - {edition: quran-tanzil-uthmani, role: binding, tier: T1}
+  - {edition: quran-pickthall-1930, role: binding, tier: T1,
+     notes: A translation; binding through the Arabic it renders.}
+  - {edition: quran-sahih-international, role: binding, tier: T1,
+     notes: A translation; binding through the Arabic it renders.}
+  - edition: kjv
+    role: external
+    scope: {books: [Genesis, Exodus, Leviticus, Numbers, Deuteronomy]}
+    notes: The books the entity map takes the title "Torah" to denote.
+  - edition: kjv
+    role: external
+    scope: {books: [Matthew, Mark, Luke, John]}
+    notes: The books the entity map takes the title "Gospel" to denote.
+  # From M7.
+  - {edition: hadith-bukhari, role: binding, tier: T2}
+  - {edition: hadith-muslim, role: binding, tier: T2}
+  - {edition: hadith-abu-dawud, role: binding, tier: T3}
+  - {edition: hadith-tirmidhi, role: binding, tier: T3}
+  - {edition: hadith-nasai, role: binding, tier: T3}
+  - {edition: hadith-ibn-majah, role: binding, tier: T3}
+  - {edition: tafsir-ibn-kathir, role: reference, tier: T4}
+  - {edition: tafsir-tabari, role: reference, tier: T4}
+  - {edition: tafsir-razi, role: reference, tier: T4}

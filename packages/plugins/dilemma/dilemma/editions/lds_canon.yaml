@@ -1,0 +1,233 @@
+group: lds_canon
+title: LDS canon and editions
+brief: >-
+  Every key edition of the Book of Mormon, Book of Commandments, Doctrine and
+  Covenants and Pearl of Great Price, the Official Declarations, and the Joseph
+  Smith Translation. Historical editions come from historical sources (JSP
+  transcriptions, archive.org scans); machine-readable current text is the
+  current-edition baseline only. Keep original spelling, punctuation,
+  versification and page breaks; the 1830 Book of Mormon has no verses, so its
+  units are paragraphs located by 1830 chapter and page, aligned to 1981 verses
+  later. Align every JST change to its KJV verse.
+sources:
+  # --- Book of Mormon -------------------------------------------------------
+  - key: bom-1830
+    title: The Book of Mormon (Palmyra, 1830)
+    work: book-of-mormon
+    edition: first edition, E. B. Grandin, Palmyra
+    date_published: "1830"
+    acquire:
+      method: manual
+      url: https://www.josephsmithpapers.org
+      notes: JSP transcription of the 1830 edition, page by page; archive.org scans as a check.
+    verify: [url, license, page breaks preserved]
+    notes: No verse numbers. Units are paragraphs; locators are {book, chapter_1830, page}.
+
+  - key: bom-1837
+    title: The Book of Mormon (Kirtland, 1837)
+    work: book-of-mormon
+    edition: second edition, Kirtland
+    date_published: "1837"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: JSP transcription; archive.org scans}
+    verify: [url, license]
+
+  - key: bom-1840
+    title: The Book of Mormon (Nauvoo, 1840)
+    work: book-of-mormon
+    edition: third edition, Nauvoo
+    date_published: "1840"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: JSP transcription; archive.org scans}
+    verify: [url, license]
+
+  - key: bom-1879
+    title: The Book of Mormon (1879, Orson Pratt versification)
+    work: book-of-mormon
+    edition: 1879, chapters and verses by Orson Pratt
+    date_published: "1879"
+    acquire: {method: scrape, notes: archive.org scans or HathiTrust; locate an OCR-quality copy}
+    verify: [url, license, OCR accuracy]
+
+  - key: bom-1920
+    title: The Book of Mormon (1920)
+    work: book-of-mormon
+    edition: 1920, double columns and chapter headings
+    date_published: "1920"
+    acquire: {method: scrape, notes: archive.org scans or HathiTrust}
+    verify: [url, license, OCR accuracy]
+
+  - key: bom-1981
+    title: The Book of Mormon (1981)
+    work: book-of-mormon
+    edition: "1981"
+    date_published: "1981"
+    acquire: {method: scrape, license: "© Intellectual Reserve — private research use only",
+              notes: Locate a faithful 1981 text; the 2013 edition differs in headings and some text.}
+    expect: {chapter: 239, verse: 6604}
+    verify: [url, license, expected counts]
+
+  - key: bom-2013
+    title: The Book of Mormon (2013 edition, verse text)
+    work: book-of-mormon
+    edition: "2013"
+    date_published: "2013"
+    acquire:
+      method: bulk_download
+      url: https://raw.githubusercontent.com/bcbooks/scriptures-json/master/book-of-mormon.json
+      license: "public domain, per the repository README (verse text only: the copyrighted footnotes and chapter headings are omitted)"
+      notes: >-
+        Ben Crowder's Scriptures in JSON, from the Mormon Documentation
+        Project's 2013 text. The current-edition baseline only: historical
+        editions never come from here.
+    expect: {chapter: 239, verse: 6604}
+    verify: [expected counts]
+
+  - key: bom-original-manuscript
+    title: Book of Mormon Original Manuscript (extant portions)
+    work: book-of-mormon
+    edition: JSP transcription
+    date_composed: "1829"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license, extant portions recorded as coverage anomalies]
+
+  - key: bom-printers-manuscript
+    title: Book of Mormon Printer's Manuscript
+    work: book-of-mormon
+    edition: JSP transcription
+    date_composed: "1829-1830"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license]
+
+  - key: skousen-earliest-text
+    title: "The Book of Mormon: The Earliest Text"
+    work: book-of-mormon
+    author: Royal Skousen (ed.)
+    date_published: "2009"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright; print only., suggest: purchase_print}
+
+  # --- Book of Commandments and Doctrine and Covenants -----------------------
+  - key: boc-1833
+    title: A Book of Commandments (1833)
+    work: doctrine-and-covenants
+    date_published: "1833"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license, standing]
+
+  - key: dc-1835
+    title: Doctrine and Covenants (Kirtland, 1835), with the Lectures on Faith
+    work: doctrine-and-covenants
+    date_published: "1835"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: Ingest the Lectures on Faith as their own documents within this edition.}
+    verify: [url, license]
+    notes: >-
+      The Lectures on Faith lose canonical standing with the 1921 edition; that
+      window is recorded on the lectures' own scope once they are ingested.
+
+  - key: dc-1844
+    title: Doctrine and Covenants (Nauvoo, 1844)
+    work: doctrine-and-covenants
+    date_published: "1844"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license]
+
+  - key: dc-1876
+    title: Doctrine and Covenants (1876, Orson Pratt)
+    work: doctrine-and-covenants
+    date_published: "1876"
+    acquire: {method: scrape, notes: archive.org scans or HathiTrust}
+    verify: [url, license, OCR accuracy]
+
+  - key: dc-1921
+    title: Doctrine and Covenants (1921, Lectures on Faith removed)
+    work: doctrine-and-covenants
+    date_published: "1921"
+    acquire: {method: scrape, notes: archive.org scans or HathiTrust}
+    verify: [url, license, OCR accuracy]
+
+  - key: dc-2013
+    title: Doctrine and Covenants (2013 edition, verse text)
+    work: doctrine-and-covenants
+    edition: "2013"
+    date_published: "2013"
+    acquire:
+      method: bulk_download
+      url: https://raw.githubusercontent.com/bcbooks/scriptures-json/master/doctrine-and-covenants.json
+      license: "public domain, per the repository README (verse text only: the copyrighted footnotes and chapter headings are omitted)"
+      notes: Ben Crowder's Scriptures in JSON. Current-edition baseline only.
+    expect: {section: 138}
+    verify: [verse count, whether the Official Declarations are included]
+
+  # --- Pearl of Great Price ---------------------------------------------------
+  - key: pgp-1851
+    title: The Pearl of Great Price (Liverpool, 1851)
+    work: pearl-of-great-price
+    date_published: "1851"
+    acquire: {method: scrape, notes: archive.org scans or BYU HBLL digital collections}
+    verify: [url, license, OCR accuracy]
+    notes: Published before canonization; standing before 1880 not recorded here.
+
+  - key: pgp-1880
+    title: The Pearl of Great Price (1878 American edition, canonized 1880)
+    work: pearl-of-great-price
+    date_published: "1878"
+    acquire: {method: scrape, notes: archive.org scans or HathiTrust}
+    verify: [url, license, which printing was the one canonized]
+
+  - key: pgp-2013
+    title: The Pearl of Great Price (2013 edition, verse text)
+    work: pearl-of-great-price
+    edition: "2013"
+    date_published: "2013"
+    acquire:
+      method: bulk_download
+      url: https://raw.githubusercontent.com/bcbooks/scriptures-json/master/pearl-of-great-price.json
+      license: "public domain, per the repository README (verse text only: the copyrighted footnotes and chapter headings are omitted)"
+      notes: Ben Crowder's Scriptures in JSON. Current-edition baseline only.
+    expect: {chapter: 16}
+    verify: [verse count, how the Book of Abraham heading and facsimiles are represented]
+
+  - key: boa-times-and-seasons-1842
+    title: The Book of Abraham, as first printed in Times and Seasons (1842)
+    work: book-of-abraham
+    date_published: "1842"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: Include the three facsimiles and Joseph Smith's explanations as units.}
+    verify: [url, license, facsimile explanations captured]
+
+  # --- Official Declarations -----------------------------------------------
+  - key: od-1
+    title: Official Declaration 1 (the Manifesto, 1890)
+    work: official-declaration-1
+    date_published: "1890"
+    acquire: {method: bulk_download, url: https://github.com/bcbooks/scriptures-json,
+              license: "public domain, per the repository README"}
+    verify: [whether dc-2013 already carries it, which edition first printed it in the D&C]
+
+  - key: od-2
+    title: Official Declaration 2 (1978)
+    work: official-declaration-2
+    date_published: "1978"
+    acquire: {method: bulk_download, url: https://github.com/bcbooks/scriptures-json,
+              license: "public domain, per the repository README"}
+    verify: [whether dc-2013 already carries it]
+
+  # --- Joseph Smith Translation ---------------------------------------------
+  - key: jst-manuscripts
+    title: Joseph Smith Translation, Old and New Testament manuscripts
+    work: joseph-smith-translation
+    date_composed: "1830-1833"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: Revelations and Translations series.}
+    verify: [url, license]
+    notes: Align every change to the KJV verse it revises.
+
+  - key: inspired-version-1867
+    title: The Holy Scriptures, Inspired Version (RLDS, 1867)
+    work: joseph-smith-translation
+    date_published: "1867"
+    acquire: {method: scrape, license: public domain (1867) — verify the scan's terms,
+              notes: archive.org scans}
+    verify: [url, license, OCR accuracy]

@@ -1,0 +1,230 @@
+group: early_church
+title: Joseph Smith and early-church documents
+brief: >-
+  The Joseph Smith Papers series, every First Vision account, the King Follett
+  Discourse in each reporter's version stored separately, the Sermon in the
+  Grove, the Lectures on Faith, History of the Church and the early
+  periodicals. The Joseph Smith Papers is governed by the Church's terms of
+  use, which forbid any robot or automated access: its transcripts are saved
+  by the operator for personal, noncommercial use ("View entire transcript",
+  then save the page) into the source's inbox, and loaded from there. The
+  pipeline never fetches from it.
+sources:
+  # --- Joseph Smith Papers series -------------------------------------------
+  - key: jsp-journals
+    title: Joseph Smith Papers — Journals
+    work: jsp-journals
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [terms of use for bulk access, license]
+
+  - key: jsp-documents
+    title: Joseph Smith Papers — Documents
+    work: jsp-documents
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [terms of use for bulk access, license]
+
+  - key: jsp-revelations-translations
+    title: Joseph Smith Papers — Revelations and Translations
+    work: jsp-revelations-translations
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [terms of use for bulk access, license]
+    notes: Revelation manuscripts are the textual witnesses behind the BoC and D&C.
+
+  - key: jsp-histories
+    title: Joseph Smith Papers — Histories
+    work: jsp-histories
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [terms of use for bulk access, license]
+
+  - key: jsp-kirtland-egyptian-papers
+    title: Book of Abraham and related manuscripts (Kirtland Egyptian Papers)
+    work: book-of-abraham-manuscripts
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: Include the Egyptian alphabet and grammar documents and the BoA manuscripts.}
+    verify: [terms of use for bulk access, license]
+
+  # --- First Vision accounts --------------------------------------------------
+  - key: first-vision-1832
+    title: First Vision account, 1832 (History, circa Summer 1832)
+    work: first-vision-accounts
+    date_composed: "1832"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license]
+
+  - key: first-vision-1835
+    title: First Vision account, 1835 (journal, November 1835)
+    work: first-vision-accounts
+    date_composed: "1835"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license]
+
+  - key: first-vision-1838
+    title: First Vision account, 1838–39 (History drafts)
+    work: first-vision-accounts
+    date_composed: "1838-1839"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license]
+
+  - key: first-vision-1842-wentworth
+    title: First Vision account, 1842 (Wentworth letter, Times and Seasons)
+    work: first-vision-accounts
+    date_published: "1842"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org}
+    verify: [url, license]
+
+  - key: first-vision-secondhand
+    title: Contemporary secondhand accounts of the First Vision
+    work: first-vision-accounts
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: One document per account; record each reporter.}
+    verify: [which accounts the JSP gathers, license]
+
+  # --- Discourses -------------------------------------------------------------
+  - key: kfd-bullock
+    title: King Follett Discourse, 7 April 1844, as reported by Thomas Bullock
+    work: king-follett-discourse
+    date_composed: "1844-04-07"
+    acquire:
+      method: manual
+      url: https://www.josephsmithpapers.org/paper-summary/discourse-7-april-1844-as-reported-by-thomas-bullock/1
+      license: "© Intellectual Reserve (transcription) — private research use only"
+      notes: >-
+        Saved by the operator: "View entire transcript", then save the page as
+        HTML into the inbox. Units are the transcript's paragraphs, located by
+        manuscript page; editorial insertions and deletions kept as printed.
+    verify: [page breaks preserved, editorial marks preserved]
+
+  - key: kfd-richards
+    title: King Follett Discourse, 7 April 1844, as reported by Willard Richards
+    work: king-follett-discourse
+    date_composed: "1844-04-07"
+    acquire:
+      method: manual
+      url: https://www.josephsmithpapers.org/paper-summary/discourse-7-april-1844-as-reported-by-willard-richards/1
+      license: "© Intellectual Reserve (transcription) — private research use only"
+      notes: >-
+        Saved by the operator: "View entire transcript", then save the page as
+        HTML into the inbox. Units are the transcript's paragraphs, located by
+        manuscript page; editorial insertions and deletions kept as printed.
+    verify: [page breaks preserved, editorial marks preserved]
+
+  - key: kfd-woodruff
+    title: King Follett Discourse, 7 April 1844, as reported by Wilford Woodruff
+    work: king-follett-discourse
+    date_composed: "1844-04-07"
+    acquire:
+      method: manual
+      url: https://www.josephsmithpapers.org/paper-summary/discourse-7-april-1844-as-reported-by-wilford-woodruff/1
+      license: "© Intellectual Reserve (transcription) — private research use only"
+      notes: >-
+        Saved by the operator: "View entire transcript", then save the page as
+        HTML into the inbox. Units are the transcript's paragraphs, located by
+        manuscript page; editorial insertions and deletions kept as printed.
+    verify: [page breaks preserved, editorial marks preserved]
+
+  - key: kfd-clayton
+    title: King Follett Discourse, 7 April 1844, as reported by William Clayton
+    work: king-follett-discourse
+    date_composed: "1844-04-07"
+    acquire:
+      method: manual
+      url: https://www.josephsmithpapers.org/paper-summary/discourse-7-april-1844-as-reported-by-william-clayton/1
+      license: "© Intellectual Reserve (transcription) — private research use only"
+      notes: >-
+        Saved by the operator: "View entire transcript", then save the page as
+        HTML into the inbox. Units are the transcript's paragraphs, located by
+        manuscript page; editorial insertions and deletions kept as printed.
+    verify: [page breaks preserved, editorial marks preserved]
+
+  - key: sermon-in-the-grove-1844
+    title: Sermon in the Grove, 16 June 1844
+    work: sermon-in-the-grove
+    date_composed: "1844-06-16"
+    acquire: {method: manual, url: https://www.josephsmithpapers.org,
+              notes: "Store each reporter's version separately, as for the King Follett Discourse."}
+    verify: [url, license, reporters available]
+
+  - key: words-of-joseph-smith
+    title: "The Words of Joseph Smith"
+    work: words-of-joseph-smith
+    author: Andrew F. Ehat and Lyndon W. Cook (eds.)
+    date_published: "1980"
+    acquire: {license: in copyright}
+    blocked: {reason: In copyright; print only., suggest: purchase_print}
+
+  - key: lectures-on-faith-1835
+    title: Lectures on Faith, as printed in the 1835 Doctrine and Covenants
+    work: lectures-on-faith
+    date_published: "1835"
+    acquire:
+      method: manual
+      url: https://www.josephsmithpapers.org/paper-summary/doctrine-and-covenants-1835/1
+      license: "© Intellectual Reserve (transcription) — private research use only"
+      notes: >-
+        The operator opens the 1835 Doctrine and Covenants at the Joseph Smith
+        Papers, chooses "View entire transcript", and saves the page as HTML
+        into the inbox. Only the lectures (printed pages 5–74) are loaded,
+        one unit per numbered paragraph, located by lecture and page.
+    select: {printed_pages: [5, 74]}
+    expect: {lecture: 7}
+    verify: [paragraph numbering, page breaks preserved]
+    notes: >-
+      A separate edition from dc-1835 so its standing can end in 1921 while
+      the revelations' does not; both are read from the same transcript.
+
+  # --- History of the Church and periodicals --------------------------------
+  - key: history-of-the-church
+    title: History of the Church (B. H. Roberts, ed.)
+    work: history-of-the-church
+    date_published: "1902-1932"
+    acquire: {method: scrape, notes: "archive.org scans, volume by volume."}
+    verify: [license per volume — the last volume postdates the public-domain cutoff, OCR accuracy]
+
+  - key: evening-and-morning-star
+    title: The Evening and the Morning Star (1832–1834)
+    work: evening-and-morning-star
+    date_published: "1832-1834"
+    acquire: {method: scrape, notes: BYU Harold B. Lee Library digital collections; archive.org.}
+    verify: [url, license]
+
+  - key: messenger-and-advocate
+    title: Latter Day Saints' Messenger and Advocate (1834–1837)
+    work: messenger-and-advocate
+    date_published: "1834-1837"
+    acquire: {method: scrape, notes: BYU HBLL digital collections; archive.org.}
+    verify: [url, license]
+
+  - key: elders-journal
+    title: Elders' Journal (1837–1838)
+    work: elders-journal
+    date_published: "1837-1838"
+    acquire: {method: scrape, notes: BYU HBLL digital collections; archive.org.}
+    verify: [url, license]
+
+  - key: times-and-seasons
+    title: Times and Seasons (1839–1846)
+    work: times-and-seasons
+    date_published: "1839-1846"
+    acquire: {method: scrape, notes: BYU HBLL digital collections; archive.org.}
+    verify: [url, license]
+
+  - key: millennial-star
+    title: The Latter-day Saints' Millennial Star
+    work: millennial-star
+    date_published: "1840-"
+    acquire: {method: scrape, notes: BYU HBLL digital collections; archive.org. Start with the 1840s–1880s volumes.}
+    verify: [url, license per volume]
+
+  # --- Anthon and Kinderhook --------------------------------------------------
+  - key: anthon-transcript
+    title: The Anthon transcript and Charles Anthon's letters (1834, 1841)
+    work: anthon-transcript
+    acquire: {method: scrape, notes: JSP for the transcript; the letters as printed in contemporary sources.}
+    verify: [sources for each letter, license]
+
+  - key: kinderhook-plates
+    title: Kinderhook plates — primary accounts
+    work: kinderhook-plates
+    date_composed: "1843"
+    acquire: {method: scrape, notes: JSP and contemporary newspaper accounts.}
+    verify: [which primary accounts exist online, license]

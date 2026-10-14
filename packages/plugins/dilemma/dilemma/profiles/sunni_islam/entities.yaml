@@ -1,0 +1,18 @@
+# Titles of earlier scripture, mapped to the books of an edition in the
+# library. This is a disclosed assumption, not a finding: whether the book a
+# title names is the book now printed under it is itself a question the
+# tradition answers, and that answer must come from its own literature at
+# adjudication, not from this file.
+entities:
+  - id: torah
+    label: Torah
+    kind: scripture
+    denotes:
+      edition: kjv
+      books: [Genesis, Exodus, Leviticus, Numbers, Deuteronomy]
+  - id: gospel
+    label: Gospel
+    kind: scripture
+    denotes:
+      edition: kjv
+      books: [Matthew, Mark, Luke, John]

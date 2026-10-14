@@ -126,6 +126,25 @@ class TestValidateSchemaDefinition:
                 definition, "{{ passage_text }} in {{ book_title }}"
             )
 
+    def test_a_prompt_using_every_supplied_variable_is_accepted(self):
+        """The probe supplies context and hints, not only the passage.
+
+        A schema whose prompt shows the model neighbouring passages is
+        legitimate; if the registration probe rendered with `passage_text`
+        alone, StrictUndefined would reject it here for a variable the
+        executor does in fact supply at run time.
+        """
+        definition = {
+            "record_types": [
+                {"id": "claim", "fields": {"quote": {"type": "evidence_span"}}}
+            ],
+        }
+        validate_schema_definition(
+            definition,
+            "Before: {{ context_before }}\n{{ passage_text }}\n"
+            "After: {{ context_after }}\nKnown names: {{ entity_hints }}",
+        )
+
     def test_a_record_type_with_no_fields_is_rejected(self):
         with pytest.raises(ValidationError, match="no fields"):
             validate_schema_definition(

@@ -1,5 +1,8 @@
 """Postgres repository implementations."""
 
+from research_engine.adapters.storage.postgres.repositories.acquisitions import (
+    PGAcquisitionRepo,
+)
 from research_engine.adapters.storage.postgres.repositories.authored import (
     PGWorkRepo,
     PGWorkRevisionRepo,
@@ -18,12 +21,24 @@ from research_engine.adapters.storage.postgres.repositories.extractions import (
     PGExtractionRepo,
     PGExtractionSchemaRepo,
 )
+from research_engine.adapters.storage.postgres.repositories.funnel import (
+    PGClaimEmbeddingRepo,
+    PGPairScoreRepo,
+)
+from research_engine.adapters.storage.postgres.repositories.machine_claims import (
+    PGMachineClaimRepo,
+)
+from research_engine.adapters.storage.postgres.repositories.marks import PGDocumentMarkRepo
 from research_engine.adapters.storage.postgres.repositories.mentions import PGMentionRepo
 from research_engine.adapters.storage.postgres.repositories.nodes import (
     PGDocumentNodeRepo,
 )
 from research_engine.adapters.storage.postgres.repositories.passages import PGPassageRepo
 from research_engine.adapters.storage.postgres.repositories.plugins import PGPluginActivationRepo
+from research_engine.adapters.storage.postgres.repositories.profiles import (
+    PGProfileRepo,
+    PGRunRepo,
+)
 from research_engine.adapters.storage.postgres.repositories.provenance import (
     PGIngestionRunRepo,
     PGLLMCallLogRepo,
@@ -36,8 +51,11 @@ from research_engine.adapters.storage.postgres.repositories.work_blocks import (
 from research_engine.adapters.storage.postgres.repositories.work_links import PGWorkLinkRepo
 
 __all__ = [
+    "PGAcquisitionRepo",
+    "PGClaimEmbeddingRepo",
     "PGClaimRepo",
     "PGCitationRepo",
+    "PGDocumentMarkRepo",
     "PGDocumentRepo",
     "PGDocumentNodeRepo",
     "PGDocumentTextRepo",
@@ -49,9 +67,13 @@ __all__ = [
     "PGExtractionSchemaRepo",
     "PGIngestionRunRepo",
     "PGPluginActivationRepo",
+    "PGProfileRepo",
+    "PGMachineClaimRepo",
+    "PGPairScoreRepo",
     "PGLLMCallLogRepo",
     "PGMentionRepo",
     "PGPassageRepo",
+    "PGRunRepo",
     "PGSourceSpanRepo",
     "PGWaiverRepo",
     "PGWorkBlockRepo",

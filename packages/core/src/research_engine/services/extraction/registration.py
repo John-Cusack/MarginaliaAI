@@ -140,7 +140,12 @@ def validate_schema_definition(definition: dict[str, Any], prompt: str) -> None:
     build_output_schema(definition)
 
     try:
-        rendered = render_prompt(prompt, _PROBE_TEXT)
+        # Supplies every variable a template is entitled to use, so using
+        # {{ context_before }} registers here and only a genuinely unknown
+        # variable fails the probe.
+        rendered = render_prompt(
+            prompt, _PROBE_TEXT, entity_hints="", context_before="", context_after=""
+        )
     except Exception as exc:
         raise ValidationError(f"The prompt template does not render: {exc}") from exc
     if _PROBE_TEXT not in rendered:

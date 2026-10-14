@@ -254,6 +254,34 @@ class PGExtractionRepo:
             rows = (await conn.execute(stmt)).all()
             return [self._record_to_domain(row) for row in rows]
 
+    async def records_for_schema(
+        self, schema_id: UUID, extractor_version: str | None = None
+    ) -> list[ExtractionRecord]:
+        """Every materialized record of a schema, oldest first.
+
+        The dilemma materializer's input: all records one schema produced,
+        optionally narrowed to one extractor version (which lives on the
+        extraction, not the record, hence the join). Unbounded by design —
+        materializing a partial set under a run would silently understate
+        what the schema found; the caller pages by run instead.
+        """
+        stmt = (
+            sa.select(extraction_records)
+            .join(
+                extractions,
+                extractions.c.id == extraction_records.c.extraction_id,
+            )
+            .where(extraction_records.c.schema_id == schema_id)
+            .order_by(extraction_records.c.created_at, extraction_records.c.id)
+        )
+        if extractor_version is not None:
+            stmt = stmt.where(
+                extractions.c.extractor_version == extractor_version
+            )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            return [self._record_to_domain(row) for row in rows]
+
     async def _get_by_id(self, conn: Any, extraction_id: UUID) -> Extraction | None:
         row = (
             await conn.execute(
