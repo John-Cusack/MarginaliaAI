@@ -21,6 +21,7 @@ from research_engine.adapters.storage.postgres.schema import (
     claims,
     documents,
     editions,
+    machine_claims,
     passages,
     profiles,
     runs,
@@ -251,6 +252,26 @@ class Corpus:
                 )
             for table, row_id in reversed(first):
                 await conn.execute(table.delete().where(table.c.id == row_id))
+            if self._document_ids or self._profile_ids:
+                # Machine claims RESTRICT their run, document and (through
+                # claim_evidence) spans, so they go before all three; their
+                # evidence and vouches cascade from the claim.
+                tied = []
+                if self._document_ids:
+                    tied.append(
+                        machine_claims.c.document_id.in_(self._document_ids)
+                    )
+                if self._profile_ids:
+                    tied.append(
+                        machine_claims.c.run_id.in_(
+                            sa.select(runs.c.id).where(
+                                runs.c.profile_id.in_(self._profile_ids)
+                            )
+                        )
+                    )
+                await conn.execute(
+                    machine_claims.delete().where(sa.or_(*tied))
+                )
             if self._profile_ids:
                 # Runs RESTRICT their profile; roles cascade from it.
                 await conn.execute(

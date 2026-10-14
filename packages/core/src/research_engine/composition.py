@@ -35,6 +35,7 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGExtractionSchemaRepo,
     PGIngestionRunRepo,
     PGLLMCallLogRepo,
+    PGMachineClaimRepo,
     PGMentionRepo,
     PGPassageRepo,
     PGPluginActivationRepo,
@@ -115,6 +116,9 @@ class Container:
     bibliography: BibliographyServiceAdapter
     #: Reader profiles, the roles they give editions, and the runs under them.
     profiles: PGProfileRepo
+    #: Cited addresses, and the machine claims anchored to them.
+    spans: PGSourceSpanRepo
+    machine_claims: PGMachineClaimRepo
     runs: PGRunRepo
     #: The SDK face of the two above.
     profile_client: ProfileServiceAdapter
@@ -362,6 +366,7 @@ async def build_container(settings: Settings) -> Container:
     editions_repo = PGEditionRepo(sql_engine)
     acquisitions_repo = PGAcquisitionRepo(sql_engine)
     profiles_repo = PGProfileRepo(sql_engine)
+    machine_claims_repo = PGMachineClaimRepo(sql_engine)
     runs_repo = PGRunRepo(sql_engine)
     claim_audit_service = ClaimAuditService(claims_repo)
     claim_service = ClaimService(
@@ -583,6 +588,8 @@ async def build_container(settings: Settings) -> Container:
         profiles=profiles_repo,
         runs=runs_repo,
         profile_client=profile_client,
+        spans=spans_repo,
+        machine_claims=machine_claims_repo,
         ingestion=ingestion_service,
         search=search_service,
         verification=quote_verifier,

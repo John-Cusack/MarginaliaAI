@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import MetaData
-from sqlalchemy.dialects.postgresql import DATERANGE, JSONB, ExcludeConstraint
+from sqlalchemy.dialects.postgresql import ARRAY, DATERANGE, JSONB, ExcludeConstraint
 
 metadata = MetaData(schema="core")
 
@@ -1030,6 +1030,173 @@ runs = sa.Table(
 )
 
 sa.Index("runs_profile_stage_idx", runs.c.profile_id, runs.c.stage, runs.c.started_at)
+
+#: The vocabularies of a machine claim. The engine's, like the source roles:
+#: what a topic key or a ``*_ref`` means is profile data's, outside the schema.
+CLAIM_POLARITIES = ("affirms", "denies")
+CLAIM_MODALITIES = (
+    "asserts",
+    "commands",
+    "prophesies",
+    "reports_other_view",
+    "quotes_scripture",
+    "hypothetical",
+    "question",
+)
+VOUCH_KINDS = (
+    "affirms_reliability",
+    "affirms_authority",
+    "claims_prophesied_by",
+    "self_reliability",
+    "affirms_fallibility",
+)
+VOUCH_TARGET_FORMS = ("work_as_given", "extant_edition", "unspecified")
+
+# One extracted claim (or vouch, which is also something a passage asserts),
+# with the extraction's labels kept verbatim and entity ids set only on an
+# exact resolution. Unique on (extraction_record_id, statement) so
+# re-materializing the same records is a no-op. Mirrors 023_machine_claims.
+machine_claims = sa.Table(
+    "claims",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "run_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column(
+        "extraction_record_id",
+        sa.Uuid,
+        sa.ForeignKey("core.extraction_records.id", ondelete="SET NULL"),
+    ),
+    sa.Column(
+        "document_id",
+        sa.Uuid,
+        sa.ForeignKey("core.documents.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column(
+        "edition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
+    ),
+    sa.Column("statement", sa.Text, nullable=False),
+    sa.Column("subject_label", sa.Text),
+    sa.Column("subject_ref", sa.Text),
+    sa.Column(
+        "subject_entity_id",
+        sa.Uuid,
+        sa.ForeignKey("core.entities.id", ondelete="SET NULL"),
+    ),
+    sa.Column("predicate", sa.Text),
+    sa.Column("object_label", sa.Text),
+    sa.Column("polarity", sa.Text, nullable=False, server_default="affirms"),
+    sa.Column("modality", sa.Text, nullable=False),
+    sa.Column("speaker_label", sa.Text),
+    sa.Column("speaker_ref", sa.Text),
+    sa.Column(
+        "speaker_entity_id",
+        sa.Uuid,
+        sa.ForeignKey("core.entities.id", ondelete="SET NULL"),
+    ),
+    sa.Column("scope_quantifier", sa.Text),
+    sa.Column("temporal_scope", sa.Text),
+    sa.Column("topic_keys", ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("confidence", sa.Float),
+    sa.Column("attributes", JSONB, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "polarity IN (" + ", ".join(f"'{p}'" for p in CLAIM_POLARITIES) + ")",
+        name="claims_polarity_ck",
+    ),
+    sa.CheckConstraint(
+        "modality IN (" + ", ".join(f"'{m}'" for m in CLAIM_MODALITIES) + ")",
+        name="claims_modality_ck",
+    ),
+    sa.CheckConstraint(
+        "confidence >= 0 AND confidence <= 1", name="claims_confidence_ck"
+    ),
+    sa.UniqueConstraint(
+        "extraction_record_id", "statement", name="claims_record_statement_uq"
+    ),
+    schema="dilemma",
+)
+
+sa.Index("claims_run_idx", machine_claims.c.run_id)
+sa.Index("claims_document_idx", machine_claims.c.document_id)
+
+# Every verbatim evidence field of a claim, resolved to a source span, in the
+# schema's declaration order (`ordinal`).
+claim_evidence = sa.Table(
+    "claim_evidence",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "claim_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.claims.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "source_span_id",
+        sa.Uuid,
+        sa.ForeignKey("evidence.source_spans.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("field", sa.Text, nullable=False),
+    sa.Column("ordinal", sa.Integer, nullable=False),
+    sa.UniqueConstraint("claim_id", "ordinal", name="claim_evidence_ordinal_uq"),
+    schema="dilemma",
+)
+
+# What one voice or text is said to do for another's standing, hanging off the
+# claim row that asserts it.
+vouch_edges = sa.Table(
+    "vouch_edges",
+    metadata,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column(
+        "claim_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.claims.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "run_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("target_label", sa.Text),
+    sa.Column("target_ref", sa.Text),
+    sa.Column(
+        "target_entity_id",
+        sa.Uuid,
+        sa.ForeignKey("core.entities.id", ondelete="SET NULL"),
+    ),
+    sa.Column(
+        "target_edition_id",
+        sa.Uuid,
+        sa.ForeignKey("bibliography.editions.id", ondelete="RESTRICT"),
+    ),
+    sa.Column("target_form", sa.Text, nullable=False, server_default="unspecified"),
+    sa.Column("attributes", JSONB, nullable=False, server_default="{}"),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "kind IN (" + ", ".join(f"'{k}'" for k in VOUCH_KINDS) + ")",
+        name="vouch_edges_kind_ck",
+    ),
+    sa.CheckConstraint(
+        "target_form IN (" + ", ".join(f"'{f}'" for f in VOUCH_TARGET_FORMS) + ")",
+        name="vouch_edges_target_form_ck",
+    ),
+    schema="dilemma",
+)
+
+sa.Index("vouch_edges_run_idx", vouch_edges.c.run_id)
 
 # --- Authored: works from their first freeze ---
 

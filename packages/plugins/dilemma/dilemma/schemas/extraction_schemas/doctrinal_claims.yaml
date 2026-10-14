@@ -1,0 +1,184 @@
+id: doctrinal_claims
+version: 3
+description: |
+  Extract atomic claims and reliability vouches from one passage, each
+  anchored to a verbatim quotation of that passage.
+owner: dilemma
+
+record_types:
+  - id: claim
+    description: One atomic claim the passage makes or reports
+    fields:
+      statement:
+        type: string
+        description: "The claim as one self-contained sentence, pronouns resolved to the names they refer to"
+        required: true
+      subject:
+        type: string
+        description: "What the claim is about, as named in the passage"
+        required: false
+      subject_ref:
+        type: string
+        description: "Entity hint id for the subject, copied exactly; empty when no hint matches"
+        required: false
+      predicate:
+        type: string
+        description: "The relation or property the claim asserts of the subject"
+        required: false
+      object:
+        type: string
+        description: "What the predicate relates the subject to, as named in the passage"
+        required: false
+      polarity:
+        type: enum
+        values: [affirms, denies]
+        description: "Whether the claim asserts the predicate of the subject or its negation"
+        required: true
+      modality:
+        type: enum
+        values: [asserts, commands, prophesies, reports_other_view, quotes_scripture, hypothetical, question]
+        description: "How the passage presents the claim"
+        required: true
+      speaker:
+        type: string
+        description: "Who is presented as making the claim, as named in the passage; always state one — the narrator when no one else is presented"
+        required: true
+      speaker_ref:
+        type: string
+        description: "Entity hint id for the speaker, copied exactly; empty when no hint matches"
+        required: false
+      scope_quantifier:
+        type: string
+        description: "Quantifier the passage states (all, some, none); empty when it states none"
+        required: false
+      temporal_scope:
+        type: string
+        description: "Time scope the passage states (a date, an era, always); empty when it states none"
+        required: false
+      group:
+        type: integer
+        description: "Claims split from one sentence share one group number (your numbering within this passage); omit when the claim was not split from a shared sentence"
+        required: false
+      group_relation:
+        type: enum
+        values: [composite_act, independent_list, condition, purpose]
+        description: "How the claims sharing a group number relate: elements of one composite act, items of an independent list, a condition and its consequence kept together, or an act and its purpose"
+        required: false
+      topic_keys:
+        type: array
+        description: "Up to three short topic keys in kebab-case naming what the claim is about"
+        required: false
+      evidence:
+        type: evidence_span
+        description: "Exact quotation of the target passage supporting this claim"
+        required: true
+      evidence_2:
+        type: evidence_span
+        description: "Further exact quotation when the claim rests on separated phrases"
+        required: false
+      evidence_3:
+        type: evidence_span
+        description: "Third exact quotation when the claim rests on separated phrases"
+        required: false
+      confidence:
+        type: number
+        range: [0, 1]
+        description: "Certainty that the passage makes this claim with this speaker and modality"
+        required: true
+
+  - id: vouch
+    description: A statement about the reliability or authority of a text, person or body of teaching
+    fields:
+      statement:
+        type: string
+        description: "The claim as one self-contained sentence, pronouns resolved to the names they refer to"
+        required: true
+      kind:
+        type: enum
+        values: [affirms_reliability, affirms_authority, claims_prophesied_by, self_reliability, affirms_fallibility]
+        description: "What the statement affirms or denies about its target"
+        required: true
+      target:
+        type: string
+        description: "The text, person or body the statement is about, as named in the passage"
+        required: false
+      target_ref:
+        type: string
+        description: "Entity hint id for the target, copied exactly; empty when no hint matches"
+        required: false
+      target_form:
+        type: enum
+        values: [work_as_given, extant_edition, unspecified]
+        description: "Whether the statement concerns the work as originally given or the text as now available"
+        required: false
+      speaker:
+        type: string
+        description: "Who is presented as making the claim, as named in the passage; always state one — the narrator when no one else is presented"
+        required: true
+      speaker_ref:
+        type: string
+        description: "Entity hint id for the speaker, copied exactly; empty when no hint matches"
+        required: false
+      modality:
+        type: enum
+        values: [asserts, commands, prophesies, reports_other_view, quotes_scripture, hypothetical, question]
+        description: "How the passage presents the claim"
+        required: true
+      evidence:
+        type: evidence_span
+        description: "Exact quotation of the target passage supporting this claim"
+        required: true
+      evidence_2:
+        type: evidence_span
+        description: "Further exact quotation when the claim rests on separated phrases"
+        required: false
+      confidence:
+        type: number
+        range: [0, 1]
+        description: "Certainty that the passage makes this claim with this speaker and modality"
+        required: true
+
+prompt: |
+  You extract atomic claims from one passage of a text. Work only from the TARGET PASSAGE. The surrounding context is given solely to resolve pronouns, speakers and references; never extract a claim whose evidence lies only in the context.
+
+  Extract every distinct claim the passage itself makes or reports:
+  - One record per atomic claim: a single subject, predicate and object that could be true or false on its own.
+  - statement: rewrite the claim as one self-contained sentence. Resolve pronouns and definite descriptions to the names they refer to, using the context where needed. Keep every condition, qualifier and restriction the passage attaches to the claim inside the statement — if the passage says a thing holds only when, only if, or only for someone, the statement must say so too. Do not add information the passage does not contain.
+  - speaker: ALWAYS state one. Who is presented as making the claim in the passage: a named person, a quoted voice, or the narrator when the passage simply tells it. Do not attribute a claim to the subject of the passage unless the passage presents that subject as speaking or the passage is that subject's own record. If the passage reports someone else's view without endorsing it, the speaker is that other party and modality is reports_other_view.
+  - modality: asserts (stated as fact), commands (an instruction or prohibition addressed to someone — counsel or advice offered for consideration is asserts, not commands), prophesies (a prediction about the future), reports_other_view, quotes_scripture (the passage quotes or reuses an earlier authoritative text), hypothetical (stated as a supposition or condition), question.
+  - polarity: affirms if the claim asserts the predicate of the subject, denies if it asserts its negation.
+  - scope_quantifier / temporal_scope: only when the passage states them (for example all, some, none; a date, an era, always, at that time). Leave empty otherwise.
+  - topic_keys: up to three short topic keys in kebab-case naming what the claim is about.
+  - evidence: quote the TARGET PASSAGE word for word. The quote must be copied exactly, character for character. If a claim rests on separated phrases, put further exact quotes in evidence_2 and evidence_3.
+  - confidence: how certain you are that the passage makes this claim with this speaker and modality, from 0 to 1.
+
+  ATOMICITY — how much goes in one record. The test is meaning, not punctuation. Ask of each sentence: could one part be denied while the rest stands? Split when it could; never split when splitting would change what the text claims.
+  - KEEP WHOLE: a condition and its consequence; joint conditions of one outcome; a purpose clause ("do X so that Y"); a comparison; one verb with a compound object. Example: "Whoever brings a signed permit and pays the toll and crosses by daylight shall pass unchallenged" is ONE claim — splitting would invent "whoever pays the toll shall pass", which the text never says. Mark such a claim with a group number and group_relation condition or purpose.
+  - SPLIT AND GROUP: coordinated assertions or commands that form one composite act or invitation but name separable parts. Example: "Depart, and return before winter, and be forgiven" is TWO command claims (depart; return before winter) sharing one group number, group_relation composite_act — "be forgiven" is the outcome the sentence attaches, so keep it inside the statement of the claim it completes rather than as a third command. When you split a sentence, give every claim from it the same group number (number your groups 1, 2, 3... within the passage).
+  - SPLIT A LIST: items joined by commas, semicolons or "and" that are independently assertable are one claim each. Example: "The caravan was large and well guarded, carried books and salt, and paid no toll at the northern gate" is several claims (it was large; it was well guarded; it carried books; it carried salt; it paid no toll) sharing one group number, group_relation independent_list. Do not leave a whole list inside one statement.
+  - A statement contains ONE main assertion. If your statement coordinates two finite verbs with "and" or a semicolon, you have two records to write — unless the keep-whole rule above applies, in which case set the group fields to say why.
+  - When unsure whether parts are separable, split them and group them: a grouped split can always be reassembled and judged as a whole later, while a fused claim can never be matched against a text that states only one part.
+
+  Also extract, as vouch records, every statement in the target passage about the reliability, authority, truthfulness, corruption, fallibility or origin of a text, person, office or body of teaching — including statements a text makes about itself.
+  - kind: affirms_reliability, affirms_authority, claims_prophesied_by (this text or person was foretold by the target), self_reliability (the speaker's own text or words affirmed), affirms_fallibility (the target is said to be able to err, be corrupted, or be unreliable).
+  - target: the text, person or body the statement is about, as named in the passage.
+  - target_form: work_as_given if the statement concerns the work as originally given, extant_edition if it concerns the text as now available, otherwise unspecified.
+  - statement, speaker, modality, evidence and confidence follow the same rules as for claims: every vouch states its statement as one self-contained sentence, always names a speaker, carries its modality, and quotes its exact evidence. A vouch missing any of these is rejected.
+  Entity hints list known entities as: id | label | kind | aliases | note. When a subject, speaker or target is one of them, copy its id into subject_ref, speaker_ref or target_ref. Use the note to tell same-named entities apart; if you cannot tell which one is meant, leave the ref empty. Never invent an id.
+
+  Do not extract pure narrative transitions with no claim, greetings, or restatements of the same claim. If the passage makes no claims, return no records.
+
+  ENTITY HINTS
+  {{ entity_hints }}
+
+  CONTEXT BEFORE
+  {{ context_before }}
+
+  TARGET PASSAGE
+  {{ passage_text }}
+
+  CONTEXT AFTER
+  {{ context_after }}
+
+validation:
+  evidence_must_be_substring: true

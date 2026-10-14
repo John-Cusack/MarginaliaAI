@@ -584,9 +584,12 @@ async def test_migrations_revert_cleanly(db_url: str) -> None:
                 ("bibliography", "artifacts"),
                 ("bibliography", "coverage_reports"),
                 ("bibliography", "editions"),
+                ("dilemma", "claim_evidence"),
+                ("dilemma", "claims"),
                 ("dilemma", "profiles"),
                 ("dilemma", "runs"),
                 ("dilemma", "source_roles"),
+                ("dilemma", "vouch_edges"),
                 ("evidence", "source_spans"),
             ]
         finally:

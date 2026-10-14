@@ -52,6 +52,11 @@ provides:
     - id: source_document
       default_chunker: unit_window
 
+  extraction_schemas:
+    - id: doctrinal_claims
+      version: 3
+      file: schemas/extraction_schemas/doctrinal_claims.yaml
+
   mcp_tools:
     - id: dilemma.profile_load
       entry: dilemma.tools:profile_load

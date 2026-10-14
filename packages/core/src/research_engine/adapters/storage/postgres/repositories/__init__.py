@@ -21,6 +21,9 @@ from research_engine.adapters.storage.postgres.repositories.extractions import (
     PGExtractionRepo,
     PGExtractionSchemaRepo,
 )
+from research_engine.adapters.storage.postgres.repositories.machine_claims import (
+    PGMachineClaimRepo,
+)
 from research_engine.adapters.storage.postgres.repositories.marks import PGDocumentMarkRepo
 from research_engine.adapters.storage.postgres.repositories.mentions import PGMentionRepo
 from research_engine.adapters.storage.postgres.repositories.nodes import (
@@ -60,6 +63,7 @@ __all__ = [
     "PGIngestionRunRepo",
     "PGPluginActivationRepo",
     "PGProfileRepo",
+    "PGMachineClaimRepo",
     "PGLLMCallLogRepo",
     "PGMentionRepo",
     "PGPassageRepo",
