@@ -133,3 +133,50 @@ class VouchEdge(VouchEdgeDraft):
 
     id: UUID
     created_at: datetime
+
+
+class PairRelation(StrEnum):
+    """The verdict of one NLI comparison of two claims."""
+
+    entail = "entail"
+    contradict = "contradict"
+    neutral = "neutral"
+
+
+class ClaimEmbedding(BaseModel):
+    """One vector for a claim's statement text, under one model version.
+
+    Mirrors `dilemma.claim_embeddings`: keyed by
+    ``(claim_id, model, model_version)`` like passage embeddings, so a new
+    model version re-embeds rather than overwriting.
+    """
+
+    claim_id: UUID
+    model: str
+    model_version: str
+    embedding: list[float]
+
+
+class PairScoreDraft(BaseModel):
+    """One NLI verdict on a claim pair, before it is stored.
+
+    The writer orders the pair (``claim_a_id < claim_b_id`` by string
+    compare) so the same pair never lands under two orders; the repository
+    enforces that, the draft need only carry the two ids.
+    """
+
+    claim_a_id: UUID
+    claim_b_id: UUID
+    relation: PairRelation
+    confidence: float = Field(ge=0, le=1)
+    rationale: str
+    llm_call_id: UUID | None = None
+    model: str
+    prompt_hash: str
+
+
+class PairScore(PairScoreDraft):
+    """One row of `dilemma.pair_scores`."""
+
+    run_id: UUID
+    created_at: datetime

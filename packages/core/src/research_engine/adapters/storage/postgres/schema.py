@@ -1198,6 +1198,86 @@ vouch_edges = sa.Table(
 
 sa.Index("vouch_edges_run_idx", vouch_edges.c.run_id)
 
+# One vector per (claim, model, model_version), over the claim's statement
+# text only. Keyed and indexed exactly like `passage_embeddings` — same
+# bge-m3 width, same HNSW cosine shape. Mirrors 024_funnel_pairs.
+claim_embeddings = sa.Table(
+    "claim_embeddings",
+    metadata,
+    sa.Column(
+        "claim_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.claims.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("model_version", sa.Text, nullable=False),
+    # Dimensioned: an HNSW index cannot be built on a `vector` without one.
+    sa.Column("embedding", Vector(EMBEDDING_DIM), nullable=False),
+    sa.PrimaryKeyConstraint("claim_id", "model", "model_version"),
+    schema="dilemma",
+)
+
+sa.Index(
+    "claim_embeddings_hnsw",
+    claim_embeddings.c.embedding,
+    postgresql_using="hnsw",
+    postgresql_ops={"embedding": "vector_cosine_ops"},
+    postgresql_with={"m": 16, "ef_construction": 64},
+)
+
+#: The verdicts of the funnel's NLI stage: entail, contradict, or neutral.
+PAIR_RELATIONS = ("entail", "contradict", "neutral")
+
+# One NLI verdict per (run, ordered pair). The pair order (a < b, string
+# compare) is the writer's convention, kept by the repository; the primary
+# key keeps the same pair from landing twice. Mirrors 024_funnel_pairs.
+pair_scores = sa.Table(
+    "pair_scores",
+    metadata,
+    sa.Column(
+        "run_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    sa.Column(
+        "claim_a_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.claims.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "claim_b_id",
+        sa.Uuid,
+        sa.ForeignKey("dilemma.claims.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("relation", sa.Text, nullable=False),
+    sa.Column("confidence", sa.Float, nullable=False),
+    sa.Column("rationale", sa.Text, nullable=False),
+    sa.Column(
+        "llm_call_id",
+        sa.Uuid,
+        sa.ForeignKey("core.llm_calls.id", ondelete="SET NULL"),
+    ),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("prompt_hash", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    sa.CheckConstraint(
+        "relation IN (" + ", ".join(f"'{r}'" for r in PAIR_RELATIONS) + ")",
+        name="pair_scores_relation_ck",
+    ),
+    sa.CheckConstraint(
+        "confidence >= 0 AND confidence <= 1", name="pair_scores_confidence_ck"
+    ),
+    sa.CheckConstraint("claim_a_id <> claim_b_id", name="pair_scores_no_self_ck"),
+    sa.PrimaryKeyConstraint("run_id", "claim_a_id", "claim_b_id"),
+    schema="dilemma",
+)
+
+sa.Index("pair_scores_run_idx", pair_scores.c.run_id)
+
 # --- Authored: works from their first freeze ---
 
 works = sa.Table(

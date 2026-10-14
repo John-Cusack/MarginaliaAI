@@ -22,6 +22,7 @@ from research_engine.adapters.storage.postgres.engine import build_engine, trans
 from research_engine.adapters.storage.postgres.repositories import (
     PGAcquisitionRepo,
     PGCitationRepo,
+    PGClaimEmbeddingRepo,
     PGClaimRepo,
     PGDocumentMarkRepo,
     PGDocumentNodeRepo,
@@ -37,6 +38,7 @@ from research_engine.adapters.storage.postgres.repositories import (
     PGLLMCallLogRepo,
     PGMachineClaimRepo,
     PGMentionRepo,
+    PGPairScoreRepo,
     PGPassageRepo,
     PGPluginActivationRepo,
     PGProfileRepo,
@@ -119,6 +121,8 @@ class Container:
     #: Cited addresses, and the machine claims anchored to them.
     spans: PGSourceSpanRepo
     machine_claims: PGMachineClaimRepo
+    claim_embeddings: PGClaimEmbeddingRepo
+    pair_scores: PGPairScoreRepo
     runs: PGRunRepo
     #: The SDK face of the two above.
     profile_client: ProfileServiceAdapter
@@ -367,6 +371,8 @@ async def build_container(settings: Settings) -> Container:
     acquisitions_repo = PGAcquisitionRepo(sql_engine)
     profiles_repo = PGProfileRepo(sql_engine)
     machine_claims_repo = PGMachineClaimRepo(sql_engine)
+    claim_embeddings_repo = PGClaimEmbeddingRepo(sql_engine)
+    pair_scores_repo = PGPairScoreRepo(sql_engine)
     runs_repo = PGRunRepo(sql_engine)
     claim_audit_service = ClaimAuditService(claims_repo)
     claim_service = ClaimService(
@@ -590,6 +596,8 @@ async def build_container(settings: Settings) -> Container:
         profile_client=profile_client,
         spans=spans_repo,
         machine_claims=machine_claims_repo,
+        claim_embeddings=claim_embeddings_repo,
+        pair_scores=pair_scores_repo,
         ingestion=ingestion_service,
         search=search_service,
         verification=quote_verifier,

@@ -525,3 +525,446 @@ async def _audit(
         return {"claims": len(claims), "audited": len(audited)}
     finally:
         await close()
+
+
+# --- Funnel: blocking, shortlist, NLI scoring over one extraction run ---
+#
+# Core services, same container pattern as extraction above. Stage 0 keeps
+# only horn-eligible claims (binding role, live window, assertoric
+# modality); Stage 1 embeds their statements and keeps top-k pairs; Stage 2
+# scores each pair with one structured LLM call and keeps contradictions at
+# or above tau. Scores land in `dilemma.pair_scores` under the funnel run.
+
+funnel_app = typer.Typer(no_args_is_help=True)
+dilemma_app.add_typer(
+    funnel_app, name="funnel", help="Contradiction funnel over extracted claims."
+)
+
+
+@funnel_app.command("run")
+def funnel_run(
+    extraction_run: str = typer.Option(
+        ..., "--extraction-run", help="Extraction run id whose claims to score."
+    ),
+    profile: str = typer.Option(
+        ..., "--profile", help="Profile key for horn-eligibility roles."
+    ),
+    k: int = typer.Option(50, "--k", help="Pairs kept per claim at shortlist."),
+    tau: float = typer.Option(
+        0.7, "--tau", help="Minimum NLI confidence kept."
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="NLI model; defaults to the settings default."
+    ),
+    on: str | None = typer.Option(
+        None, "--on", help="Roles in force on this ISO date; default today."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", help="Score even when pairs exceed 1,000."
+    ),
+    wake_gpu: bool = typer.Option(
+        True, "--wake-gpu/--no-wake-gpu", help="Start the GPU embed host first."
+    ),
+) -> None:
+    """Block, shortlist, and NLI-score one extraction run's claims."""
+    try:
+        result = asyncio.run(
+            _funnel(
+                extraction_run=extraction_run,
+                profile=profile,
+                k=k,
+                tau=tau,
+                model=model,
+                on=on,
+                yes=yes,
+                wake_gpu=wake_gpu,
+            )
+        )
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(result, default=str, indent=2, ensure_ascii=False))
+
+
+async def _funnel(
+    *,
+    extraction_run: str,
+    profile: str,
+    k: int,
+    tau: float,
+    model: str | None,
+    on: str | None,
+    yes: bool,
+    wake_gpu: bool,
+) -> dict[str, Any]:
+    from datetime import date
+
+    from research_engine.config import load_settings
+    from research_engine.services.dilemma.blocking import eligible_claim_ids
+    from research_engine.services.dilemma.scoring import PairScorer
+    from research_engine.services.dilemma.shortlist import ClaimShortlister
+
+    settings = load_settings()
+    as_of = date.fromisoformat(on) if on else date.today()
+    if wake_gpu and settings.embedding_provider != "local_bge":
+        from research_engine.adapters.inference.gpu_host import (
+            ensure_gpu_host_ready,
+        )
+
+        await ensure_gpu_host_ready(settings)
+
+    container, close = await _container()
+    try:
+        claims = await container.machine_claims.for_run(UUID(extraction_run))
+        if not claims:
+            raise ValueError(f"no claims under run: {extraction_run}")
+        stored_profile = await container.profiles.get_by_key(profile)
+        if stored_profile is None:
+            raise ValueError(f"profile not loaded: {profile}")
+        roles = await container.profiles.roles(stored_profile.id, on=as_of)
+        eligible, blocked = eligible_claim_ids(claims, roles, as_of)
+
+        run = await container.profile_client.start_run(
+            profile,
+            stage="funnel",
+            config={
+                "extraction_run": extraction_run,
+                "k": k,
+                "tau": tau,
+                "model": model or settings.default_llm_model,
+                "on": as_of.isoformat(),
+            },
+            items_in=len(claims),
+        )
+        run_id = UUID(str(run["id"]))
+        try:
+            embedder = container.inference.bulk_embedding
+            shortlister = ClaimShortlister(
+                embedder, container.claim_embeddings, container.transaction_factory
+            )
+            pairs = await shortlister.shortlist(
+                claims,
+                eligible,
+                k,
+                getattr(embedder, "model_name", settings.embedding_model),
+                getattr(embedder, "model_version", "1.0"),
+            )
+            if len(pairs) > _COST_GATE_ITEMS and not yes:
+                raise ValueError(
+                    f"{len(pairs)} pairs exceed the 1,000-item gate; "
+                    "re-run with --yes"
+                )
+            texts = {
+                claim.id: (
+                    claim.statement,
+                    claim.modality.value,
+                    claim.polarity.value,
+                )
+                for claim in claims
+            }
+            scorer = PairScorer(container.llm, container.pair_scores)
+            kept = await scorer.score_pairs(
+                run_id,
+                pairs,
+                texts,
+                tau,
+                model or settings.default_llm_model,
+                prompt_version="1",
+            )
+            stats = {
+                "claims_in": len(claims),
+                "eligible": len(eligible),
+                "blocked": dict(blocked),
+                "pairs": len(pairs),
+                "contradictions": len(kept),
+            }
+            await container.profile_client.finish_run(
+                run_id, status="finished", items_out=len(kept), stats=stats
+            )
+        except Exception:
+            with contextlib.suppress(Exception):
+                await container.profile_client.finish_run(run_id, status="failed")
+            raise
+        return {"run_id": str(run_id), **stats}
+    finally:
+        await close()
+
+
+# --- Outside judging: pairs out, verdicts in ---
+#
+# The same packet pattern as extraction, for judges that do not speak
+# `LLMPort` — a Muse agent, a batch job. `_pairs` writes one line per
+# shortlisted pair carrying both claims' texts; `_judge` holds each answer
+# to the NLI contract (relation, confidence, rationale) and stores the
+# verdicts under a funnel run. Pairs are independent: a bad answer fails
+# its pair, never the file.
+
+
+@funnel_app.command("pairs")
+def funnel_pairs(
+    extraction_run: str = typer.Option(
+        ..., "--extraction-run", help="Extraction run id whose claims to pair."
+    ),
+    profile: str = typer.Option(
+        ..., "--profile", help="Profile key for horn-eligibility roles."
+    ),
+    k: int = typer.Option(50, "--k", help="Pairs kept per claim at shortlist."),
+    on: str | None = typer.Option(
+        None, "--on", help="Roles in force on this ISO date; default today."
+    ),
+    out: Path = typer.Option(..., "--out", help="Pair packets JSONL to write."),
+    wake_gpu: bool = typer.Option(
+        True, "--wake-gpu/--no-wake-gpu", help="Start the GPU embed host first."
+    ),
+) -> None:
+    """Block + shortlist one run; write pair packets for outside judging."""
+    try:
+        result = asyncio.run(
+            _pairs(
+                extraction_run=extraction_run,
+                profile=profile,
+                k=k,
+                on=on,
+                out=out,
+                wake_gpu=wake_gpu,
+            )
+        )
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(result, default=str, indent=2, ensure_ascii=False))
+
+
+async def _pairs(
+    *,
+    extraction_run: str,
+    profile: str,
+    k: int,
+    on: str | None,
+    out: Path,
+    wake_gpu: bool,
+) -> dict[str, Any]:
+    from datetime import date
+
+    from research_engine.config import load_settings
+    from research_engine.services.dilemma.blocking import eligible_claim_ids
+    from research_engine.services.dilemma.shortlist import ClaimShortlister
+
+    settings = load_settings()
+    as_of = date.fromisoformat(on) if on else date.today()
+    if wake_gpu and settings.embedding_provider != "local_bge":
+        from research_engine.adapters.inference.gpu_host import (
+            ensure_gpu_host_ready,
+        )
+
+        await ensure_gpu_host_ready(settings)
+
+    container, close = await _container()
+    try:
+        claims = await container.machine_claims.for_run(UUID(extraction_run))
+        if not claims:
+            raise ValueError(f"no claims under run: {extraction_run}")
+        stored_profile = await container.profiles.get_by_key(profile)
+        if stored_profile is None:
+            raise ValueError(f"profile not loaded: {profile}")
+        roles = await container.profiles.roles(stored_profile.id, on=as_of)
+        eligible, blocked = eligible_claim_ids(claims, roles, as_of)
+        embedder = container.inference.bulk_embedding
+        shortlister = ClaimShortlister(
+            embedder, container.claim_embeddings, container.transaction_factory
+        )
+        pairs = await shortlister.shortlist(
+            claims,
+            eligible,
+            k,
+            getattr(embedder, "model_name", settings.embedding_model),
+            getattr(embedder, "model_version", "1.0"),
+        )
+        by_id = {claim.id: claim for claim in claims}
+        lines = []
+        for first, second, score in pairs:
+            one, other = by_id[first], by_id[second]
+            lines.append(
+                json.dumps(
+                    {
+                        "pair_id": f"{first}:{second}",
+                        "claim_a_id": str(first),
+                        "claim_b_id": str(second),
+                        "vec_score": score,
+                        "a": {
+                            "statement": one.statement,
+                            "modality": one.modality.value,
+                            "polarity": one.polarity.value,
+                        },
+                        "b": {
+                            "statement": other.statement,
+                            "modality": other.modality.value,
+                            "polarity": other.polarity.value,
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return {
+            "pairs": len(lines),
+            "eligible": len(eligible),
+            "blocked": dict(blocked),
+            "out": str(out),
+        }
+    finally:
+        await close()
+
+
+class _JudgmentFailure(ValueError):
+    """One answer that is not a verdict: wrong pair, bad relation, no numbers."""
+
+
+def _as_judgment(
+    pair_ids: dict[str, tuple[UUID, UUID]], record: dict[str, Any]
+) -> Any:
+    """One outside answer in the NLI contract, or raise `_JudgmentFailure`.
+
+    Kept importable-and-pure so the contract is unit-tested without a
+    database: the CLI resolves ids, this function judges shapes.
+    """
+    from research_engine.domain.machine_claims import PairRelation, PairScoreDraft
+
+    pair_id = record.get("pair_id")
+    if pair_id not in pair_ids:
+        raise _JudgmentFailure(f"unknown pair_id: {pair_id!r}")
+    try:
+        relation = PairRelation(str(record.get("relation")).lower())
+    except ValueError:
+        raise _JudgmentFailure(
+            f"bad relation for {pair_id}: {record.get('relation')!r}"
+        ) from None
+    try:
+        confidence = float(record.get("confidence"))
+    except (TypeError, ValueError):
+        raise _JudgmentFailure(
+            f"bad confidence for {pair_id}: {record.get('confidence')!r}"
+        ) from None
+    if not 0.0 <= confidence <= 1.0:
+        raise _JudgmentFailure(
+            f"confidence out of range for {pair_id}: {confidence}"
+        )
+    rationale = record.get("rationale")
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise _JudgmentFailure(f"empty rationale for {pair_id}")
+    first, second = pair_ids[pair_id]
+    return PairScoreDraft(
+        claim_a_id=first,
+        claim_b_id=second,
+        relation=relation,
+        confidence=confidence,
+        rationale=rationale.strip(),
+        llm_call_id=None,
+        model=str(record.get("model", "")),
+        prompt_hash=str(record.get("prompt_hash", "")),
+    )
+
+
+@funnel_app.command("judge")
+def funnel_judge(
+    pairs: Path = typer.Option(..., "--pairs", help="Pair packets JSONL."),
+    results: Path = typer.Option(..., "--results", help="Verdict answers JSONL."),
+    profile: str = typer.Option(..., "--profile", help="Profile key."),
+    tau: float = typer.Option(
+        0.7, "--tau", help="Minimum NLI confidence kept."
+    ),
+    model: str = typer.Option(
+        "muse-agent:muse-wonder-full-1.0", "--model", help="Judge label recorded."
+    ),
+    prompt_version: str = typer.Option(
+        "agent-v1", "--prompt-version", help="Judging instructions version."
+    ),
+) -> None:
+    """Import outside pair verdicts as scores under a funnel run."""
+    try:
+        result = asyncio.run(
+            _judge(
+                pairs=pairs,
+                results=results,
+                profile=profile,
+                tau=tau,
+                model=model,
+                prompt_version=prompt_version,
+            )
+        )
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(result, default=str, indent=2, ensure_ascii=False))
+
+
+async def _judge(
+    *,
+    pairs: Path,
+    results: Path,
+    profile: str,
+    tau: float,
+    model: str,
+    prompt_version: str,
+) -> dict[str, Any]:
+    import hashlib
+
+    pair_ids: dict[str, tuple[UUID, UUID]] = {}
+    for line in pairs.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        pair_ids[row["pair_id"]] = (UUID(row["claim_a_id"]), UUID(row["claim_b_id"]))
+    if not pair_ids:
+        raise ValueError(f"no pairs in: {pairs}")
+    prompt_hash = hashlib.sha256(prompt_version.encode()).hexdigest()
+    drafts: list[Any] = []
+    failed: list[str] = []
+    for line in results.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        record.setdefault("model", model)
+        record.setdefault("prompt_hash", prompt_hash)
+        try:
+            drafts.append(_as_judgment(pair_ids, record))
+        except _JudgmentFailure as exc:
+            failed.append(str(exc))
+
+    container, close = await _container()
+    try:
+        run = await container.profile_client.start_run(
+            profile,
+            stage="funnel",
+            config={
+                "judge": "outside",
+                "tau": tau,
+                "model": model,
+                "prompt_version": prompt_version,
+            },
+            items_in=len(pair_ids),
+        )
+        run_id = UUID(str(run["id"]))
+        try:
+            stored = await container.pair_scores.insert(run_id, drafts)
+            kept = sum(
+                1
+                for row in stored
+                if row.relation.value == "contradict" and row.confidence >= tau
+            )
+            stats = {
+                "pairs": len(pair_ids),
+                "judged": len(drafts),
+                "failed": len(failed),
+                "contradictions": kept,
+            }
+            await container.profile_client.finish_run(
+                run_id, status="finished", items_out=kept, stats=stats
+            )
+        except Exception:
+            with contextlib.suppress(Exception):
+                await container.profile_client.finish_run(run_id, status="failed")
+            raise
+        return {"run_id": str(run_id), **stats, "failures": failed[:10]}
+    finally:
+        await close()

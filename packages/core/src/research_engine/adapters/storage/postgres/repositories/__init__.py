@@ -21,6 +21,10 @@ from research_engine.adapters.storage.postgres.repositories.extractions import (
     PGExtractionRepo,
     PGExtractionSchemaRepo,
 )
+from research_engine.adapters.storage.postgres.repositories.funnel import (
+    PGClaimEmbeddingRepo,
+    PGPairScoreRepo,
+)
 from research_engine.adapters.storage.postgres.repositories.machine_claims import (
     PGMachineClaimRepo,
 )
@@ -48,6 +52,7 @@ from research_engine.adapters.storage.postgres.repositories.work_links import PG
 
 __all__ = [
     "PGAcquisitionRepo",
+    "PGClaimEmbeddingRepo",
     "PGClaimRepo",
     "PGCitationRepo",
     "PGDocumentMarkRepo",
@@ -64,6 +69,7 @@ __all__ = [
     "PGPluginActivationRepo",
     "PGProfileRepo",
     "PGMachineClaimRepo",
+    "PGPairScoreRepo",
     "PGLLMCallLogRepo",
     "PGMentionRepo",
     "PGPassageRepo",
