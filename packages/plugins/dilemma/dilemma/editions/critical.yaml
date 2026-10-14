@@ -122,3 +122,12 @@ sources:
     acquire: {method: bulk_download, url: https://cesletter.org,
               notes: Free PDF; responses to it are in lds_apologetics.}
     verify: [license]
+
+  - key: johnson-sharing-good-news
+    title: "Sharing the Good News with Mormons"
+    work: sharing-good-news-with-mormons
+    author: Eric Johnson and Sean McDowell (eds.)
+    date_published: "2018"
+    acquire: {method: manual, license: in copyright,
+              notes: Operator-provided Kindle text in the edition inbox; private research use only.}
+    verify: [license]
