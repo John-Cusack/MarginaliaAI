@@ -30,6 +30,11 @@ RECORD_TYPES = {
         "fields": {
             "referenced_party_surface": {"type": "string"},
             "referenced_party_entity_id": {"type": "entity_ref", "entity_type": "person"},
+            "addressed_party_entity_id": {
+                "type": "entity_ref",
+                "entity_type": "person",
+                "resolution": "exact",
+            },
             "referenced_date": {"type": "fuzzy_date"},
             "evidence": {"type": "evidence_span"},
         },
@@ -48,18 +53,38 @@ class FakeDocuments:
 
 
 class FakeEntities:
+    """Emulates the repository's two modes.
+
+    Fuzzy mode returns the candidates it was given, best first. Exact mode
+    returns only those whose canonical name or an alias equals the query
+    case-insensitively — which is the whole difference between the modes, so
+    a fake that ignored `exact` would let the enricher pass its exact-mode
+    tests while resolving fuzzily.
+    """
+
     def __init__(self, *candidates):
         self._candidates = list(candidates)
+        self.calls: list[tuple] = []
 
-    async def search_by_name(self, name, entity_type=None, k=5):
-        return self._candidates[:k]
+    async def search_by_name(self, name, entity_type=None, k=5, *, exact=False):
+        self.calls.append((name, entity_type, k, exact))
+        if not exact:
+            return self._candidates[:k]
+        wanted = name.lower()
+        return [
+            c
+            for c in self._candidates
+            if wanted
+            in {c.canonical_name.lower(), *(a.lower() for a in c.aliases)}
+        ][:k]
 
 
-def candidate(name, score, entity_type="person"):
+def candidate(name, score, entity_type="person", aliases=()):
     return SimpleNamespace(
         entity_id=uuid4(),
         canonical_name=name,
         entity_type=entity_type,
+        aliases=list(aliases),
         match_score=score,
     )
 
@@ -205,6 +230,55 @@ class TestEntityRef:
 
         assert result.fields["referenced_party_entity_id_resolved"] is None
 
+    async def test_the_default_resolution_searches_fuzzily(self):
+        entities = FakeEntities(candidate("George B. McClellan", 0.97))
+        await enrich(
+            [a_record(referenced_party_entity_id="McClellan")], entities=entities
+        )
+
+        assert entities.calls[0][3] is False
+
+
+class TestExactEntityRef:
+    """`resolution: exact`: the surface form must be the name as stored."""
+
+    async def test_a_fuzzy_only_match_is_refused(self):
+        """A 0.97 near-miss would clear the fuzzy bar easily.
+
+        Exact mode exists for surfaces drawn from a known list — seeded
+        speakers, hinted names — where "McClellan" for "George B. McClellan"
+        is not a match but a different (or ambiguous) name, and resolving it
+        anyway would silently invent the attribution the schema forbade.
+        """
+        entities = FakeEntities(candidate("George B. McClellan", 0.97))
+        [result] = await enrich(
+            [a_record(addressed_party_entity_id="McClellan")], entities=entities
+        )
+
+        assert result.fields["addressed_party_entity_id_resolved"] is None
+        assert entities.calls[0][3] is True
+
+    async def test_case_insensitive_equality_resolves(self):
+        entities = FakeEntities(candidate("George B. McClellan", 1.0))
+        [result] = await enrich(
+            [a_record(addressed_party_entity_id="george b. mcclellan")],
+            entities=entities,
+        )
+
+        resolved = result.fields["addressed_party_entity_id_resolved"]
+        assert resolved["canonical_name"] == "George B. McClellan"
+
+    async def test_an_alias_equality_resolves(self):
+        entities = FakeEntities(
+            candidate("George B. McClellan", 1.0, aliases=["Little Mac"])
+        )
+        [result] = await enrich(
+            [a_record(addressed_party_entity_id="little mac")], entities=entities
+        )
+
+        resolved = result.fields["addressed_party_entity_id_resolved"]
+        assert resolved["canonical_name"] == "George B. McClellan"
+
 
 class TestUntouchedFields:
     async def test_plain_strings_are_left_alone(self):
@@ -226,6 +300,22 @@ class TestUntouchedFields:
 
     async def test_no_records(self):
         assert await enrich([]) == []
+
+    async def test_enrichment_keeps_every_evidence_span(self):
+        """Rebuilding the record around new fields must not drop its anchors."""
+        record = ValidatedRecord(
+            record_type="epistolary_reference",
+            fields={
+                "evidence": "yours of the 3d ult.",
+                "referenced_date": "the 3d ult.",
+            },
+            evidence_start=0,
+            evidence_end=20,
+            evidence_spans=(("evidence", 0, 20),),
+        )
+        [result] = await enrich([record])
+
+        assert result.evidence_spans == (("evidence", 0, 20),)
 
 
 class TestAnchoringToTheContainingLetter:

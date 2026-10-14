@@ -98,6 +98,83 @@ class TestValidateRecords:
             "the quick brown fox"
         )
 
+    def test_every_evidence_field_keeps_its_span(self):
+        """A record quoting the passage three times has three anchors.
+
+        Only the first fits the one-anchor columns on `extraction_records`,
+        but the validated record is where later consumers (span resolution,
+        claim materialization) read from — discarding the other spans here
+        would make them re-locate quotations already located, or worse,
+        quietly proceed with one anchor for a three-quotation claim.
+        """
+        types = {
+            "claim": {
+                "id": "claim",
+                "fields": {
+                    "assertion": {"type": "string", "required": True},
+                    "quote": {"type": "evidence_span", "required": True},
+                    "quote_2": {"type": "evidence_span"},
+                    "quote_3": {"type": "evidence_span"},
+                },
+            }
+        }
+        [result] = validate_records(
+            [
+                record(
+                    assertion="foxes jump",
+                    quote="the quick brown fox",
+                    quote_2="jumped over",
+                    quote_3="the lazy dog",
+                )
+            ],
+            PASSAGE,
+            uuid4(),
+            types,
+        )
+
+        assert [name for name, _, _ in result.evidence_spans] == [
+            "quote",
+            "quote_2",
+            "quote_3",
+        ]
+        for _name, start, end in result.evidence_spans:
+            assert PASSAGE[start:end] in {
+                "the quick brown fox",
+                "jumped over",
+                "the lazy dog",
+            }
+        # The headline anchor remains the first declared span.
+        assert (result.evidence_start, result.evidence_end) == (
+            result.evidence_spans[0][1],
+            result.evidence_spans[0][2],
+        )
+
+    def test_an_unlocatable_later_evidence_field_is_rejected(self):
+        """Quoting correctly once does not excuse inventing text elsewhere."""
+        types = {
+            "claim": {
+                "id": "claim",
+                "fields": {
+                    "assertion": {"type": "string", "required": True},
+                    "quote": {"type": "evidence_span", "required": True},
+                    "quote_2": {"type": "evidence_span"},
+                },
+            }
+        }
+        with pytest.raises(EvidenceNotFound):
+            validate_records(
+                [
+                    record(
+                        assertion="foxes jump",
+                        quote="the quick brown fox",
+                        quote_2="a sentence from some neighbouring passage",
+                    )
+                ],
+                PASSAGE,
+                uuid4(),
+                types,
+            )
+
     def test_invented_evidence_is_rejected(self):
         with pytest.raises(EvidenceNotFound):
             validate_records(

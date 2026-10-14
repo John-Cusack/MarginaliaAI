@@ -243,3 +243,6 @@ class TestExtractionOptions:
         assert opts.force_refresh is False
         assert opts.concurrency == 8
         assert opts.caller == "core"
+        assert opts.context_before == 0
+        assert opts.context_after == 0
+        assert opts.entity_hints == ""

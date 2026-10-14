@@ -72,6 +72,15 @@ class ExtractionOptions(BaseModel):
     concurrency: int = 8
     batch_size: int = 10
     retry_on_validation_error: bool = True
+    #: Neighbouring passages to show the model around the target passage, for
+    #: context only: evidence is still validated against the target alone, so
+    #: widening the window can change what the model says but never what it is
+    #: allowed to quote.
+    context_before: int = 0
+    context_after: int = 0
+    #: Free-text hints (typically known entity names/ids) interpolated into the
+    #: prompt as ``{{ entity_hints }}``.
+    entity_hints: str = ""
     caller: str = "core"
 
 

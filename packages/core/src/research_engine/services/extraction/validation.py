@@ -49,6 +49,14 @@ class ValidatedRecord:
     evidence_start: int
     evidence_end: int
 
+    #: (field_name, start, end) for every located evidence field, in schema
+    #: declaration order. ``evidence_start``/``evidence_end`` above remain the
+    #: first of these, for the one-anchor column on ``extraction_records``; a
+    #: record quoting the passage in three fields has three checkable anchors,
+    #: and discarding two of them here would force every later consumer to
+    #: re-locate quotations this layer has already located.
+    evidence_spans: tuple[tuple[str, int, int], ...] = ()
+
 
 def locate_span(span_text: str, passage_text: str) -> tuple[int, int] | None:
     """Character offsets of *span_text* in *passage_text*, or None.
@@ -88,6 +96,11 @@ def validate_records(
     """
     validated: list[ValidatedRecord] = []
     for position, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ValidationError(
+                f"Record {position} from passage {passage_id} is a "
+                f"{type(record).__name__}, not a record object."
+            )
         record_type = record.get("record_type")
         if record_type not in record_types:
             raise ValidationError(
@@ -114,13 +127,14 @@ def validate_records(
                 f"{', '.join(missing)}."
             )
 
-        anchor = _anchor(fields, definition, passage_text, passage_id, record_type)
+        spans = _anchor(fields, definition, passage_text, passage_id, record_type)
         validated.append(
             ValidatedRecord(
                 record_type=record_type,
                 fields=fields,
-                evidence_start=anchor[0],
-                evidence_end=anchor[1],
+                evidence_start=spans[0][1],
+                evidence_end=spans[0][2],
+                evidence_spans=spans,
             )
         )
     return validated
@@ -132,13 +146,19 @@ def _anchor(
     passage_text: str,
     passage_id: object,
     record_type: str,
-) -> tuple[int, int]:
-    """Locate every evidence field, and return the first one's offsets.
+) -> tuple[tuple[str, int, int], ...]:
+    """Locate every evidence field, in declaration order.
 
-    Every declared evidence field is checked, not just the one that becomes the
-    anchor, because an unlocatable quotation in any field means the model
-    invented text — and that record's other fields are no more trustworthy for
-    it having quoted correctly somewhere else.
+    Every declared evidence field is checked, not just the one that becomes
+    the record's headline anchor, because an unlocatable quotation in any
+    field means the model invented text — and that record's other fields are
+    no more trustworthy for it having quoted correctly somewhere else.
+
+    Only *passage_text* is searched. Neighbouring passages shown to the model
+    as context are deliberately absent here: a quotation that exists only in
+    the context is not evidence from this passage, and accepting it would
+    anchor the record to offsets that do not address the passage it is
+    stored against.
     """
     declared = evidence_field_names(definition)
     if not declared:
@@ -147,7 +167,7 @@ def _anchor(
             f"field, so nothing it produces can be checked against the corpus."
         )
 
-    located: list[tuple[int, int]] = []
+    located: list[tuple[str, int, int]] = []
     for name in declared:
         value = fields.get(name)
         if value is None:
@@ -162,11 +182,11 @@ def _anchor(
             raise EvidenceNotFound(
                 field=name, passage_id=passage_id, span_text=value
             )
-        located.append(span)
+        located.append((name, span[0], span[1]))
 
     if not located:
         raise ValidationError(
             f"Record of type '{record_type}' from passage {passage_id} quoted "
             f"nothing; one of {', '.join(declared)} is required."
         )
-    return located[0]
+    return tuple(located)

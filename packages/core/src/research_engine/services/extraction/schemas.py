@@ -61,13 +61,25 @@ def render_prompt(
     passage_text: str,
     entity_hints: str = "",
     extra_context: dict[str, Any] | None = None,
+    *,
+    context_before: str = "",
+    context_after: str = "",
 ) -> str:
-    """Render a Jinja2 extraction prompt template."""
+    """Render a Jinja2 extraction prompt template.
+
+    Every schema may use ``passage_text``, ``entity_hints``, ``context_before``
+    and ``context_after``. The context variables are the neighbouring passage
+    texts joined with blank lines, or "" when none were requested — they are
+    always defined, so a template that mentions them renders whether or not a
+    run asked for context.
+    """
     env = jinja2.Environment(undefined=jinja2.StrictUndefined)
     tmpl = env.from_string(template)
     ctx = {
         "passage_text": passage_text,
         "entity_hints": entity_hints,
+        "context_before": context_before,
+        "context_after": context_after,
         **(extra_context or {}),
     }
     return tmpl.render(**ctx)

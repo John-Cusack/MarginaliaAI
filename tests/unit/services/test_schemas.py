@@ -45,6 +45,25 @@ class TestRenderPrompt:
         result = render_prompt(template, "text", entity_hints="McClellan, Barlow")
         assert "McClellan, Barlow" in result
 
+    def test_context_variables(self):
+        template = (
+            "Before: {{ context_before }}\n{{ passage_text }}\n"
+            "After: {{ context_after }}"
+        )
+        result = render_prompt(
+            template,
+            "target",
+            context_before="the sentence before",
+            context_after="the sentence after",
+        )
+        assert "the sentence before" in result
+        assert "the sentence after" in result
+
+    def test_context_variables_default_to_empty(self):
+        """A template mentioning context renders even when none was requested."""
+        template = "[{{ context_before }}]{{ passage_text }}[{{ context_after }}]"
+        assert render_prompt(template, "target") == "[]target[]"
+
     def test_extra_context(self):
         template = "{{ passage_text }} - {{ custom_field }}"
         result = render_prompt(template, "text", extra_context={"custom_field": "extra"})
