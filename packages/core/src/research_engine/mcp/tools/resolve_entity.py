@@ -35,6 +35,14 @@ TOOL_SCHEMA: dict[str, Any] = {
             "default": 5,
             "description": "Maximum number of candidates to return.",
         },
+        "exact": {
+            "type": "boolean",
+            "default": False,
+            "description": (
+                "Only case-insensitive equality against a canonical name or "
+                "alias counts (score 1.0); no fuzzy near-misses."
+            ),
+        },
     },
     "required": ["query"],
 }
@@ -47,6 +55,7 @@ async def handler(
     entity_type: str | None = None,
     disambiguator: str | None = None,
     k: int = 5,
+    exact: bool = False,
 ) -> dict[str, Any]:
     """Resolve an entity by name."""
     try:
@@ -56,6 +65,7 @@ async def handler(
             name=query,
             entity_type=entity_type,
             k=k,
+            exact=exact,
         )
 
         # If disambiguator provided, prefer matches

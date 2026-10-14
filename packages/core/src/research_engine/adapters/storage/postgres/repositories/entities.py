@@ -61,17 +61,52 @@ class PGEntityRepo:
             return await self._get_by_id(conn, entity_id)  # type: ignore[return-value]
 
     async def search_by_name(
-        self, query: str, entity_type: str | None, k: int
+        self, query: str, entity_type: str | None, k: int, *, exact: bool = False
     ) -> list[EntityCandidate]:
-        stmt = (
-            sa.select(
-                entities,
-                sa.func.similarity(entities.c.canonical_name, query).label("score"),
+        if exact:
+            # Case-insensitive equality against the canonical name or any
+            # alias. Score is a flat 1.0: an exact match is not a matter of
+            # degree, and inventing gradations would let callers rank two
+            # equally-exact names as if one were better.
+            alias_match = sa.exists().where(
+                entity_aliases.c.entity_id == entities.c.id,
+                sa.func.lower(entity_aliases.c.alias) == sa.func.lower(query),
             )
-            .where(sa.func.similarity(entities.c.canonical_name, query) > 0.1)
-            .order_by(sa.desc("score"))
-            .limit(k)
-        )
+            stmt = (
+                sa.select(entities, sa.literal(1.0).label("score"))
+                .where(
+                    sa.or_(
+                        sa.func.lower(entities.c.canonical_name)
+                        == sa.func.lower(query),
+                        alias_match,
+                    )
+                )
+                .order_by(entities.c.canonical_name)
+                .limit(k)
+            )
+        else:
+            # An entity is as findable by its aliases as by its canonical
+            # name: historically the alias is often the form a text actually
+            # uses, and scoring the canonical name alone ranked the right
+            # entity below an unrelated one whose name happened to be closer.
+            alias_score = (
+                sa.select(
+                    sa.func.max(sa.func.similarity(entity_aliases.c.alias, query))
+                )
+                .where(entity_aliases.c.entity_id == entities.c.id)
+                .correlate(entities)
+                .scalar_subquery()
+            )
+            score = sa.func.greatest(
+                sa.func.similarity(entities.c.canonical_name, query),
+                sa.func.coalesce(alias_score, 0.0),
+            )
+            stmt = (
+                sa.select(entities, score.label("score"))
+                .where(score > 0.1)
+                .order_by(sa.desc("score"))
+                .limit(k)
+            )
         if entity_type is not None:
             stmt = stmt.where(entities.c.entity_type == entity_type)
 

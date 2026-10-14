@@ -27,7 +27,7 @@ class EntityServiceAdapter:
         return stored.model_dump(mode="json")
 
     async def resolve(
-        self, name: str, entity_type: str | None = None
+        self, name: str, entity_type: str | None = None, *, exact: bool = False
     ) -> list[dict[str, Any]]:
-        candidates = await self._service.resolve(name, entity_type)
+        candidates = await self._service.resolve(name, entity_type, exact=exact)
         return [candidate.model_dump(mode="json") for candidate in candidates]
