@@ -31,7 +31,19 @@ class ToolCatalog:
         self._packs: list[types.Tool] = []
         self._pack_handlers: dict[str, Any] = {}
         self._listeners: list[Any] = []
+        self._allowed: frozenset[str] | None = None
         self.changed_version = 0
+
+    def restrict(self, allowed: frozenset[str] | None) -> None:
+        """Expose only *allowed* names, core and pack alike; None lifts it.
+
+        Applied at read time rather than when slices are set, so a pack
+        installed later is held to the same list without anyone remembering.
+        """
+        self._allowed = allowed
+
+    def allows(self, name: str) -> bool:
+        return self._allowed is None or name in self._allowed
 
     def set_core(
         self, defs: list[types.Tool], handlers: dict[str, Any]
@@ -67,9 +79,11 @@ class ToolCatalog:
 
     @property
     def defs(self) -> list[types.Tool]:
-        return [*self._core, *self._packs]
+        return [t for t in (*self._core, *self._packs) if self.allows(t.name)]
 
     def handler(self, name: str) -> Any | None:
+        if not self.allows(name):
+            return None
         if name in self._pack_handlers:
             return self._pack_handlers[name]
         return self._core_handlers.get(name)

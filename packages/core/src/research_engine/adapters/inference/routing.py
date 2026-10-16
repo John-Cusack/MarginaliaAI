@@ -43,11 +43,17 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from research_engine.domain.errors import ConfigurationError, EmbeddingUnavailable
+from research_engine.domain.errors import (
+    ConfigurationError,
+    EmbeddingUnavailable,
+    RerankUnavailable,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from uuid import UUID
 
+    from research_engine.adapters.inference.gpu_host import QueryPathWaker
     from research_engine.config.settings import Settings
     from research_engine.ports.embedding import EmbeddingPort
     from research_engine.ports.reranker import RerankerPort
@@ -129,6 +135,67 @@ class QueryEmbeddingWithFallback:
             return await self._local.embed_batch(list(texts))
 
 
+#: Appended to a query-path outage when a wake is under way, so the caller
+#: knows the failure is temporary and roughly how long to wait.
+WAKE_HINT = "The GPU host is being started; retry in about a minute."
+
+
+class WakeOnUnavailableEmbedding:
+    """Query embedding that starts the GPU host when it finds it down.
+
+    The outage still propagates — to `QueryEmbeddingWithFallback` under
+    `auto`, or to the caller under `remote_api` — but the next query after
+    warm-up finds the host up instead of the process staying degraded.
+    """
+
+    def __init__(self, inner: EmbeddingPort, waker: QueryPathWaker) -> None:
+        self._inner = inner
+        self._waker = waker
+
+    @property
+    def model_name(self) -> str:
+        return self._inner.model_name
+
+    @property
+    def model_version(self) -> str:
+        return self._inner.model_version
+
+    @property
+    def dim(self) -> int:
+        return self._inner.dim
+
+    async def embed(self, text: str) -> list[float]:
+        return (await self.embed_batch([text]))[0]
+
+    async def embed_batch(self, texts: Sequence[str]) -> list[list[float]]:
+        try:
+            return await self._inner.embed_batch(list(texts))
+        except EmbeddingUnavailable as exc:
+            self._waker.poke("query_embedding_unavailable")
+            raise EmbeddingUnavailable(f"{exc} {WAKE_HINT}") from exc
+
+
+class WakeOnUnavailableReranker:
+    """Reranking that starts the GPU host when it finds it down.
+
+    The search still returns unreranked and flagged for this query; the wake
+    is for the ones after it.
+    """
+
+    def __init__(self, inner: RerankerPort, waker: QueryPathWaker) -> None:
+        self._inner = inner
+        self._waker = waker
+
+    async def rerank(
+        self, query: str, passage_ids: list[UUID], texts: list[str], k: int
+    ) -> list[tuple[UUID, float]]:
+        try:
+            return await self._inner.rerank(query, passage_ids, texts, k)
+        except RerankUnavailable:
+            self._waker.poke("rerank_unavailable")
+            raise
+
+
 @dataclass
 class InferenceBackends:
     """The adapters the composition root wires in, plus how to shut them down."""
@@ -190,6 +257,9 @@ def build_inference(settings: Settings) -> InferenceBackends:
         return _local_cache["e"]
 
     closeables: list[Any] = []
+    waker = _query_path_waker(settings)
+    if waker is not None:
+        closeables.append(waker)
     embed_mode = _resolve_mode(
         settings.embedding_provider, base_url, what="embedding"
     )
@@ -210,13 +280,17 @@ def build_inference(settings: Settings) -> InferenceBackends:
         # Bulk never falls back, in either remote mode. A corpus run that
         # silently moved to the laptop would finish next week.
         bulk_embedding = remote
+        query_remote: EmbeddingPort = remote
+        if waker is not None:
+            waker.on_ready(remote.reset_circuit)
+            query_remote = WakeOnUnavailableEmbedding(remote, waker)
         if embed_mode == "auto":
             query_embedding = QueryEmbeddingWithFallback(
-                remote, local_embedding, base_url=base_url
+                query_remote, local_embedding, base_url=base_url
             )
             embed_summary = f"embedding {base_url}, queries fall back to local"
         else:
-            query_embedding = remote
+            query_embedding = query_remote
             embed_summary = f"embedding {base_url} (no fallback)"
 
     rerank_mode = _resolve_mode(
@@ -239,7 +313,7 @@ def build_inference(settings: Settings) -> InferenceBackends:
         rerank_summary = f"reranking local ({settings.reranker_model})"
     else:
         assert base_url is not None
-        reranker = RemoteReranker(
+        remote_reranker = RemoteReranker(
             base_url,
             settings.reranker_model,
             timeout=settings.reranker_timeout,
@@ -248,13 +322,19 @@ def build_inference(settings: Settings) -> InferenceBackends:
             # server too old to offer /rerank degrades rather than erroring.
             require_capability=rerank_mode == "remote_api",
         )
-        closeables.append(reranker)
+        closeables.append(remote_reranker)
+        reranker = remote_reranker
+        if waker is not None:
+            waker.on_ready(remote_reranker.reset_circuit)
+            reranker = WakeOnUnavailableReranker(remote_reranker, waker)
         # Both remote modes behave the same at call time: an outage means the
         # search returns unreranked and flagged. They differ only in what
         # happens with no URL configured, which `_resolve_mode` has settled.
         rerank_summary = f"reranking {base_url}, skipped if unreachable"
 
     summary = f"{embed_summary}; {rerank_summary}"
+    if waker is not None:
+        summary += "; queries start the GPU host when it is down"
     logger.info("inference_configured", summary=summary)
     return InferenceBackends(
         query_embedding=query_embedding,
@@ -263,6 +343,18 @@ def build_inference(settings: Settings) -> InferenceBackends:
         summary=summary,
         closeables=closeables,
     )
+
+
+def _query_path_waker(settings: Settings) -> QueryPathWaker | None:
+    """A waker when queries may start the host here, else None."""
+    from research_engine.adapters.inference.gpu_host import (
+        QueryPathWaker,
+        wakes_on_query,
+    )
+
+    if not wakes_on_query(settings):
+        return None
+    return QueryPathWaker(settings)
 
 
 def _resolve_mode(mode: str, base_url: str | None, *, what: str) -> str:

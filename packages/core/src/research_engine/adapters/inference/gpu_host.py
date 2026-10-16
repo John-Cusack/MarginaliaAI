@@ -18,14 +18,19 @@ stop-if-started policy can be added later behind a flag if immediate release
 after ingest turns out to matter; until then this is the smallest correct
 shape.
 
-Queries never call this. They survive a stopped server by design — embedding
-falls back to local, reranking is skipped and flagged — so waking the card
-for an interactive search would spend 30–60 s of warm-up to save 66 ms.
+Queries never *wait* for this. They survive a stopped server by design —
+embedding falls back to local, reranking is skipped and flagged — so blocking
+an interactive search on 30–60 s of warm-up would be the wrong trade. But a
+long-lived server whose host has idle-exited would otherwise stay degraded for
+good, so `QueryPathWaker` starts the unit in the *background* when a query
+finds it down, and only when the unit is on this machine: a query never
+reaches across ssh to start someone else's GPU.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 import subprocess
 import time
@@ -47,6 +52,10 @@ UNIT = "marginalia-embed.service"
 
 #: Seconds between /health polls while waiting for warm=true.
 POLL_INTERVAL = 2.0
+
+#: Minimum seconds between two query-path wake attempts. A start that fails
+#: should not be retried on every keystroke-fast query.
+QUERY_WAKE_INTERVAL = 60.0
 
 #: Hostnames that mean "this machine" — no ssh needed.
 _LOOPBACK = {"localhost", "127.0.0.1", "::1"}
@@ -192,3 +201,78 @@ async def ensure_gpu_host_ready(
         )
     await waiter(base_url, settings.embed_start_timeout)
     return "started"
+
+
+def wakes_on_query(settings: Settings) -> bool:
+    """Whether a query that finds the host down should start it.
+
+    Only when lifecycle management is on and the unit runs on this machine.
+    """
+    base_url = settings.resolved_inference_base_url
+    if base_url is None or settings.embed_manage_gpu == "never":
+        return False
+    return resolve_control(base_url, settings.embed_ssh_target).kind == "local"
+
+
+class QueryPathWaker:
+    """Start the embed unit in the background when a query finds it down.
+
+    `poke` never blocks and never raises: the query that noticed the outage
+    still degrades as before, and the ones after it find the host warm. Once
+    the host is up, every registered client's breaker is reset, because a
+    breaker opened by the outage would otherwise keep the process degraded
+    after the host came back.
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        start: Callable[[Settings], Awaitable[str]] | None = None,
+        min_interval: float = QUERY_WAKE_INTERVAL,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._settings = settings
+        self._start = start or ensure_gpu_host_ready
+        self._min_interval = min_interval
+        self._clock = clock
+        self._last: float | None = None
+        self._task: asyncio.Task[None] | None = None
+        self._on_ready: list[Callable[[], None]] = []
+
+    def on_ready(self, callback: Callable[[], None]) -> None:
+        """Run *callback* each time a wake finds the host warm."""
+        self._on_ready.append(callback)
+
+    def poke(self, reason: str) -> None:
+        """Start a wake unless one is running or one started too recently."""
+        if self._task is not None and not self._task.done():
+            return
+        now = self._clock()
+        if self._last is not None and now - self._last < self._min_interval:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._last = now
+        self._task = loop.create_task(self._wake(reason))
+
+    async def _wake(self, reason: str) -> None:
+        logger.info("gpu_host_query_wake", reason=reason)
+        try:
+            outcome = await self._start(self._settings)
+        except Exception as exc:  # noqa: BLE001 - a failed wake must not surface in a query
+            logger.warning("gpu_host_query_wake_failed", error=str(exc))
+            return
+        logger.info("gpu_host_query_wake_done", outcome=outcome)
+        if outcome == "skipped":
+            return
+        for callback in self._on_ready:
+            callback()
+
+    async def close(self) -> None:
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
