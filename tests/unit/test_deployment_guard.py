@@ -11,6 +11,7 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
+from typer.testing import CliRunner
 
 from research_engine.config.settings import ENV_PREFIX, load_settings
 from research_engine.domain.errors import ConfigurationError
@@ -76,6 +77,34 @@ def test_profile_with_a_missing_env_file_is_refused(
         load_settings()
 
 
+def test_serve_with_a_launch_profile_and_missing_env_file_refuses_to_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The documented wrapper: profile in the process env, env file moved away."""
+    import research_engine.runtime as runtime
+    from research_engine.cli.main import app
+
+    touched: list[str] = []
+
+    async def _build_container(*_args: object, **_kwargs: object) -> None:
+        touched.append("build_container")
+
+    async def _run_mcp_server(*_args: object, **_kwargs: object) -> None:
+        touched.append("run_mcp_server")
+
+    monkeypatch.setattr(runtime, "build_container", _build_container)
+    monkeypatch.setattr(runtime, "run_mcp_server", _run_mcp_server)
+    monkeypatch.setenv("RE_ENV_FILE", str(tmp_path / "moved.env"))
+    monkeypatch.setenv("RE_MCP_PROFILE", "reference")
+
+    result = CliRunner().invoke(app, ["serve"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ConfigurationError)
+    assert "RE_ENV_FILE" in str(result.exception)
+    assert touched == []
+
+
 def test_tool_list_alone_also_turns_the_guard_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -94,6 +123,14 @@ def test_profile_from_the_environment_alone_loads(
     monkeypatch.setenv("RE_MCP_PROFILE", "reference")
     monkeypatch.setenv("RE_DB_URL", ENG_URL)
     assert load_settings().db_url == ENG_URL
+
+
+def test_blank_tool_list_in_a_development_env_keeps_walk_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, "RE_MCP_TOOLS=\nRE_LOG_LEVEL=DEBUG\n")
+    monkeypatch.chdir(root)
+    assert load_settings().log_level == "DEBUG"
 
 
 def test_development_shell_keeps_walk_up_and_default(

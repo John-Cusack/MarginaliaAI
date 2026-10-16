@@ -167,7 +167,11 @@ class Settings(BaseSettings):
     #: ``reference`` is the read-only set for a corpus served to other agents:
     #: search, reading, locating and quote verification, and nothing that
     #: writes, ingests or spends LLM money. Unset means every tool. Setting a
-    #: profile also turns on the deployment guard in `load_settings`.
+    #: profile also turns on the deployment guard in `load_settings`. A
+    #: deployed instance sets this in the launching command's own environment,
+    #: not only in its env file: a profile that lives only in a missing or
+    #: moved `RE_ENV_FILE` never loads, so the guard never sees it and the
+    #: server would start with every tool on the development database.
     mcp_profile: Literal["reference"] | None = None
     #: Comma-separated tool names the MCP server may expose. With a profile set
     #: it can only narrow that profile, never widen it. Unset means no list.
@@ -199,17 +203,18 @@ class Settings(BaseSettings):
 
     @property
     def resolved_mcp_tools(self) -> frozenset[str] | None:
-        """The explicit tool allowlist, or None when `RE_MCP_TOOLS` is unset."""
+        """The explicit tool allowlist, or None when `RE_MCP_TOOLS` is unset or blank."""
         if self.mcp_tools is None:
             return None
-        return frozenset(
+        names = frozenset(
             name.strip() for name in self.mcp_tools.split(",") if name.strip()
         )
+        return names or None
 
     @property
     def restricts_mcp_surface(self) -> bool:
         """Whether this is a deployed service rather than a development shell."""
-        return self.mcp_profile is not None or self.mcp_tools is not None
+        return self.mcp_profile is not None or self.resolved_mcp_tools is not None
 
     @property
     def resolved_inference_base_url(self) -> str | None:

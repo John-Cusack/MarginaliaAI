@@ -88,6 +88,15 @@ class TestWhoWakes:
         assert not wakes_on_query(_settings(inference_base_url=None,
                                             embedding_provider="local_bge"))
 
+    def test_local_embedding_under_auto_does_not(self):
+        """Bulk work would skip the start here, so a query must not claim one."""
+        assert not wakes_on_query(_settings(embedding_provider="local_bge"))
+
+    def test_always_wakes_even_with_local_embedding(self):
+        assert wakes_on_query(
+            _settings(embedding_provider="local_bge", embed_manage_gpu="always")
+        )
+
 
 class TestWaker:
     async def test_poke_starts_once_and_resets_breakers(self):
@@ -152,8 +161,23 @@ class TestWaker:
 
     def test_poke_outside_a_loop_is_a_no_op(self):
         start = FakeStart()
-        QueryPathWaker(_settings(), start=start).poke("sync")
+        assert not QueryPathWaker(_settings(), start=start).poke("sync")
         assert start.calls == 0
+
+    async def test_poke_reports_whether_a_wake_is_in_flight(self):
+        start = FakeStart()
+        start.release.clear()
+        clock = Clock()
+        waker = QueryPathWaker(_settings(), start=start, min_interval=60, clock=clock)
+
+        assert waker.poke("a")
+        await asyncio.sleep(0)
+        assert waker.poke("b")
+        start.release.set()
+        await _drain(waker)
+
+        clock.now += 30
+        assert not waker.poke("c")
 
 
 class Down:
@@ -169,11 +193,13 @@ class Down:
 
 
 class RecordingWaker:
-    def __init__(self) -> None:
+    def __init__(self, waking: bool = True) -> None:
         self.reasons: list[str] = []
+        self.waking = waking
 
-    def poke(self, reason: str) -> None:
+    def poke(self, reason: str) -> bool:
         self.reasons.append(reason)
+        return self.waking
 
 
 class TestWrappers:
@@ -182,6 +208,15 @@ class TestWrappers:
         wrapped = WakeOnUnavailableEmbedding(Down(), waker)  # type: ignore[arg-type]
         with pytest.raises(EmbeddingUnavailable, match=WAKE_HINT):
             await wrapped.embed("q")
+        assert waker.reasons == ["query_embedding_unavailable"]
+
+    async def test_no_hint_when_no_wake_is_under_way(self):
+        """A rate-limited or failed start must not promise a retry window."""
+        waker = RecordingWaker(waking=False)
+        wrapped = WakeOnUnavailableEmbedding(Down(), waker)  # type: ignore[arg-type]
+        with pytest.raises(EmbeddingUnavailable) as caught:
+            await wrapped.embed("q")
+        assert WAKE_HINT not in str(caught.value)
         assert waker.reasons == ["query_embedding_unavailable"]
 
     async def test_rerank_outage_pokes_and_still_degrades(self):
@@ -207,6 +242,14 @@ class TestWiring:
         backends = build_inference(_settings(embedding_provider="auto"))
         try:
             assert isinstance(backends.query_embedding, QueryEmbeddingWithFallback)
+        finally:
+            await backends.close()
+
+    async def test_local_embedding_with_a_local_reranker_host_is_left_alone(self):
+        backends = build_inference(_settings(embedding_provider="local_bge"))
+        try:
+            assert isinstance(backends.reranker, RemoteReranker)
+            assert "start the GPU host" not in backends.summary
         finally:
             await backends.close()
 

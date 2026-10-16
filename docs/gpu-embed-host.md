@@ -88,7 +88,9 @@ host reports warm, so a long-lived `serve` process does not stay degraded until
 restarted. Under `RE_EMBEDDING_PROVIDER=remote_api` the first query after an
 idle exit fails with "The GPU host is being started; retry in about a minute"
 instead of loading the 2.3 GB local model. A query never starts the unit over
-ssh, and `RE_EMBED_MANAGE_GPU=never` turns the wake off.
+ssh. It wakes the unit only when a bulk run would also start it, so
+`RE_EMBED_MANAGE_GPU=never`, or `auto` with `RE_EMBEDDING_PROVIDER=local_bge`,
+turns the wake off.
 
 ## Settings
 

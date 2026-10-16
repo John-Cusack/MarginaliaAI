@@ -167,12 +167,8 @@ async def ensure_gpu_host_ready(
     unit cannot be started or never warms; callers fail fast before opening
     the database.
     """
-    base_url = settings.resolved_inference_base_url
-    mode = settings.embed_manage_gpu
-    if mode == "never" or base_url is None:
-        return "skipped"
-    if mode == "auto" and settings.embedding_provider == "local_bge":
-        # Bulk embedding runs on this machine; there is nothing to wake.
+    base_url = _managed_base_url(settings)
+    if base_url is None:
         return "skipped"
 
     control = resolve_control(base_url, settings.embed_ssh_target)
@@ -203,13 +199,26 @@ async def ensure_gpu_host_ready(
     return "started"
 
 
+def _managed_base_url(settings: Settings) -> str | None:
+    """The GPU host this process may start, or None when it manages none."""
+    base_url = settings.resolved_inference_base_url
+    mode = settings.embed_manage_gpu
+    if mode == "never" or base_url is None:
+        return None
+    if mode == "auto" and settings.embedding_provider == "local_bge":
+        # Bulk embedding runs on this machine; there is nothing to wake.
+        return None
+    return base_url
+
+
 def wakes_on_query(settings: Settings) -> bool:
     """Whether a query that finds the host down should start it.
 
-    Only when lifecycle management is on and the unit runs on this machine.
+    Only when `ensure_gpu_host_ready` would start it at all and the unit runs
+    on this machine.
     """
-    base_url = settings.resolved_inference_base_url
-    if base_url is None or settings.embed_manage_gpu == "never":
+    base_url = _managed_base_url(settings)
+    if base_url is None:
         return False
     return resolve_control(base_url, settings.embed_ssh_target).kind == "local"
 
@@ -244,19 +253,23 @@ class QueryPathWaker:
         """Run *callback* each time a wake finds the host warm."""
         self._on_ready.append(callback)
 
-    def poke(self, reason: str) -> None:
-        """Start a wake unless one is running or one started too recently."""
+    def poke(self, reason: str) -> bool:
+        """Start a wake unless one is running or one started too recently.
+
+        Returns whether a wake is in flight after the call.
+        """
         if self._task is not None and not self._task.done():
-            return
+            return True
         now = self._clock()
         if self._last is not None and now - self._last < self._min_interval:
-            return
+            return False
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            return
+            return False
         self._last = now
         self._task = loop.create_task(self._wake(reason))
+        return True
 
     async def _wake(self, reason: str) -> None:
         logger.info("gpu_host_query_wake", reason=reason)

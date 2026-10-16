@@ -118,6 +118,17 @@ def test_unset_means_no_restriction() -> None:
     assert resolve_tool_allowlist(None) is None
 
 
+@pytest.mark.parametrize("blank", ["", "  ", " , "])
+def test_blank_tool_list_means_unset(blank: str) -> None:
+    """A placeholder `RE_MCP_TOOLS=` must not empty the surface or arm the guard."""
+    assert resolve_tool_allowlist(Settings(mcp_tools=blank)) is None
+    assert not Settings(mcp_tools=blank).restricts_mcp_surface
+    assert (
+        resolve_tool_allowlist(Settings(mcp_profile="reference", mcp_tools=blank))
+        == REFERENCE_TOOLS
+    )
+
+
 async def test_dispatch_tool_refuses_outside_the_profile() -> None:
     _, container = _wire(Settings(mcp_profile="reference"))
     with pytest.raises(PermissionError, match="extract"):

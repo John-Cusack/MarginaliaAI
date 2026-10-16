@@ -323,6 +323,7 @@ packages/plugins/   # First-party plugin distributions in this workspace
 | [11-implementation-architecture.md](corpus-engine-docs/docs/11-implementation-architecture.md) | Implementation guide |
 | [docs/corpus-setup.md](docs/corpus-setup.md) | Ordered sequence for populating the Bible corpus |
 | [docs/gpu-embed-host.md](docs/gpu-embed-host.md) | GPU embed server lifecycle: on-demand start, idle shutdown, queries while down |
+| [docs/reference-instance.md](docs/reference-instance.md) | Running a read-only `RE_MCP_PROFILE=reference` instance over ssh-stdio |
 | [docs/pypi-readiness.md](docs/pypi-readiness.md) | PyPI readiness assessment, blockers, and release checklist |
 | [docs/design/pypi-plugin-distribution-architecture.md](docs/design/pypi-plugin-distribution-architecture.md) | Proposed PyPI distribution, SDK, and plugin architecture |
 | [docs/implementation/pypi-plugin-migration/index.md](docs/implementation/pypi-plugin-migration/index.md) | Executable cross-repository PyPI/plugin migration runbooks |

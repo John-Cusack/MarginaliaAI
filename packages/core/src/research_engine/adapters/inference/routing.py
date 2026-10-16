@@ -171,7 +171,8 @@ class WakeOnUnavailableEmbedding:
         try:
             return await self._inner.embed_batch(list(texts))
         except EmbeddingUnavailable as exc:
-            self._waker.poke("query_embedding_unavailable")
+            if not self._waker.poke("query_embedding_unavailable"):
+                raise
             raise EmbeddingUnavailable(f"{exc} {WAKE_HINT}") from exc
 
 

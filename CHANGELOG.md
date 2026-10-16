@@ -13,9 +13,12 @@
   `ingest_execute` cannot dispatch past it.
 - With either set, settings refuse to load from a `.env` found by walking up
   from the working directory (set `RE_ENV_FILE`), from a missing `RE_ENV_FILE`,
-  or onto the built-in development database URL.
-- When the embed server runs on the same machine, a query that finds it down
-  starts it in the background, and the remote clients' circuit breakers reset
+  or onto the built-in development database URL. A deployed instance must set
+  `RE_MCP_PROFILE` in its launching command's own environment, not only in the
+  env file, so a missing or moved env file still trips the guard; see
+  `docs/reference-instance.md`. A blank `RE_MCP_TOOLS=` counts as unset.
+- When the embed server runs on the same machine and bulk work would start it,
+  a query that finds it down starts it in the background, and the remote clients' circuit breakers reset
   once it is warm. See `docs/gpu-embed-host.md`.
 - `backup create` and `backup restore` pass the database password in
   `PGPASSWORD` instead of argv, and a failed restore now exits 1.
