@@ -80,6 +80,18 @@ between searches; rare queries argue for the 900 s default. The server never
 needs to be manually kept up for queries either way — the next bulk run wakes
 it.
 
+**When the server is on the same machine** (a loopback `RE_INFERENCE_BASE_URL`,
+as on the tower), a query that finds it down also starts the unit in the
+background. That query still degrades as above; the ones after warm-up get the
+GPU and reranking back, and the remote clients' circuit breakers reset once the
+host reports warm, so a long-lived `serve` process does not stay degraded until
+restarted. Under `RE_EMBEDDING_PROVIDER=remote_api` the first query after an
+idle exit fails with "The GPU host is being started; retry in about a minute"
+instead of loading the 2.3 GB local model. A query never starts the unit over
+ssh. It wakes the unit only when a bulk run would also start it, so
+`RE_EMBED_MANAGE_GPU=never`, or `auto` with `RE_EMBEDDING_PROVIDER=local_bge`,
+turns the wake off.
+
 ## Settings
 
 | Variable | Default | Meaning |

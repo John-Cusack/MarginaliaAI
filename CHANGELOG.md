@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### A reference server for agents, and safer deployed instances
+
+- `RE_MCP_PROFILE=reference` makes `serve` list and answer only the read-only
+  tools: `find_passages`, `get_document`, `get_passage_context`, `similar_to`,
+  `get_document_outline`, `read_node`, `locate_passage`,
+  `list_available_filters`, `corpus_stats`, `verify_quote` and `citations`.
+  `RE_MCP_TOOLS` (comma-separated) is an allowlist on its own, or narrows a
+  profile; it never widens one. Pack tools are held to the same list, and
+  `ingest_execute` cannot dispatch past it.
+- With either set, settings refuse to load from a `.env` found by walking up
+  from the working directory (set `RE_ENV_FILE`), from a missing `RE_ENV_FILE`,
+  or onto the built-in development database URL. A deployed instance must set
+  `RE_MCP_PROFILE` in its launching command's own environment, not only in the
+  env file, so a missing or moved env file still trips the guard; see
+  `docs/reference-instance.md`. A blank `RE_MCP_TOOLS=` counts as unset.
+- When the embed server runs on the same machine and bulk work would start it,
+  a query that finds it down starts it in the background, and the remote clients' circuit breakers reset
+  once it is warm. See `docs/gpu-embed-host.md`.
+- `backup create` and `backup restore` pass the database password in
+  `PGPASSWORD` instead of argv, and a failed restore now exits 1.
+
 ### GPU embed server idles at zero instead of holding the card
 
 `research-engine embed-server` takes `--idle-exit-after` (default 900 s) and

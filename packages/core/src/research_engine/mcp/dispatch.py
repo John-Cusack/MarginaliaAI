@@ -13,6 +13,7 @@ from mcp import types
 
 from research_engine.mcp.catalog import ToolCatalog
 from research_engine.mcp.errors import envelope, failed
+from research_engine.mcp.profiles import resolve_tool_allowlist
 from research_engine.mcp.tools import (
     anchor_context,
     citations,
@@ -146,6 +147,13 @@ CORE_TOOL_MODULES = [
 _CORE_TOOL_MAP = {module.TOOL_NAME: module for module in CORE_TOOL_MODULES}
 
 
+def _check_exposed(container: Any, tool_id: str) -> None:
+    """Refuse a tool the server's profile does not list (by its listed id)."""
+    catalog = getattr(container, "tool_catalog", None)
+    if isinstance(catalog, ToolCatalog) and not catalog.allows(tool_id):
+        raise PermissionError(f"Tool not exposed by this server's profile: {tool_id}")
+
+
 async def dispatch_tool(
     container: Any, tool_id: str, arguments: dict[str, Any] | None = None
 ) -> Any:
@@ -154,12 +162,14 @@ async def dispatch_tool(
     Shares the same handler + scoped-client machinery used by the MCP transport,
     so orchestration tools (e.g. ``ingest_execute``) can call other tools
     without going through the wire protocol. Raises ``ValueError`` for unknown
-    tool ids.
+    tool ids, and ``PermissionError`` for a tool the server's profile does not
+    expose — an orchestration tool must not reach past the listed surface.
     """
     arguments = arguments or {}
 
     core = _CORE_TOOL_MAP.get(tool_id)
     if core is not None:
+        _check_exposed(container, tool_id)
         return await core.handler(container, **arguments)
 
     registry = getattr(container, "registry", None) or getattr(container, "plugin_registry", None)
@@ -178,6 +188,7 @@ async def dispatch_tool(
                     matched_id = registered_id
                     break
         if matched_id is not None:
+            _check_exposed(container, matched_id)
             clients: dict[str, Any] = {}
             plugin_name = registry.get_tool_plugin(matched_id)
             if plugin_name and plugin_loader:
@@ -440,6 +451,10 @@ def _register_all(server: Server, container: Any) -> None:
     plugin_loader = getattr(container, "plugin_loader", None)
 
     catalog = get_tool_catalog(container)
+    allowed = resolve_tool_allowlist(getattr(container, "settings", None))
+    catalog.restrict(allowed)
+    if allowed is not None:
+        logger.info("mcp_tools_restricted", tools=sorted(allowed))
     catalog.set_core(*_build_core_entries(container, registry))
     if registry is not None:
         catalog.replace_packs(*_build_pack_entries(registry, plugin_loader))

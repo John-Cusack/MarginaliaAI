@@ -11,7 +11,7 @@ import structlog
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
-from research_engine.domain.errors import WorksNotConfigured
+from research_engine.domain.errors import ConfigurationError, WorksNotConfigured
 
 logger = structlog.get_logger()
 
@@ -162,6 +162,21 @@ class Settings(BaseSettings):
     #: irrelevant next to reranking and the recall is meaningfully better.
     hnsw_ef_search: int = 100
 
+    # MCP surface
+    #: A named tool set the MCP server exposes instead of every tool.
+    #: ``reference`` is the read-only set for a corpus served to other agents:
+    #: search, reading, locating and quote verification, and nothing that
+    #: writes, ingests or spends LLM money. Unset means every tool. Setting a
+    #: profile also turns on the deployment guard in `load_settings`. A
+    #: deployed instance sets this in the launching command's own environment,
+    #: not only in its env file: a profile that lives only in a missing or
+    #: moved `RE_ENV_FILE` never loads, so the guard never sees it and the
+    #: server would start with every tool on the development database.
+    mcp_profile: Literal["reference"] | None = None
+    #: Comma-separated tool names the MCP server may expose. With a profile set
+    #: it can only narrow that profile, never widen it. Unset means no list.
+    mcp_tools: str | None = None
+
     # Logging
     log_level: str = "INFO"
     log_format: Literal["pretty", "json"] = "pretty"
@@ -187,6 +202,21 @@ class Settings(BaseSettings):
         return self.works_dir
 
     @property
+    def resolved_mcp_tools(self) -> frozenset[str] | None:
+        """The explicit tool allowlist, or None when `RE_MCP_TOOLS` is unset or blank."""
+        if self.mcp_tools is None:
+            return None
+        names = frozenset(
+            name.strip() for name in self.mcp_tools.split(",") if name.strip()
+        )
+        return names or None
+
+    @property
+    def restricts_mcp_surface(self) -> bool:
+        """Whether this is a deployed service rather than a development shell."""
+        return self.mcp_profile is not None or self.resolved_mcp_tools is not None
+
+    @property
     def resolved_inference_base_url(self) -> str | None:
         """The GPU host address, honouring the deprecated embedding-only name."""
         return self.inference_base_url or self.embedding_base_url or None
@@ -198,6 +228,8 @@ class EnvFileResolution:
 
     path: Path | None
     reason: str
+    #: Chosen by `RE_ENV_FILE` rather than found by walking up from the cwd.
+    explicit: bool = False
 
     @property
     def exists(self) -> bool:
@@ -230,8 +262,10 @@ def find_env_file(start: Path | None = None) -> EnvFileResolution:
                 detail=f"{ENV_PREFIX}ENV_FILE points at a file that does not exist; "
                 "settings fall back to environment variables and defaults.",
             )
-            return EnvFileResolution(None, f"{ENV_PREFIX}ENV_FILE={override} (missing)")
-        return EnvFileResolution(path.resolve(), f"{ENV_PREFIX}ENV_FILE")
+            return EnvFileResolution(
+                None, f"{ENV_PREFIX}ENV_FILE={override} (missing)", explicit=True
+            )
+        return EnvFileResolution(path.resolve(), f"{ENV_PREFIX}ENV_FILE", explicit=True)
 
     origin = (start or Path.cwd()).resolve()
     for directory in [origin, *origin.parents]:
@@ -313,9 +347,42 @@ def load_settings(**overrides: object) -> Settings:
     """Build Settings from an env file resolved independently of the cwd."""
     resolution = find_env_file()
     settings = Settings(_env_file=resolution.path, **overrides)  # type: ignore[arg-type]
+    check_deployment_config(settings, resolution)
     logger.debug(
         "settings_loaded",
         env_file=str(resolution.path) if resolution.path else None,
         reason=resolution.reason,
     )
     return settings
+
+
+def check_deployment_config(settings: Settings, resolution: EnvFileResolution) -> None:
+    """Refuse to run a restricted MCP service on configuration it did not choose.
+
+    A deployed instance (one with `RE_MCP_PROFILE` or `RE_MCP_TOOLS` set) is
+    one whose corpus other agents trust. Two silent fallbacks would attach it
+    to the wrong database without a word: the built-in development URL when
+    `RE_DB_URL` failed to load, and a `.env` that happened to sit above the
+    working directory. Each is a refusal here rather than a surprise later.
+
+    Raises:
+        ConfigurationError: the service would run on a fallback.
+    """
+    if not settings.restricts_mcp_surface:
+        return
+    if resolution.explicit and resolution.path is None:
+        raise ConfigurationError(
+            f"{ENV_PREFIX}ENV_FILE does not name an existing file ({resolution.reason}). "
+            f"A deployed MCP profile will not start without its env file."
+        )
+    if resolution.path is not None and not resolution.explicit:
+        raise ConfigurationError(
+            f"A deployed MCP profile found its env file by walking up from the "
+            f"working directory ({resolution.path}). Set {ENV_PREFIX}ENV_FILE to "
+            f"the instance's env file so a development .env is never picked up."
+        )
+    if settings.db_url == Settings.model_fields["db_url"].default:
+        raise ConfigurationError(
+            f"A deployed MCP profile is pointed at the built-in development "
+            f"database. Set {ENV_PREFIX}DB_URL in the instance's env file."
+        )

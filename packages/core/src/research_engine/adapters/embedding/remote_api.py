@@ -162,6 +162,17 @@ class RemoteEmbeddingClient:
                 f"then run `research-engine embeddings backfill`."
             )
 
+    def reset_circuit(self) -> None:
+        """Close the breaker and redo the handshake on the next call.
+
+        The breaker has no half-open state of its own: once open it stays
+        open for the life of the process. That is right for a batch, and wrong
+        for a long-lived server whose GPU host idle-exits and is started again
+        — so whoever starts the host calls this once it reports warm.
+        """
+        self._consecutive_failures = 0
+        self._verified = None
+
     async def close(self) -> None:
         await self._client.aclose()
 
