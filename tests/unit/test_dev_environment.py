@@ -32,7 +32,7 @@ TESTING_DB = (
 
 def published_port() -> str:
     """The host port `docker compose up` binds, from the compose file itself."""
-    match = re.search(r'"(\d+):5432"', COMPOSE.read_text())
+    match = re.search(r'"(?:[\d.]+:)?(\d+):5432"', COMPOSE.read_text())
     assert match, f"no host:5432 port mapping in {COMPOSE}"
     return match.group(1)
 

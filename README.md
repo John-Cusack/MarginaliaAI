@@ -117,6 +117,9 @@ RE_DB_URL=postgresql+asyncpg://re_dev:re_dev_pass@localhost:5435/research_engine
 RE_ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+The dev database publishes on 127.0.0.1:5435 only, so it is reachable from this machine and not from the LAN.
+To use a non-default database password, export `POSTGRES_PASSWORD` before the first `make db` and use the same password in `RE_DB_URL`.
+
 All settings use the `RE_` prefix. See `packages/core/src/research_engine/config/settings.py` for the full list.
 
 Offloading embedding and reranking to a GPU host — and keeping its card free

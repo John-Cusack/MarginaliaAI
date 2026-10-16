@@ -4,9 +4,16 @@ services:
     environment:
       POSTGRES_DB: research_engine
       POSTGRES_USER: re_dev
-      POSTGRES_PASSWORD: re_dev_pass
+      # Password baked in at first init. Set POSTGRES_PASSWORD in the
+      # environment (or tools/dev-postgres/.env) before the first
+      # `make db` to use a different one, and put the same password in
+      # your .env's RE_DB_URL. Changing this later does not change an
+      # existing pgdata volume; rotate with ALTER ROLE instead.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-re_dev_pass}
     ports:
-      - "5435:5432"
+      # Loopback only. This database holds licensed books, so it must
+      # never be reachable from the LAN. Do not widen this to 0.0.0.0.
+      - "127.0.0.1:5435:5432"
     # Docker defaults /dev/shm to 64MB. A parallel HNSW build over a few hundred
     # thousand vectors needs far more and fails with DiskFullError on a shared
     # memory segment — which reads like a disk problem and is not one.
