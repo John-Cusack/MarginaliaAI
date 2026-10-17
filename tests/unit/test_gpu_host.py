@@ -4,6 +4,10 @@ Starting is the bracket's only systemd effect: shutdown belongs to the
 server's `--idle-exit-after`, which needs no coordination. These tests pin
 that — especially that overlapping ingests cannot stop the server under each
 other, because no path issues a stop at all.
+
+The watcher exists because a run's own CPU phases (OCR on scanned pages) are
+silent for longer than the idle timeout: startup-ensure alone lets the server
+exit under its own ingest.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from research_engine.adapters.inference.gpu_host import (
     control_command,
     ensure_gpu_host_ready,
     resolve_control,
+    watch_gpu_host,
 )
 from research_engine.config.settings import Settings
 
@@ -189,3 +194,76 @@ class TestEnsure:
         )
         assert {first, second} <= {"started", "already-running"}
         assert runner.stops() == []
+
+
+class TestWatchGpuHost:
+    @pytest.mark.asyncio
+    async def test_rewakes_a_server_that_exited_mid_run(self):
+        """The OCR-parse case: silent longer than the idle timeout."""
+        runner = FakeRunner(active=False)
+        warmed: list[str] = []
+
+        async def watch(url: str, timeout: float) -> None:
+            warmed.append(url)
+
+        stop = asyncio.Event()
+        polls = 0
+
+        async def sleep(_: float) -> None:
+            nonlocal polls
+            polls += 1
+            if polls >= 2:
+                stop.set()
+
+        await watch_gpu_host(
+            _settings(), stop, run=runner, wait_warm=watch, sleep=sleep
+        )
+        assert len(runner.starts()) >= 1
+        assert warmed
+        assert runner.stops() == []
+
+    @pytest.mark.asyncio
+    async def test_quiet_while_the_server_is_up(self):
+        runner = FakeRunner(active=True)
+        warmed: list[str] = []
+
+        async def watch(url: str, timeout: float) -> None:
+            warmed.append(url)
+
+        stop = asyncio.Event()
+        polls = 0
+
+        async def sleep(_: float) -> None:
+            nonlocal polls
+            polls += 1
+            if polls >= 3:
+                stop.set()
+
+        await watch_gpu_host(
+            _settings(), stop, run=runner, wait_warm=watch, sleep=sleep
+        )
+        assert runner.starts() == []
+        assert warmed == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_rewake_does_not_kill_the_run(self):
+        """The batch that needs the server fails loudly itself; the watcher
+        only logs and keeps watching, so a transient systemctl failure is
+        not a second, quieter way to die."""
+
+        def flaky(argv: list[str]):
+            if argv[-2] == "is-active":
+                return _rc(3, stdout="inactive")
+            return _rc(1, stderr="systemd is having a moment")
+
+        stop = asyncio.Event()
+        polls = 0
+
+        async def sleep(_: float) -> None:
+            nonlocal polls
+            polls += 1
+            if polls >= 2:
+                stop.set()
+
+        await watch_gpu_host(_settings(), stop, run=flaky, wait_warm=_warmed,
+                             sleep=sleep)

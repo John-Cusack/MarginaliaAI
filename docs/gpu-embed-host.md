@@ -13,6 +13,7 @@ Three pieces do that. No manual babysitting.
 | Piece | Where | Behaviour |
 |---|---|---|
 | Ensure-started bracket | `adapters/inference/gpu_host.py`, called by `ingest`, `embeddings backfill`, `reindex chunks` | Before touching the database: `systemctl --user is-active marginalia-embed` (over `ssh <host>` when run from the laptop, locally on the server); if down, `start` it and poll `GET /health` until `warm=true` (timeout `RE_EMBED_START_TIMEOUT`, 300 s). Fails fast with one line otherwise. |
+| Mid-run watchdog | `watch_gpu_host`, held by `ingest` for the run's duration | Every 60 s: `is-active`, start + warm-wait if down. A run's own CPU phases (510 scanned pages of OCR) are silent for longer than the idle timeout, and the server cannot tell an ingest is coming back — without this the unit exits under its own ingest. Start-only like the bracket; a failed re-wake only logs, the batch that needs the server fails loudly itself. |
 | Idle self-shutdown | `research-engine embed-server --idle-exit-after 900` | The server exits 0 after 900 s without an embedding or rerank request. `Restart=on-failure` stays stopped: a clean exit is not a failure. `/health` polls do not count as activity, or the bracket's own warm-wait would keep it alive. |
 | Per-batch cache release | `adapters/embedding/server.py` | `torch.cuda.empty_cache()` after every batch, so a long run stops sitting on peak-batch memory while keeping model weights resident. |
 
