@@ -1,0 +1,17 @@
+scripts:
+  # Runs when Orca creates a worktree. A worktree is a fresh checkout, so it gets only what
+  # git tracks, and .env is deliberately untracked. Without it the research-engine MCP
+  # server cannot start here at all: the local launcher passes `--env-file .env`, and uv
+  # treats a missing env file as a hard error ("No environment file found at: `.env`").
+  setup: |
+    # Best-effort: a missing source should never fail worktree creation.
+    [ -n "${ORCA_ROOT_PATH:-}" ] && [ -n "${ORCA_WORKTREE_PATH:-}" ] || exit 0
+
+    # DB URL, inference host and API keys. Copied, not linked: a worktree may point at its
+    # own database (e.g. a scratch Postgres), and an edit here must not move the main
+    # checkout's corpus. -n keeps a worktree's existing .env.
+    cp -n "$ORCA_ROOT_PATH/.env" "$ORCA_WORKTREE_PATH/.env" 2>/dev/null || true
+
+    # Build the venv now rather than on the MCP server's first launch, where the native
+    # extension build can outlast the client's startup timeout.
+    (cd "$ORCA_WORKTREE_PATH" && uv sync --frozen) || true
