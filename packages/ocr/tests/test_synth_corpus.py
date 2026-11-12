@@ -29,6 +29,7 @@ EXPECTED_KINDS = {
     "location_page",
     "table_page",
     "table_continuation",
+    "two_column_notes",
     "figure_page",
     "sparse_page",
     "popup_page",

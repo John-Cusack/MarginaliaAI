@@ -43,6 +43,8 @@ from claude_diff_checker import check as claude_check  # noqa: E402
 from ocr_synth import metrics  # noqa: E402
 from ocr_synth.corpus import Screen, build_corpus  # noqa: E402
 from ocr_synth.seeded_errors import SeededText, build_seeded, can_carry, revert  # noqa: E402
+from pipeline_errors import build_pipeline_set  # noqa: E402
+from reader_guards import guard_reading  # noqa: E402
 
 Box = tuple[int, int, int, int]
 INK = 200
@@ -208,17 +210,33 @@ def unassigned_ink(image: Image.Image, boxes: Sequence[Box]) -> tuple[Box, ...]:
 
 
 def read_screen(screen: Screen, reader: Callable[[Image.Image], str]) -> tuple[str, float, tuple[Box, ...]]:
+    """Read every region, guard each reading, and report loops as gaps.
+
+    A guarded region contributes a gap, not text: the design's rule is that ink
+    no reader turned into trustworthy text blocks the page (§7.3), and a
+    repetition loop is exactly that.
+    """
     image = Image.open(io.BytesIO(screen.png)).convert("RGB")
     boxes = split_columns(image)
     started = time.monotonic()
     parts: list[str] = []
+    loops: list[Box] = []
     for box in boxes:
         try:
-            parts.append(reader(image.crop(box)))
+            reading = reader(image.crop(box))
         except subprocess.CalledProcessError as exc:
             print(f"reader failed on {screen.screen_id}: {exc}", file=sys.stderr)
-            parts.append("")
-    return "\n\n".join(part for part in parts if part), time.monotonic() - started, unassigned_ink(image, boxes)
+            reading = ""
+        guarded = guard_reading(reading, box=box)
+        if guarded.gap:
+            loops.append(box)
+            continue
+        parts.append(guarded.text)
+    return (
+        "\n\n".join(parts),
+        time.monotonic() - started,
+        unassigned_ink(image, boxes) + tuple(loops),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -268,12 +286,21 @@ def sensitivity_report(
     name: str,
     auditor: Callable[[Screen, SeededText], list[metrics.Detection]],
     counts: dict[str, int] | None = None,
+    seeded: Sequence[SeededText] | None = None,
 ) -> dict[str, object]:
-    """Measure one auditor over the seeded set drawn from this screen set."""
-    usable = [screen for screen in screens if can_carry(screen.truth_text, counts)]
+    """Measure one auditor over a seeded set drawn from this screen set.
+
+    ``seeded`` lets a caller supply the set instead (the pipeline-shaped one built
+    from the readers' own mistakes); otherwise the planted set is used.
+    """
+    if seeded is not None:
+        usable = list(screens[: len(seeded)])
+    else:
+        usable = [screen for screen in screens if can_carry(screen.truth_text, counts)]
     if not usable:
         return {"reader": name, "pages": 0, "planted": 0, "detected": 0, "sensitivity": 0.0, "lower": 0.0}
-    seeded = build_seeded(usable, counts)
+    if seeded is None:
+        seeded = build_seeded(usable, counts)
     lookup = {id(page): screen for screen, page in zip(usable, seeded, strict=True)}
     result = metrics.audit_sensitivity(name, seeded, lambda page: auditor(lookup[id(page)], page))
     return {
@@ -483,6 +510,24 @@ def transcriber_auditor(readings: dict[str, str], name: str):
     return audit
 
 
+def _guard_external(readings: dict[str, str], screens: Sequence[Screen]) -> dict[str, str]:
+    """Drop looping region answers before they are joined into a screen's text."""
+    boxes: dict[str, list[Box]] = {}
+    for screen in screens:
+        image = Image.open(io.BytesIO(screen.png)).convert("RGB")
+        boxes[screen.screen_id] = list(split_columns(image))
+    guarded: dict[str, str] = {}
+    for key, text in readings.items():
+        screen_id, _, suffix = key.partition("__r")
+        index = int(suffix) if suffix.isdigit() else None
+        box = None
+        if index is not None:
+            region_boxes = boxes.get(screen_id, [])
+            box = region_boxes[index] if index < len(region_boxes) else None
+        guarded[key] = guard_reading(text, box=box).text
+    return guarded
+
+
 def _join_regions(readings: dict[str, str]) -> dict[str, str]:
     """Fold ``<screen>__r0``-style region readings into one text per screen."""
     if not any("__r" in key for key in readings):
@@ -511,6 +556,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="write the region crops a local reader would get, as DIR (for a remote reader)",
     )
     parser.add_argument(
+        "--save-readings",
+        default=None,
+        help="write this run's per-screen readings to PATH (to compare readers on the same text)",
+    )
+    parser.add_argument(
         "--external",
         default=None,
         help="JSON of {screen_id: text} read elsewhere (e.g. the VLM on the GPU host)",
@@ -520,10 +570,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--audit",
         default=None,
-        choices=("machinery", "stand-in", "claude", "transcriber"),
+        choices=("machinery", "stand-in", "claude", "transcriber", "pipeline", "clean"),
         help="machinery/stand-in are scoring-code self-checks; claude measures the real audit reader",
     )
     parser.add_argument("--claude-model", default=None, help="model id for the claude audit reader")
+    parser.add_argument(
+        "--readings-json",
+        default=None,
+        help="comma-separated readings files (one per reader) for --audit pipeline",
+    )
+    parser.add_argument(
+        "--pipeline-minimum",
+        default=3,
+        help="how many readers must agree on a mistake for it to count as pipeline-shaped",
+    )
     parser.add_argument("--pages", default=None, help="how many screens the claude audit reads")
     parser.add_argument("--json", dest="json_path", default=None)
     return parser.parse_args(argv)
@@ -554,7 +614,9 @@ def main(argv: list[str] | None = None) -> int:
     # A remote reader answers per region; join its answers in reading order.
     external = json.loads(Path(args.external).read_text()) if args.external else None
     if external is not None:
-        external = _join_regions(external)
+        # A remote reader's loops are guarded region by region, where the region
+        # shape is known, and only what survives is joined into the screen text.
+        external = _join_regions(_guard_external(external, screens))
     reader = (lambda image: "") if external is not None else reader_for(args.reader)
     rows: list[dict[str, object]] = []
     readings: dict[str, str] = {}
@@ -603,10 +665,88 @@ def main(argv: list[str] | None = None) -> int:
         sensitivity = sensitivity_report(screens, "machinery (planted spans by construction)", oracle_auditor)
     elif args.audit == "stand-in":
         sensitivity = sensitivity_report(screens, f"stand-in (character diff of {args.reader})", diff_auditor(readings))
+    elif args.audit in {"pipeline", "clean"}:
+        import tempfile
+
+        extra = {}
+        for path in (args.readings_json or "").split(","):
+            if path:
+                extra[Path(path).stem] = json.loads(Path(path).read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            images = {}
+            for screen in screens:
+                image_path = Path(directory) / f"{screen.screen_id}.png"
+                image_path.write_bytes(screen.png)
+                images[screen.screen_id] = image_path
+            auditor, ledger = claude_auditor(images, args.claude_model)
+            if args.audit == "pipeline":
+                built = []
+                for screen in screens:
+                    readings = {
+                        name: values[screen.screen_id]
+                        for name, values in extra.items()
+                        if screen.screen_id in values
+                    }
+                    if args.reader in readings:
+                        readings["vlm"] = readings.pop(args.reader)
+                    if len(readings) < 2:
+                        continue
+                    seeded_page, errors = build_pipeline_set(
+                        screen.truth_text, readings, minimum=int(args.pipeline_minimum)
+                    )
+                    built.append((screen, seeded_page, errors))
+                if not built:
+                    raise SystemExit("no screen had readings from two readers; pass --readings-json")
+                selected = [screen for screen, _, _ in built]
+                seeded_pages = [page for _, page, _ in built]
+                sensitivity = sensitivity_report(
+                    selected,
+                    "claude (headless, diff-only) on the readers' agreed errors",
+                    auditor,
+                    seeded=seeded_pages,
+                )
+                sensitivity["agreed_errors"] = sum(len(errors) for _, _, errors in built)
+                sensitivity["agreed_by_kind"] = {
+                    kind: sum(1 for _, _, errors in built for error in errors if error.kind == kind)
+                    for kind in {error.kind for _, _, errors in built for error in errors}
+                }
+                sensitivity["readers"] = sorted(extra)
+                sensitivity["minimum_agreement"] = int(args.pipeline_minimum)
+            else:
+                # Every difference reported against the exact truth is a false
+                # alarm: there is no error on the page to have found.
+                reported = 0
+                for screen in screens:
+                    result = claude_check(images[screen.screen_id], screen.truth_text, model=args.claude_model)
+                    reported += len(result.differences)
+                    ledger.append(
+                        {
+                            "screen": screen.screen_id,
+                            "differences": len(result.differences),
+                            "unplaced": sum(1 for d in result.differences if not d.located),
+                            "words_returned": result.raw_word_count,
+                            "seconds": round(result.seconds, 2),
+                            "cost_usd": result.cost_usd,
+                            "rejected": result.rejected,
+                        }
+                    )
+                sensitivity = {
+                    "reader": "claude (headless, diff-only) on clean pages",
+                    "is_measurement": True,
+                    "pages": len(screens),
+                    "false_alarms": reported,
+                    "false_alarms_per_screen": round(reported / len(screens), 3),
+                    "screens_with_a_false_alarm": sum(1 for entry in ledger if entry["differences"]),
+                    "ledger": ledger,
+                }
+            sensitivity["cost_usd"] = round(sum(float(entry["cost_usd"] or 0) for entry in ledger), 4)
+            sensitivity["ledger"] = ledger
     elif args.audit == "transcriber":
         label = f"{args.reader} as transcriber (diff against the candidate text)"
         sensitivity = sensitivity_report(screens, label, transcriber_auditor(readings, label), counts=SYNTHETIC_COUNTS)
 
+    if args.save_readings:
+        Path(args.save_readings).write_text(json.dumps(readings, indent=2), encoding="utf-8")
     document = build_report(rows, sensitivity, reader_name=args.reader, dpr=args.dpr, kinds=kinds, font=screens[0].font)
     if args.compare:
         other = reader_for(args.compare)

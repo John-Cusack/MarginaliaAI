@@ -199,6 +199,18 @@ def page_specs() -> tuple[PageSpec, ...]:
     )
     specs.append(
         PageSpec(
+            page_id="two-column-notes",
+            kind="two_column_notes",
+            label=T.FOOTER_PAGE_TEMPLATE.format(page=45, total=368),
+            label_kind="arabic",
+            position_start=540,
+            position_end=552,
+            running_head=T.RUNNING_HEADS[1],
+            bands=(TextBand(blocks=_note_blocks(T.NOTES)),),
+        )
+    )
+    specs.append(
+        PageSpec(
             page_id="toc",
             kind="toc_page",
             label=T.FOOTER_PAGE_TEMPLATE.format(page="ix", total=368),
