@@ -483,6 +483,20 @@ def transcriber_auditor(readings: dict[str, str], name: str):
     return audit
 
 
+def _join_regions(readings: dict[str, str]) -> dict[str, str]:
+    """Fold ``<screen>__r0``-style region readings into one text per screen."""
+    if not any("__r" in key for key in readings):
+        return readings
+    joined: dict[str, str] = {}
+    for key, text in readings.items():
+        screen, _, tail = key.partition("__r")
+        if not tail:
+            joined[key] = text
+            continue
+        joined[screen] = (joined.get(screen, "") + "\n\n" + text).strip()
+    return joined
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -491,6 +505,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="reader to measure: tesseract, easyocr, or command:<cmd> (PNG on stdin, text on stdout)",
     )
     parser.add_argument("--compare", default=None, help="second reader for the coincidence measurement")
+    parser.add_argument(
+        "--export-regions",
+        default=None,
+        help="write the region crops a local reader would get, as DIR (for a remote reader)",
+    )
     parser.add_argument(
         "--external",
         default=None,
@@ -513,12 +532,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     kinds = tuple(args.kinds.split(",")) if args.kinds else None
-    reader = reader_for(args.reader)
     screens = build_corpus(dprs=(args.dpr,), kinds=kinds)
     if not screens:
         raise SystemExit(f"no screens for kinds {kinds}")
 
+    # With --external the readings come from a file (the GPU host's), so the
+    # local reader is a label here and must not be resolved or refused.
+    if args.export_regions:
+        target = Path(args.export_regions)
+        target.mkdir(parents=True, exist_ok=True)
+        written = 0
+        for screen in screens:
+            image = Image.open(io.BytesIO(screen.png)).convert("RGB")
+            for index, box in enumerate(split_columns(image)):
+                path = target / f"{screen.screen_id}__r{index}.png"
+                image.crop(box).save(path)
+                written += 1
+        print(f"wrote {written} region crops for {len(screens)} screens to {target}")
+        return 0
+
+    # A remote reader answers per region; join its answers in reading order.
     external = json.loads(Path(args.external).read_text()) if args.external else None
+    if external is not None:
+        external = _join_regions(external)
+    reader = (lambda image: "") if external is not None else reader_for(args.reader)
     rows: list[dict[str, object]] = []
     readings: dict[str, str] = {}
     errors: dict[str, set[int]] = {}

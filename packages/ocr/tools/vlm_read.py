@@ -68,8 +68,9 @@ def main(argv: list[str] | None = None) -> int:
         {"prompt": prompt, "multi_modal_data": {"image": [str(path)]}} for path in images
     ]
     outputs = llm.generate(requests, sampling)
+    # Keyed by the image's stem, which is the screen id the corpus used.
     readings = {
-        path.name: output.outputs[0].text.strip()
+        path.stem: output.outputs[0].text.strip()
         for path, output in zip(images, outputs, strict=True)
     }
     args.out.write_text(json.dumps(readings, indent=2), encoding="utf-8")
