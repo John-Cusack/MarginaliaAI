@@ -388,7 +388,7 @@ def build_report(
             f"{score.unmarked_errors} | {len(score.gaps)} | {json.dumps(score.by_kind, sort_keys=True)} |"
         )
     if sensitivity is not None:
-        real = sensitivity["reader"].startswith("claude")
+        real = sensitivity["reader"].startswith(("claude", "Qwen", "vlm"))
         lines += ["", "## Audit sensitivity", ""]
         if not real:
             lines += [f"**{NEITHER_IS_A_MEASUREMENT}**", ""]
@@ -463,6 +463,25 @@ def claude_auditor(images: dict[str, Path], model: str | None):
     return audit, ledger
 
 
+def transcriber_auditor(readings: dict[str, str], name: str):
+    """An audit reader that transcribes the page and reports where it differs.
+
+    This is the `LocalVlmTranscriber` shape from the design: read the whole
+    screen, then diff that reading against the candidate text and report every
+    difference. Unlike the stand-in, the reader behind it is the model being
+    measured, and the report says so.
+    """
+
+    def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
+        return [
+            metrics.Detection(edit.final_start, edit.final_end, snippet=edit.final_text[:20])
+            for edit in metrics.classify_errors(readings[screen.screen_id], page.final)
+        ]
+
+    audit.reader_name = name  # type: ignore[attr-defined]
+    return audit
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -481,7 +500,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--audit",
         default=None,
-        choices=("machinery", "stand-in", "claude"),
+        choices=("machinery", "stand-in", "claude", "transcriber"),
         help="machinery/stand-in are scoring-code self-checks; claude measures the real audit reader",
     )
     parser.add_argument("--claude-model", default=None, help="model id for the claude audit reader")
@@ -546,6 +565,9 @@ def main(argv: list[str] | None = None) -> int:
         sensitivity = sensitivity_report(screens, "machinery (planted spans by construction)", oracle_auditor)
     elif args.audit == "stand-in":
         sensitivity = sensitivity_report(screens, f"stand-in (character diff of {args.reader})", diff_auditor(readings))
+    elif args.audit == "transcriber":
+        label = f"{args.reader} as transcriber (diff against the candidate text)"
+        sensitivity = sensitivity_report(screens, label, transcriber_auditor(readings, label), counts=SYNTHETIC_COUNTS)
 
     document = build_report(rows, sensitivity, reader_name=args.reader, dpr=args.dpr, kinds=kinds, font=screens[0].font)
     if args.compare:
