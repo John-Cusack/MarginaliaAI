@@ -109,6 +109,29 @@ def test_repeat_run_counts_consecutive_blocks_only():
     assert longest_repeat_run("one two three four five six seven eight " * 4) == 4
 
 
+def test_a_blank_region_is_not_a_region_to_read():
+    """A VLM asked to read an empty column answered with the integers 1 to 539.
+
+    The measurement must not ask: an ink-free box is not a region. The region
+    inventory owns this decision in the service (WP1); here it is the difference
+    between a measured reading and a fabricated one.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    from measure_phase0 import ink_fraction, text_regions
+    from PIL import Image, ImageDraw
+
+    blank = Image.new("RGB", (200, 100), "white")
+    inked = blank.copy()
+    ImageDraw.Draw(inked).rectangle([10, 10, 90, 40], fill="black")  # left half only
+    assert ink_fraction(blank, (0, 0, 100, 100)) == 0.0
+    assert ink_fraction(inked, (0, 0, 200, 100)) > 0.01
+    assert text_regions(inked, [(0, 0, 100, 100), (100, 0, 200, 100)]) == ((0, 0, 100, 100),)
+    assert text_regions(blank, [(0, 0, 100, 100)]) == ()
+
+
 def test_the_real_1x_loop_and_the_real_3x_reading_are_judged_differently():
     """The captured readings, if this machine still has them."""
     one_x = Path("/tmp/readings_regions_1x.json")

@@ -49,6 +49,11 @@ from reader_guards import guard_reading  # noqa: E402
 Box = tuple[int, int, int, int]
 INK = 200
 MIN_GUTTER = 20
+# A box with less ink than this is not a region: nothing was drawn in it. The
+# region inventory decides this properly (WP1); until it exists, the measurement
+# must not hand a blank column to a reader, because a VLM asked to read an empty
+# region answers anyway — one did, with the integers 1 to 539.
+MIN_INK_FRACTION = 0.001
 # Text columns are profiled only between these fractions of the height. The
 # running head and the page footer are chrome: they are centred, so they put ink
 # across the middle of the page and would hide the gutter (design §7.1 masks
@@ -194,6 +199,19 @@ def error_positions(truth: str, reading: str) -> set[int]:
     return positions
 
 
+def ink_fraction(image: Image.Image, box: Box) -> float:
+    """The fraction of a box's pixels that are ink."""
+    grey = image.convert("L").crop(box).point(lambda value: 255 if value < INK else 0)
+    total = max(1, (box[2] - box[0]) * (box[3] - box[1]))
+    return sum(grey.histogram()[255:]) / total
+
+
+def text_regions(image: Image.Image, boxes: Sequence[Box] | None = None) -> tuple[Box, ...]:
+    """The boxes with text in them: a blank column is not a region to read."""
+    candidates = boxes if boxes is not None else split_columns(image)
+    return tuple(box for box in candidates if ink_fraction(image, box) >= MIN_INK_FRACTION)
+
+
 def unassigned_ink(image: Image.Image, boxes: Sequence[Box]) -> tuple[Box, ...]:
     """Ink outside every assigned region, inside the body band: the gap, measured."""
     grey = image.convert("L").point(lambda value: 255 if value < INK else 0)
@@ -217,7 +235,7 @@ def read_screen(screen: Screen, reader: Callable[[Image.Image], str]) -> tuple[s
     repetition loop is exactly that.
     """
     image = Image.open(io.BytesIO(screen.png)).convert("RGB")
-    boxes = split_columns(image)
+    boxes = text_regions(image)
     started = time.monotonic()
     parts: list[str] = []
     loops: list[Box] = []
@@ -515,7 +533,7 @@ def _guard_external(readings: dict[str, str], screens: Sequence[Screen]) -> dict
     boxes: dict[str, list[Box]] = {}
     for screen in screens:
         image = Image.open(io.BytesIO(screen.png)).convert("RGB")
-        boxes[screen.screen_id] = list(split_columns(image))
+        boxes[screen.screen_id] = list(text_regions(image))
     guarded: dict[str, str] = {}
     for key, text in readings.items():
         screen_id, _, suffix = key.partition("__r")
@@ -604,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
         written = 0
         for screen in screens:
             image = Image.open(io.BytesIO(screen.png)).convert("RGB")
-            for index, box in enumerate(split_columns(image)):
+            for index, box in enumerate(text_regions(image)):
                 path = target / f"{screen.screen_id}__r{index}.png"
                 image.crop(box).save(path)
                 written += 1
@@ -626,7 +644,11 @@ def main(argv: list[str] | None = None) -> int:
             if screen.screen_id not in external:
                 raise SystemExit(f"{args.external} has no reading for {screen.screen_id}")
             image = Image.open(io.BytesIO(screen.png)).convert("RGB")
-            reading, seconds, gaps = external[screen.screen_id], 0.0, unassigned_ink(image, split_columns(image))
+            reading, seconds, gaps = (
+                external[screen.screen_id],
+                0.0,
+                unassigned_ink(image, split_columns(image)),
+            )
         else:
             reading, seconds, gaps = read_screen(screen, reader)
         readings[screen.screen_id] = reading
@@ -639,7 +661,7 @@ def main(argv: list[str] | None = None) -> int:
                 "reader": args.reader,
                 "truth": screen.truth_text,
                 "errors": errors[screen.screen_id],
-                "columns": len(split_columns(image)),
+                "columns": len(text_regions(image)),
                 "seconds": round(seconds, 3),
                 "score": metrics.score_page(screen.truth_text, reading, marks=(), gaps=gaps, normalized=True),
             }
