@@ -278,6 +278,7 @@ def sensitivity_report(
     result = metrics.audit_sensitivity(name, seeded, lambda page: auditor(lookup[id(page)], page))
     return {
         "reader": name,
+        "is_measurement": True,
         "pages": result.pages,
         "planted": result.planted,
         "detected": result.detected,
@@ -388,7 +389,7 @@ def build_report(
             f"{score.unmarked_errors} | {len(score.gaps)} | {json.dumps(score.by_kind, sort_keys=True)} |"
         )
     if sensitivity is not None:
-        real = sensitivity["reader"].startswith(("claude", "Qwen", "vlm"))
+        real = bool(sensitivity.get("is_measurement"))
         lines += ["", "## Audit sensitivity", ""]
         if not real:
             lines += [f"**{NEITHER_IS_A_MEASUREMENT}**", ""]
@@ -398,7 +399,7 @@ def build_report(
             lower = float(sensitivity["lower"])  # type: ignore[arg-type]
             bound = metrics.release_bound(60, lower)
             lines += [
-                f"- auditor `{sensitivity['reader']}` ({NEITHER_IS_A_MEASUREMENT})",
+                f"- auditor `{sensitivity['reader']}`" + ("" if real else f" ({NEITHER_IS_A_MEASUREMENT})"),
                 f"- auditor over {sensitivity['pages']} seeded screens",
                 f"- planted {sensitivity['planted']}, detected {sensitivity['detected']}, "
                 f"sensitivity {sensitivity['sensitivity']}",

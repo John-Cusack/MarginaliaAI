@@ -62,8 +62,10 @@ def main(argv: list[str] | None = None) -> int:
         tokenize=False,
         add_generation_prompt=True,
     )
+    # vLLM 0.33 takes the modality as a list; a bare string is read as an
+    # iterable of items and the request is refused for "more than one image".
     requests = [
-        {"prompt": prompt, "multi_modal_data": {"image": str(path)}} for path in images
+        {"prompt": prompt, "multi_modal_data": {"image": [str(path)]}} for path in images
     ]
     outputs = llm.generate(requests, sampling)
     readings = {
