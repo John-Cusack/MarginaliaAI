@@ -405,6 +405,7 @@ def build_report(
         lines.append(f"| {kind} | {count} |")
     pages = int(totals["pages"])
     bad = int(totals["pages_with_unmarked"])
+    rated = pages or 1  # a report with no rows must still render
     upper = metrics.clopper_pearson_upper(bad, pages) if pages else 0.0
     lines += [
         "",
@@ -415,7 +416,7 @@ def build_report(
         f"| pages | {pages} | |",
         f"| unmarked errors | {totals['unmarked_errors']} | |",
         f"| pages with an unmarked error | {bad} | |",
-        f"| rate (observed) | {bad / pages:.4f} | |",
+        f"| rate (observed) | {bad / rated:.4f} | |",
         f"| rate (one-sided 95% upper bound) | {upper:.4f} | <= 0.10 |",
         f"| errors per bad page | {totals['errors_per_bad_page']:.2f} | reported |",
         f"| marks | {totals['marks']} | |",
@@ -433,7 +434,21 @@ def build_report(
             f"| {row['screen']} | {row['kind']} | {row['columns']} | {row['seconds']} | "
             f"{score.unmarked_errors} | {len(score.gaps)} | {json.dumps(score.by_kind, sort_keys=True)} |"
         )
-    if sensitivity is not None:
+    if sensitivity is not None and "false_alarms" in sensitivity:
+        # A clean-page run has nothing to detect, so every reported difference is
+        # a false alarm — the number §9.4 cares about, because a false alarm
+        # survives the re-read and blocks a book with nothing to fix.
+        lines += [
+            "",
+            "## Audit false alarms (candidate text is the exact truth)",
+            "",
+            f"- auditor `{sensitivity['reader']}` over {sensitivity['pages']} clean screens",
+            f"- differences reported: {sensitivity['false_alarms']} "
+            f"({sensitivity['false_alarms_per_screen']} per screen)",
+            f"- screens with at least one: {sensitivity['screens_with_a_false_alarm']}",
+            f"- API cost: ${sensitivity.get('cost_usd')}",
+        ]
+    elif sensitivity is not None:
         real = bool(sensitivity.get("is_measurement"))
         lines += ["", "## Audit sensitivity", ""]
         if not real:
