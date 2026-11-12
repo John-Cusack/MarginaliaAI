@@ -461,6 +461,14 @@ class SensitivityResult:
 
     @property
     def lower(self) -> float:
+        """The one-sided 95% lower bound, or 0 when nothing was measured.
+
+        An empty set has no bound to report; 0 is the honest value and it makes
+        the release rule refuse, which is the right direction for a measurement
+        that failed to happen.
+        """
+        if self.planted <= 0:
+            return 0.0
         return clopper_pearson_lower(self.detected, self.planted, self.alpha)
 
 

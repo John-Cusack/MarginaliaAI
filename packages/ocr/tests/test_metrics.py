@@ -201,6 +201,21 @@ def seeded_set():
     return build_seeded(screens)
 
 
+def test_an_empty_seeded_set_has_no_lower_bound_and_refuses_release():
+    """A population with no members is undefined, not perfect.
+
+    The pipeline-shaped set on page-visible prose came out empty: the three
+    readers agreed on no wrong word. Reporting a bound of 1.0 there would let a
+    book be released on the strength of a measurement that never happened.
+    """
+    from ocr_synth.metrics import SensitivityResult
+
+    empty = SensitivityResult(reader="none", planted=0, detected=0)
+    assert empty.lower == 0.0
+    assert empty.sensitivity == 0.0
+    assert not release_allowed(60, empty.lower, detections=0)
+
+
 def test_an_exact_auditor_has_sensitivity_one_and_a_bound_above_a_half():
     result = audit_sensitivity("exact", seeded_set(), _ExactReader())
     assert result.sensitivity == 1.0

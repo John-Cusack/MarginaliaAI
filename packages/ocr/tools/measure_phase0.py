@@ -618,6 +618,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="how many readers must agree on a mistake for it to count as pipeline-shaped",
     )
     parser.add_argument("--pages", default=None, help="how many screens the claude audit reads")
+    parser.add_argument(
+        "--include-derived",
+        action="store_true",
+        help="include screens whose canonical text is derived (tables, TOC, figures) in the pipeline set",
+    )
     parser.add_argument("--json", dest="json_path", default=None)
     return parser.parse_args(argv)
 
@@ -650,7 +655,11 @@ def main(argv: list[str] | None = None) -> int:
         # A remote reader's loops are guarded region by region, where the region
         # shape is known, and only what survives is joined into the screen text.
         external = _join_regions(_guard_external(external, screens))
-    reader = (lambda image: "") if external is not None else reader_for(args.reader)
+    # An auditor's run names a label, not a local reader: with --external the
+    # readings come from a file, and the pipeline and clean audits read nothing
+    # locally at all (their readings arrive via --readings-json).
+    label_only = external is not None or args.audit in {"pipeline", "clean"}
+    reader = (lambda image: "") if label_only else reader_for(args.reader)
     rows: list[dict[str, object]] = []
     readings: dict[str, str] = {}
     errors: dict[str, set[int]] = {}
@@ -717,6 +726,20 @@ def main(argv: list[str] | None = None) -> int:
                 images[screen.screen_id] = image_path
             auditor, ledger = claude_auditor(images, args.claude_model)
             if args.audit == "pipeline":
+                # The pipeline-shaped set compares readers against the page's
+                # canonical text, so it only means something where that text is
+                # what a reader sees: a table's canonical form is Markdown and a
+                # TOC's carries dot leaders, and every reader "fails" to produce
+                # both. Those pages belong to assembly (WP4), not to this set.
+                derived = {"table_page", "table_continuation", "toc_page", "figure_page"}
+                if not args.include_derived:
+                    skipped = [s for s in screens if s.kind in derived]
+                    screens = [s for s in screens if s.kind not in derived]
+                    if skipped:
+                        print(
+                            f"skipping {len(skipped)} screen(s) whose canonical text is derived: "
+                            f"{sorted({s.kind for s in skipped})}"
+                        )
                 built = []
                 for screen in screens:
                     readings = {
@@ -733,7 +756,36 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     built.append((screen, seeded_page, errors))
                 if not built:
-                    raise SystemExit("no screen had readings from two readers; pass --readings-json")
+                    raise SystemExit(
+                        "no screen had readings from two readers on page-visible text; "
+                        "pass --readings-json and check --kinds"
+                    )
+                if all(not page.errors for _, page, _ in built):
+                    sensitivity = {
+                        "reader": "claude (headless, diff-only) on the readers' agreed errors",
+                        "is_measurement": True,
+                        "pages": len(built),
+                        "planted": 0,
+                        "detected": 0,
+                        "sensitivity": 0.0,
+                        "lower": 0.0,
+                        "agreed_errors": 0,
+                        "note": (
+                            "the readers agreed on no wrong word of the page-visible text, so this "
+                            "population is empty and its sensitivity is undefined — not zero"
+                        ),
+                        "readers": sorted(extra),
+                        "minimum_agreement": int(args.pipeline_minimum),
+                    }
+                    print(
+                        "the readers agreed on no wrong word of the page-visible text: the "
+                        "pipeline-shaped population is empty on this screen set"
+                    )
+                    sensitivity["cost_usd"] = 0.0
+                    sensitivity["ledger"] = []
+                    if args.json_path:
+                        Path(args.json_path).write_text(json.dumps({"sensitivity": sensitivity}, indent=2))
+                    return 0
                 selected = [screen for screen, _, _ in built]
                 seeded_pages = [page for _, page, _ in built]
                 sensitivity = sensitivity_report(
