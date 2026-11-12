@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from . import text as T
 from .fonts import FontChoice, resolve
@@ -40,6 +41,9 @@ from .layout import (
     layout_page,
 )
 from .render import render_png
+
+if TYPE_CHECKING:
+    from .degrade import Degrade
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,7 @@ class Screen:
     chrome: tuple[Region, ...]
     spans: tuple[TextSpan, ...]
     font: dict[str, object]
+    degrade: dict[str, object] | None = None
 
     @property
     def layout_lines(self) -> tuple[tuple[int, int, int, int], ...]:
@@ -365,6 +370,7 @@ def build_corpus(
     dprs: tuple[int, ...] = (1, 2, 3),
     blur: float = 0.0,
     kinds: tuple[str, ...] | None = None,
+    degrade: Degrade | None = None,
 ) -> tuple[Screen, ...]:
     """Lay out, rasterize and record every page at every DPR."""
     fonts, chosen = load_fonts(font)
@@ -375,10 +381,10 @@ def build_corpus(
         layout = layout_page(spec, fonts)
         truth, spans = _assemble_truth(layout.regions)
         for dpr in dprs:
-            png = render_png(layout, fonts, dpr, blur=blur)
+            png = render_png(layout, fonts, dpr, blur=blur, degrade=degrade)
             screens.append(
                 Screen(
-                    screen_id=f"{spec.page_id}@{dpr}x",
+                    screen_id=f"{spec.page_id}@{dpr}x" + (f"+{degrade.label}" if degrade else ""),
                     kind=spec.kind,
                     dpr=dpr,
                     blur=blur,
@@ -396,6 +402,7 @@ def build_corpus(
                     chrome=layout.chrome,
                     spans=spans,
                     font=chosen.record(),
+                    degrade=degrade.record() if degrade else None,
                 )
             )
     return tuple(screens)

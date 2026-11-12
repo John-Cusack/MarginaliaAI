@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import random
 import shlex
 import shutil
 import statistics
@@ -39,9 +40,11 @@ if TYPE_CHECKING:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import claude_adjudicator as adjudicator  # noqa: E402
 from claude_diff_checker import check as claude_check  # noqa: E402
 from ocr_synth import metrics  # noqa: E402
 from ocr_synth.corpus import Screen, build_corpus  # noqa: E402
+from ocr_synth.degrade import Degrade  # noqa: E402
 from ocr_synth.seeded_errors import SeededText, build_seeded, can_carry, revert  # noqa: E402
 from pipeline_errors import build_pipeline_set  # noqa: E402
 from reader_guards import guard_reading  # noqa: E402
@@ -384,6 +387,7 @@ def build_report(
     dpr: int,
     kinds: Iterable[str] | None,
     font: dict[str, object],
+    degrade: str | None = None,
 ) -> str:
     scores = [row["score"] for row in rows]
     totals = metrics.aggregate(scores)
@@ -394,6 +398,7 @@ def build_report(
         f"- reader `{reader_name}` at {dpr}x, {len(rows)} synthetic screens"
         + (f", kinds {sorted(kinds)}" if kinds else ", all layout classes"),
         f"- font {json.dumps(font, sort_keys=True)}",
+        f"- ink {degrade}" if degrade else "- ink plain: no degradation applied",
         "- reader is single: every difference is unmarked, which is what the synthetic bound measures",
         "",
         "## Errors by class",
@@ -497,9 +502,18 @@ SYNTHETIC_COUNTS = {
 def claude_auditor(images: dict[str, Path], model: str | None):
     """The audit reader D1 asks about: Claude Code in headless mode, diff-only."""
     ledger: list[dict[str, object]] = []
+    readings: dict[str, dict[tuple[int, int], str]] = {}
 
     def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
         result = claude_check(images[screen.screen_id], page.final, model=model)
+        # The reading belongs to the place, not to the detection record: the
+        # adjudication step needs both readings of a disputed place, and the
+        # detection only carries where it is.
+        readings[screen.screen_id] = {
+            (difference.final_start or 0, difference.final_end or 0): difference.reading
+            for difference in result.differences
+            if difference.located
+        }
         ledger.append(
             {
                 "screen": screen.screen_id,
@@ -521,7 +535,46 @@ def claude_auditor(images: dict[str, Path], model: str | None):
             if difference.located
         ]
 
+    audit.readings = readings  # type: ignore[attr-defined]
     return audit, ledger
+
+
+def adjudicating(auditor, images: dict[str, Path], model: str | None, rng: random.Random, ledger: list):
+    """Wrap an auditor so a difference counts only after an independent look.
+
+    One adjudication call per screen carries every disputed place on it. The
+    audit pass's own reading and the pipeline's are given in random order, and an
+    "unsure" answer — or no answer at all — leaves the place undetected. The span
+    is still marked downstream: marking is unconditional, detection is not.
+    """
+    readings = getattr(auditor, "readings", {})
+
+    def adjudicated(screen: Screen, page: SeededText) -> list[metrics.Detection]:
+        detections = auditor(screen, page)
+        if not detections:
+            return detections
+        by_span = readings.get(screen.screen_id, {})
+        places = []
+        for detection in detections:
+            span = (detection.final_start, detection.final_end)
+            places.append((span, page.final[span[0] : span[1]], by_span.get(span, "")))
+        disputes = adjudicator.disputes_for(places, rng=rng)
+        if not disputes:
+            return []
+        verdict = adjudicator.adjudicate(images[screen.screen_id], disputes, model=model)
+        ledger.append(
+            {
+                "screen": screen.screen_id,
+                "adjudicated": len(disputes),
+                "rejected": verdict.rejected,
+                "cost_usd": verdict.cost_usd,
+                "seconds": round(verdict.seconds, 2),
+            }
+        )
+        confirmed = adjudicator.confirmed_spans(disputes, verdict.verdicts)
+        return [detection for detection in detections if (detection.final_start, detection.final_end) in confirmed]
+
+    return adjudicated
 
 
 def transcriber_auditor(readings: dict[str, str], name: str):
@@ -599,6 +652,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="JSON of {screen_id: text} read elsewhere (e.g. the VLM on the GPU host)",
     )
     parser.add_argument("--kinds", default=None, help="comma-separated layout classes")
+    parser.add_argument(
+        "--degrade",
+        default=None,
+        choices=("light", "caps", "tight", "all"),
+        help="rink the ink: the degraded-ink variant (small caps, light ink, tight kerning)",
+    )
     parser.add_argument("--dpr", type=int, default=1)
     parser.add_argument(
         "--audit",
@@ -619,6 +678,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--pages", default=None, help="how many screens the claude audit reads")
     parser.add_argument(
+        "--adjudicate",
+        action="store_true",
+        help="a difference counts as a detection only after a second, independent look (D1(b))",
+    )
+    parser.add_argument(
+        "--adjudicate-seed",
+        type=int,
+        default=1729,
+        help="seed for the random order the two readings are shown in",
+    )
+    parser.add_argument(
         "--include-derived",
         action="store_true",
         help="include screens whose canonical text is derived (tables, TOC, figures) in the pipeline set",
@@ -627,10 +697,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+# The ink treatments of the degraded-ink variant. The three readers cannot agree
+# on a mistake in crisp synthetic prose — three engines do not fail the same way
+# on a clean rendering, so the pipeline-shaped population comes out empty and the
+# pipeline's own error rate has no denominator. Real print bends the ink until
+# the same wrong reading is the easiest one for every engine.
+DEGRADATIONS: dict[str, Degrade] = {
+    "light": Degrade(small_caps=False, light=True, kern=0.0, blur=0.3),
+    "caps": Degrade(small_caps=True, light=False, kern=0.0, blur=0.0),
+    "tight": Degrade(small_caps=False, light=False, kern=-1.0, blur=0.0),
+    "all": Degrade(small_caps=True, light=True, kern=-0.8, blur=0.3),
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     kinds = tuple(args.kinds.split(",")) if args.kinds else None
-    screens = build_corpus(dprs=(args.dpr,), kinds=kinds)
+    degrade = DEGRADATIONS[args.degrade] if args.degrade else None
+    screens = build_corpus(dprs=(args.dpr,), kinds=kinds, degrade=degrade)
     if not screens:
         raise SystemExit(f"no screens for kinds {kinds}")
 
@@ -725,6 +809,10 @@ def main(argv: list[str] | None = None) -> int:
                 image_path.write_bytes(screen.png)
                 images[screen.screen_id] = image_path
             auditor, ledger = claude_auditor(images, args.claude_model)
+            if args.adjudicate:
+                auditor = adjudicating(
+                    auditor, images, args.claude_model, random.Random(args.adjudicate_seed), ledger
+                )
             if args.audit == "pipeline":
                 # The pipeline-shaped set compares readers against the page's
                 # canonical text, so it only means something where that text is
@@ -836,7 +924,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.save_readings:
         Path(args.save_readings).write_text(json.dumps(readings, indent=2), encoding="utf-8")
-    document = build_report(rows, sensitivity, reader_name=args.reader, dpr=args.dpr, kinds=kinds, font=screens[0].font)
+    document = build_report(
+        rows,
+        sensitivity,
+        reader_name=args.reader,
+        dpr=args.dpr,
+        kinds=kinds,
+        font=screens[0].font,
+        degrade=degrade.label if degrade else None,
+    )
     if args.compare:
         other = reader_for(args.compare)
         other_readings = {}

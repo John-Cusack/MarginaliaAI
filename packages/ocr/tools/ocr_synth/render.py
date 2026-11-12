@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import io
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+if TYPE_CHECKING:
+    from .degrade import Degrade
 
 from .layout import (
     PAGE_H,
@@ -49,8 +52,32 @@ def scaled_faces(fonts: Fonts, dpr: int) -> dict[str, Any]:
     return {style: _font(fonts.path, size * dpr) for style, size in SIZES.items()}
 
 
-def render_png(layout: Layout, fonts: Fonts, dpr: int, blur: float = 0.0) -> bytes:
-    """Rasterize the page at ``dpr``, optionally with a mild screen-like blur."""
+def _draw_kerned(draw: Any, xy: tuple[float, float], text: str, face: Any, fill: Any, kern: float) -> None:
+    """Draw a run letter by letter, advancing each glyph by ``kern`` extra pixels.
+
+    Tight kerning is how print puts ``rn`` and ``m`` in the same place: it is the
+    one degradation that makes every reader fail the same way, and it cannot be
+    expressed with a font's own metrics.
+    """
+    x, y = xy
+    for character in text:
+        draw.text((x, y), character, font=face, fill=fill, anchor="ls")
+        x += face.getlength(character) + kern
+
+
+def render_png(
+    layout: Layout,
+    fonts: Fonts,
+    dpr: int,
+    blur: float = 0.0,
+    degrade: Degrade | None = None,
+) -> bytes:
+    """Rasterize the page at ``dpr``, optionally blurred and optionally degraded.
+
+    ``degrade`` bends the ink (§"degraded ink") without touching ``layout``: the
+    canonical text and every rectangle stay exactly as they were, so a degraded
+    screen measures the reader against the same truth a clean one does.
+    """
     image = Image.new("RGB", (PAGE_W * dpr, PAGE_H * dpr), PAPER)
     draw = ImageDraw.Draw(image)
     faces = scaled_faces(fonts, dpr)
@@ -60,13 +87,24 @@ def render_png(layout: Layout, fonts: Fonts, dpr: int, blur: float = 0.0) -> byt
         for line in region.lines:
             for run in line.runs:
                 face = faces[run.style]
-                draw.text(
-                    (run.x * dpr, run.baseline * dpr),
-                    run.text,
-                    font=face,
-                    fill=LINK_BLUE if run.link else INK,
-                    anchor="ls",
-                )
+                ink = LINK_BLUE if run.link else INK
+                text = run.text
+                if degrade is not None:
+                    text, size = degrade.drawn(text, SIZES[run.style])
+                    if not run.link:
+                        ink = degrade.ink if degrade.light else ink
+                    if size != SIZES[run.style]:
+                        face = _font(fonts.path, max(1, int(size * dpr)))
+                if degrade is not None and degrade.kern and not run.link:
+                    _draw_kerned(draw, (run.x * dpr, run.baseline * dpr), text, face, ink, degrade.kern * dpr)
+                else:
+                    draw.text(
+                        (run.x * dpr, run.baseline * dpr),
+                        text,
+                        font=face,
+                        fill=ink,
+                        anchor="ls",
+                    )
                 if run.link:
                     y = (run.baseline + UNDERLINE_PX) * dpr
                     draw.line(
@@ -75,6 +113,8 @@ def render_png(layout: Layout, fonts: Fonts, dpr: int, blur: float = 0.0) -> byt
                         width=max(1, dpr // 2),
                     )
 
+    if degrade is not None:
+        blur += degrade.blur
     if blur > 0:
         image = image.filter(ImageFilter.GaussianBlur(radius=blur * dpr))
     buffer = io.BytesIO()
