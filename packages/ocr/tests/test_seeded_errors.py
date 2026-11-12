@@ -86,6 +86,32 @@ def test_a_sparse_page_cannot_carry_the_real_word_class():
     assert not can_carry(sparse.truth_text), "the sensitivity set must be drawn from pages that can carry it"
 
 
+def test_a_page_with_runs_of_two_spaces_reverts():
+    """A Markdown table's empty cell is three spaces wide; rebuilding the page
+    from space-split tokens used to collapse them, and the reversion check
+    caught it. This is that regression."""
+    truth = "| Year | Debt | Notes |\n| --- | --- | --- |\n| 2005 | 44.3 |   |"
+    assert "   |" in truth
+    for seed in ("a", "b", "c"):
+        seeded = plant(
+            truth,
+            random.Random(seed),
+            counts=with_counts({"real_word": 0, "digit": 1, "omission": 1, "insertion": 1, "punctuation": 0, "order": 1}),
+        )
+        assert revert(seeded) == truth
+
+
+def test_every_screen_that_carries_the_synthetic_set_reverts_it():
+    from ocr_synth.corpus import build_corpus
+
+    counts = {"real_word": 1, "digit": 1, "omission": 1, "insertion": 1, "punctuation": 1, "order": 1}
+    for screen in build_corpus(dprs=(1,)):
+        if not can_carry(screen.truth_text, counts):
+            continue
+        seeded = plant(screen.truth_text, random.Random("revert"), counts)
+        assert revert(seeded) == screen.truth_text, screen.screen_id
+
+
 def test_build_seeded_is_identical_across_runs():
     screens = build_corpus(dprs=(1,), kinds=("two_column_prose",))
     assert build_seeded(screens) == build_seeded(screens)

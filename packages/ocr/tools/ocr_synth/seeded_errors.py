@@ -124,27 +124,43 @@ def words_of(text: str) -> list[_Word]:
 
 
 class _Emitter:
-    """Builds the seeded text and reports where each chunk landed."""
+    """Builds the seeded text and reports where each chunk landed.
 
-    def __init__(self) -> None:
+    The page's own characters are emitted verbatim: the separator between two
+    tokens is copied from the truth rather than rebuilt as one space. That
+    matters for a page with any run of two spaces in it — a Markdown table's
+    empty cell, for instance — where rebuilding would quietly change the page
+    and the reversion check would (rightly) refuse the set.
+    """
+
+    def __init__(self, truth: str) -> None:
+        self.truth = truth
         self.parts: list[str] = []
         self.length = 0
+        self.cursor = 0
 
     def text(self) -> str:
         return "".join(self.parts)
 
-    def emit(self, chunk: str) -> int:
-        """Append ``chunk`` after a single space; return where it starts."""
-        prefix = " " if self.length else ""
-        start = self.length + len(prefix)
-        self.parts.append(prefix + chunk)
-        self.length = start + len(chunk)
+    def _add(self, chunk: str) -> int:
+        start = self.length
+        self.parts.append(chunk)
+        self.length += len(chunk)
         return start
 
-    def skip(self, chunk: str) -> tuple[int, str]:
-        """Emit nothing; report where the separator + skipped run would start."""
-        prefix = " " if self.length else ""
-        return self.length, prefix + chunk
+    def separator(self, token_start: int) -> str:
+        """The truth's own characters between the cursor and this token."""
+        return self.truth[self.cursor : token_start]
+
+    def emit_token(self, token: _Word, chunk: str, *, keep_cursor: bool = False) -> tuple[int, int]:
+        """Emit a token's separator then ``chunk``; return the chunk's span."""
+        self._add(self.separator(token.start))
+        start = self._add(chunk)
+        if not keep_cursor:
+            self.cursor = token.end
+        else:
+            self.cursor = token.start
+        return start, start + len(chunk)
 
 
 def _fits(kind: str, words: list[_Word], index: int) -> bool:
@@ -217,7 +233,7 @@ def plant(
             if kind == "order":
                 used.add(index + 1)
 
-    emitter = _Emitter()
+    emitter = _Emitter(truth)
     errors: list[PlantedError] = []
     consumed: set[int] = set()
     for index, word in enumerate(words):
@@ -227,17 +243,18 @@ def plant(
         kind = operation[0] if operation else ""
 
         if kind == "omission":
-            start, removed = emitter.skip(word.text)
-            lead = len(removed) - len(word.text)
+            separator = emitter.separator(word.start)
+            start = emitter.length
+            emitter.cursor = word.end
             errors.append(
                 PlantedError(
                     "omission",
                     start,
                     start,
                     "",
-                    word.start - lead,
+                    word.start - len(separator),
                     word.end,
-                    removed,
+                    separator + word.text,
                     f"dropped {word.text!r}",
                 )
             )
@@ -246,13 +263,15 @@ def plant(
         if kind == "order":
             other = words[index + 1]
             consumed.add(index + 1)
-            swapped = f"{other.text} {word.text}"
-            start = emitter.emit(swapped)
+            between = truth[word.end : other.start]
+            swapped = f"{other.text}{between}{word.text}"
+            start, end = emitter.emit_token(word, swapped)
+            emitter.cursor = other.end
             errors.append(
                 PlantedError(
                     "order",
                     start,
-                    start + len(swapped),
+                    end,
                     swapped,
                     word.start,
                     other.end,
@@ -264,34 +283,43 @@ def plant(
 
         if kind == "insertion":
             invented = operation[1]
-            start = emitter.emit(invented)
-            prefix = " " if start else ""
+            start, end = emitter.emit_token(word, invented, keep_cursor=True)
             errors.append(
                 PlantedError(
                     "insertion",
-                    start - len(prefix),
-                    start + len(invented),
-                    prefix + invented,
+                    start,
+                    end,
+                    invented,
                     word.start,
                     word.start,
                     "",
                     f"invented {invented!r}",
                 )
             )
-            emitter.emit(word.text)
+            emitter.emit_token(word, word.text)
             continue
 
         if kind == "real_word":
             replacement = operation[1]
-            start = emitter.emit(replacement)
+            start, end = emitter.emit_token(word, replacement)
             errors.append(
-                PlantedError("real_word", start, start + len(replacement), replacement, word.start, word.end, word.text, f"{replacement} <- {word.text}")
+                PlantedError(
+                    "real_word",
+                    start,
+                    end,
+                    replacement,
+                    word.start,
+                    word.end,
+                    word.text,
+                    f"{replacement} <- {word.text}",
+                )
             )
             continue
 
         if kind in {"digit", "punctuation"}:
             position, replacement = operation[1], operation[2]
-            start = emitter.emit(word.text[:position] + replacement + word.text[position + 1 :])
+            patched = word.text[:position] + replacement + word.text[position + 1 :]
+            start, _ = emitter.emit_token(word, patched)
             errors.append(
                 PlantedError(
                     kind,
@@ -301,12 +329,12 @@ def plant(
                     word.start + position,
                     word.start + position + 1,
                     word.text[position],
-                    f"{word.text!r} -> {word.text[:position] + replacement + word.text[position + 1:]!r}",
+                    f"{word.text!r} -> {patched!r}",
                 )
             )
             continue
 
-        emitter.emit(word.text)
+        emitter.emit_token(word, word.text)
 
     return SeededText(truth=truth, final=emitter.text(), errors=tuple(errors))
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import shlex
 import shutil
 import statistics
 import subprocess
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from claude_diff_checker import check as claude_check  # noqa: E402
 from ocr_synth import metrics  # noqa: E402
 from ocr_synth.corpus import Screen, build_corpus  # noqa: E402
 from ocr_synth.seeded_errors import SeededText, build_seeded, can_carry, revert  # noqa: E402
@@ -75,10 +77,56 @@ def tesseract_text(image: Image.Image) -> str:
     return completed.stdout.decode("utf-8", errors="replace").strip()
 
 
-READERS: dict[str, Callable[[Image.Image], str]] = {"tesseract": tesseract_text}
+def easyocr_text(image: Image.Image) -> str:
+    """EasyOCR on the region it is given: the candidate third recognizer.
+
+    It brings its own detector and recognizer (CRAFT + a CRNN), which is what
+    the design asks of a third reader: an engine whose errors can be *unlike*
+    the other two. It reads the region it is handed, so it is called per column.
+    """
+    import numpy as np
+
+    global _EASYOCR
+    if _EASYOCR is None:
+        import easyocr
+
+        _EASYOCR = easyocr.Reader(["en"], gpu=False, verbose=False)
+    regions = _EASYOCR.readtext(np.array(image.convert("RGB")), detail=0, paragraph=True)
+    return "\n".join(regions).strip()
+
+
+def command_text(command: str) -> Callable[[Image.Image], str]:
+    """Any reader that takes a PNG on stdin and prints text on stdout.
+
+    The hook the server-side VLM is measured through: the model runs where the
+    GPU is, and this process stays the one that scores it against the truth.
+    """
+
+    def read(image: Image.Image) -> str:
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        completed = subprocess.run(
+            shlex.split(command), input=buffer.getvalue(), capture_output=True, check=False
+        )
+        if completed.returncode != 0:
+            print(f"reader command failed: {completed.returncode}", file=sys.stderr)
+            return ""
+        return completed.stdout.decode("utf-8", errors="replace").strip()
+
+    return read
+
+
+_EASYOCR: object | None = None
+READERS: dict[str, Callable[[Image.Image], str]] = {
+    "tesseract": tesseract_text,
+    "easyocr": easyocr_text,
+}
 
 
 def reader_for(name: str) -> Callable[[Image.Image], str]:
+    """A reader by name, a ``command:<cmd>`` hook, or an explicit refusal."""
+    if name.startswith("command:"):
+        return command_text(name.split(":", 1)[1])
     """A reader by name, or an explicit refusal — never a silent fallback.
 
     The verified path has no fallback (design §4.1), and neither does the
@@ -136,6 +184,14 @@ def split_columns(image: Image.Image) -> tuple[Box, ...]:
     return ((0, top, best[0], bottom), (best[1], top, width, bottom))
 
 
+def error_positions(truth: str, reading: str) -> set[int]:
+    """Truth-text offsets a reading gets wrong: the errors a reader actually made."""
+    positions: set[int] = set()
+    for edit in metrics.classify_errors(metrics.normalize(truth), metrics.normalize(reading)):
+        positions.update(range(edit.truth_start, max(edit.truth_end, edit.truth_start + 1)))
+    return positions
+
+
 def unassigned_ink(image: Image.Image, boxes: Sequence[Box]) -> tuple[Box, ...]:
     """Ink outside every assigned region, inside the body band: the gap, measured."""
     grey = image.convert("L").point(lambda value: 255 if value < INK else 0)
@@ -170,6 +226,17 @@ def read_screen(screen: Screen, reader: Callable[[Image.Image], str]) -> tuple[s
 # --------------------------------------------------------------------------- #
 
 
+# Neither auditor below is an audit reader. `machinery` reports the planted
+# spans by construction and `stand-in` character-diffs one reader's output
+# against the text it was given, so it reports everything it sees. Both exist to
+# exercise the scoring, the seeded set and the Clopper-Pearson bound; neither
+# measures any model, and neither is a D1 input.
+NEITHER_IS_A_MEASUREMENT = (
+    "not a measurement of any audit reader: this number tests the scoring code"
+    " and the seeded set, and says nothing about Claude or any local model"
+)
+
+
 def oracle_auditor(screen: Screen, page: SeededText) -> list[metrics.Detection]:
     """Reports exactly the planted spans: the check that the machinery is right."""
     del screen
@@ -177,12 +244,13 @@ def oracle_auditor(screen: Screen, page: SeededText) -> list[metrics.Detection]:
 
 
 def diff_auditor(readings: dict[str, str]) -> Callable[[Screen, SeededText], list[metrics.Detection]]:
-    """A diff-only auditor: compare the page's reading against the text it was given.
+    """A stand-in auditor: compare the page's reading against the text it was given.
 
-    This is the honest stand-in for the `ClaudeDiffChecker` family until WP5
-    builds the real one: the same shape of judgement, a different reader behind
-    it. It is what makes the family's *precision* cost measurable, which is the
-    number D1 turns on.
+    Not the `ClaudeDiffChecker` family and not a model: it re-reads the page with
+    the same OCR reader and character-diffs the result against the candidate
+    text, so it reports every difference it sees — its sensitivity is near one
+    before any model is involved, and its precision is the only thing it could
+    ever say anything about.
     """
 
     def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
@@ -199,12 +267,13 @@ def sensitivity_report(
     screens: Sequence[Screen],
     name: str,
     auditor: Callable[[Screen, SeededText], list[metrics.Detection]],
+    counts: dict[str, int] | None = None,
 ) -> dict[str, object]:
     """Measure one auditor over the seeded set drawn from this screen set."""
-    usable = [screen for screen in screens if can_carry(screen.truth_text)]
+    usable = [screen for screen in screens if can_carry(screen.truth_text, counts)]
     if not usable:
         return {"reader": name, "pages": 0, "planted": 0, "detected": 0, "sensitivity": 0.0, "lower": 0.0}
-    seeded = build_seeded(usable)
+    seeded = build_seeded(usable, counts)
     lookup = {id(page): screen for screen, page in zip(usable, seeded, strict=True)}
     result = metrics.audit_sensitivity(name, seeded, lambda page: auditor(lookup[id(page)], page))
     return {
@@ -223,6 +292,42 @@ def sensitivity_report(
 # --------------------------------------------------------------------------- #
 # reporting
 # --------------------------------------------------------------------------- #
+
+
+def coincidence_report(
+    rows: list[dict[str, object]], other_name: str, other_readings: dict[str, str]
+) -> str:
+    """How much of the reader's error set the second reader makes as well.
+
+    A third recognizer earns its place by being wrong in *different* places, so
+    the number that matters is the overlap of the two error sets: low overlap
+    means the pair sees different pages' worth of trouble.
+    """
+    lines = [
+        "",
+        "## Reader coincidence",
+        "",
+        "| measure | value |",
+        "|---|---|",
+    ]
+    shared = total_first = total_second = union_total = 0
+    for row in rows:
+        screen_id = str(row["screen"])
+        first = row["errors"]  # type: ignore[assignment]
+        second = error_positions(str(row["truth"]), other_readings[screen_id])
+        shared += len(first & second)  # type: ignore[operator]
+        total_first += len(first)  # type: ignore[arg-type]
+        total_second += len(second)
+        union_total += len(first | second)  # type: ignore[operator]
+    jaccard = shared / union_total if union_total else 0.0
+    lines += [
+        f"| errors of `{row['reader']}` | {total_first} |",
+        f"| errors of `{other_name}` | {total_second} |",
+        f"| errors both made | {shared} |",
+        f"| errors either made | {union_total} |",
+        f"| error coincidence (Jaccard) | {jaccard:.4f} |",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def build_report(
@@ -283,20 +388,29 @@ def build_report(
             f"{score.unmarked_errors} | {len(score.gaps)} | {json.dumps(score.by_kind, sort_keys=True)} |"
         )
     if sensitivity is not None:
+        real = sensitivity["reader"].startswith("claude")
         lines += ["", "## Audit sensitivity", ""]
+        if not real:
+            lines += [f"**{NEITHER_IS_A_MEASUREMENT}**", ""]
         if not sensitivity.get("planted"):
             lines.append("No screen could carry the predeclared seeded set; nothing measured.")
         else:
             lower = float(sensitivity["lower"])  # type: ignore[arg-type]
             bound = metrics.release_bound(60, lower)
             lines += [
-                f"- auditor `{sensitivity['reader']}` on {sensitivity['pages']} seeded screens",
+                f"- auditor `{sensitivity['reader']}` ({NEITHER_IS_A_MEASUREMENT})",
+                f"- auditor over {sensitivity['pages']} seeded screens",
                 f"- planted {sensitivity['planted']}, detected {sensitivity['detected']}, "
                 f"sensitivity {sensitivity['sensitivity']}",
                 f"- one-sided 95% lower bound `s_L` = {lower} — gate needs `s_L` >= 0.5",
                 f"- seeded set reverts to the truth: {sensitivity['seeded_reverts_to_truth']}",
                 f"- screens skipped for lack of seeded material: {sensitivity.get('skipped_screens', 0)}",
                 f"- release bound at n = 60: {'infinite (no positive lower bound)' if bound == float('inf') else f'{bound:.4f}'}",
+                *(
+                    [f"- API cost of this measurement: ${sensitivity['cost_usd']}"]
+                    if real and sensitivity.get("cost_usd") is not None
+                    else []
+                ),
                 "",
                 "| planted class | planted | detected |",
                 "|---|---|---|",
@@ -306,12 +420,72 @@ def build_report(
     return "\n".join(lines) + "\n"
 
 
+# The synthetic set is declared here, not tuned against results: six planted
+# errors per page so that every layout class can carry the seeds, which the full
+# predeclared set cannot (a TOC page has no dictionary words to swap).
+SYNTHETIC_COUNTS = {
+    "real_word": 1,
+    "digit": 1,
+    "omission": 1,
+    "insertion": 1,
+    "punctuation": 1,
+    "order": 1,
+}
+
+
+def claude_auditor(images: dict[str, Path], model: str | None):
+    """The audit reader D1 asks about: Claude Code in headless mode, diff-only."""
+    ledger: list[dict[str, object]] = []
+
+    def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
+        result = claude_check(images[screen.screen_id], page.final, model=model)
+        ledger.append(
+            {
+                "screen": screen.screen_id,
+                "rejected": result.rejected,
+                "differences": len(result.differences),
+                "unplaced": sum(1 for difference in result.differences if not difference.located),
+                "words_returned": result.raw_word_count,
+                "seconds": round(result.seconds, 2),
+                "cost_usd": result.cost_usd,
+            }
+        )
+        return [
+            metrics.Detection(
+                final_start=difference.final_start or 0,
+                final_end=difference.final_end or 0,
+                snippet=difference.snippet[:20],
+            )
+            for difference in result.differences
+            if difference.located
+        ]
+
+    return audit, ledger
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--reader", default="tesseract", help="reader to measure (tesseract)")
+    parser.add_argument(
+        "--reader",
+        default="tesseract",
+        help="reader to measure: tesseract, easyocr, or command:<cmd> (PNG on stdin, text on stdout)",
+    )
+    parser.add_argument("--compare", default=None, help="second reader for the coincidence measurement")
+    parser.add_argument(
+        "--external",
+        default=None,
+        help="JSON of {screen_id: text} read elsewhere (e.g. the VLM on the GPU host)",
+    )
     parser.add_argument("--kinds", default=None, help="comma-separated layout classes")
     parser.add_argument("--dpr", type=int, default=1)
-    parser.add_argument("--audit", default=None, choices=("oracle", "diff"), help="audit reader to measure")
+    parser.add_argument(
+        "--audit",
+        default=None,
+        choices=("machinery", "stand-in", "claude"),
+        help="machinery/stand-in are scoring-code self-checks; claude measures the real audit reader",
+    )
+    parser.add_argument("--claude-model", default=None, help="model id for the claude audit reader")
+    parser.add_argument("--pages", default=None, help="how many screens the claude audit reads")
     parser.add_argument("--json", dest="json_path", default=None)
     return parser.parse_args(argv)
 
@@ -324,16 +498,28 @@ def main(argv: list[str] | None = None) -> int:
     if not screens:
         raise SystemExit(f"no screens for kinds {kinds}")
 
+    external = json.loads(Path(args.external).read_text()) if args.external else None
     rows: list[dict[str, object]] = []
     readings: dict[str, str] = {}
+    errors: dict[str, set[int]] = {}
     for screen in screens:
-        reading, seconds, gaps = read_screen(screen, reader)
+        if external is not None:
+            if screen.screen_id not in external:
+                raise SystemExit(f"{args.external} has no reading for {screen.screen_id}")
+            image = Image.open(io.BytesIO(screen.png)).convert("RGB")
+            reading, seconds, gaps = external[screen.screen_id], 0.0, unassigned_ink(image, split_columns(image))
+        else:
+            reading, seconds, gaps = read_screen(screen, reader)
         readings[screen.screen_id] = reading
+        errors[screen.screen_id] = error_positions(screen.truth_text, reading)
         image = Image.open(io.BytesIO(screen.png)).convert("RGB")
         rows.append(
             {
                 "screen": screen.screen_id,
                 "kind": screen.kind,
+                "reader": args.reader,
+                "truth": screen.truth_text,
+                "errors": errors[screen.screen_id],
                 "columns": len(split_columns(image)),
                 "seconds": round(seconds, 3),
                 "score": metrics.score_page(screen.truth_text, reading, marks=(), gaps=gaps, normalized=True),
@@ -341,12 +527,33 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     sensitivity = None
-    if args.audit == "oracle":
-        sensitivity = sensitivity_report(screens, "oracle", oracle_auditor)
-    elif args.audit == "diff":
-        sensitivity = sensitivity_report(screens, f"diff:{args.reader}", diff_auditor(readings))
+    ledger: list[dict[str, object]] = []
+    if args.audit == "claude":
+        import tempfile
+
+        selected = screens[: int(args.pages)] if args.pages else screens
+        with tempfile.TemporaryDirectory() as directory:
+            images = {}
+            for screen in selected:
+                path = Path(directory) / f"{screen.screen_id}.png"
+                path.write_bytes(screen.png)
+                images[screen.screen_id] = path
+            auditor, ledger = claude_auditor(images, args.claude_model)
+            sensitivity = sensitivity_report(selected, "claude (headless, diff-only)", auditor, counts=SYNTHETIC_COUNTS)
+            sensitivity["cost_usd"] = round(sum(float(entry["cost_usd"] or 0) for entry in ledger), 4)
+            sensitivity["ledger"] = ledger
+    elif args.audit == "machinery":
+        sensitivity = sensitivity_report(screens, "machinery (planted spans by construction)", oracle_auditor)
+    elif args.audit == "stand-in":
+        sensitivity = sensitivity_report(screens, f"stand-in (character diff of {args.reader})", diff_auditor(readings))
 
     document = build_report(rows, sensitivity, reader_name=args.reader, dpr=args.dpr, kinds=kinds, font=screens[0].font)
+    if args.compare:
+        other = reader_for(args.compare)
+        other_readings = {}
+        for screen in screens:
+            other_readings[screen.screen_id], _, _ = read_screen(screen, other)
+        document += coincidence_report(rows, args.compare, other_readings)
     if args.json_path:
         Path(args.json_path).write_text(
             json.dumps(
