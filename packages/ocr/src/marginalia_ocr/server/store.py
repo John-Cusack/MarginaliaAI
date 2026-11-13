@@ -109,7 +109,9 @@ class Store:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     bundle_sha256 TEXT,
-                    error TEXT
+                    error TEXT,
+                    blocked_reason TEXT,
+                    resume_state TEXT
                 );
                 CREATE TABLE IF NOT EXISTS captures (
                     job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
@@ -131,6 +133,14 @@ class Store:
                     at TEXT NOT NULL,
                     note TEXT,
                     PRIMARY KEY (job_id, ordinal)
+                );
+                CREATE TABLE IF NOT EXISTS pages (
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+                    seq INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
+                    at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, seq)
                 );
                 CREATE TABLE IF NOT EXISTS readings (
                     job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
@@ -220,6 +230,9 @@ class Store:
                 db.execute("ROLLBACK")
                 raise UnknownJob(job_id)
             current = row["state"]
+            if current == "blocked":
+                db.execute("ROLLBACK")
+                raise StoreError(f"{job_id}: blocked; unblock it before advancing")
             allowed = STATES[STATES.index(current) + 1] if STATES.index(current) + 1 < len(STATES) else None
             if state != allowed:
                 db.execute("ROLLBACK")
@@ -243,6 +256,83 @@ class Store:
                 "UPDATE jobs SET state = ?, updated_at = ? WHERE job_id = ?", (state, moment, job_id)
             )
             db.execute("COMMIT")
+
+    def block(self, job_id: str, reason: str) -> None:
+        """Stop the job where it stands, with a reason, and keep its images.
+
+        A blocked job is not final and its pages are not deleted: it holds them
+        inside the 14-day cap so a re-run can resume, and it can be retried once
+        the reason is gone (design 9.5 has no failure state, so this is the one
+        the operator asked for rather than an implied one).
+        """
+        if not reason.strip():
+            raise StoreError(f"{job_id}: a blocked job needs a reason")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT state FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+            if row is None:
+                db.execute("ROLLBACK")
+                raise UnknownJob(job_id)
+            if row["state"] == "blocked":
+                db.execute("ROLLBACK")
+                raise StoreError(f"{job_id}: already blocked")
+            if row["state"] == "final":
+                db.execute("ROLLBACK")
+                raise StoreError(f"{job_id}: a final job cannot be blocked")
+            db.execute(
+                "UPDATE jobs SET state = 'blocked', blocked_reason = ?, resume_state = ?,"
+                " updated_at = ? WHERE job_id = ?",
+                (reason, row["state"], _iso(_now()), job_id),
+            )
+            db.execute("COMMIT")
+
+    def unblock(self, job_id: str) -> str:
+        """Resume from the step the job was stopped on."""
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT state, resume_state FROM jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                db.execute("ROLLBACK")
+                raise UnknownJob(job_id)
+            if row["state"] != "blocked":
+                db.execute("ROLLBACK")
+                raise StoreError(f"{job_id}: not blocked")
+            resume = row["resume_state"] or STATES[0]
+            db.execute(
+                "UPDATE jobs SET state = ?, blocked_reason = NULL, resume_state = NULL,"
+                " updated_at = ? WHERE job_id = ?",
+                (resume, _iso(_now()), job_id),
+            )
+            db.execute("COMMIT")
+        return resume
+
+    def page_status(self, job_id: str, seq: int) -> tuple[str, str]:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT status, reason FROM pages WHERE job_id = ? AND seq = ?", (job_id, seq)
+            ).fetchone()
+        return (row["status"], row["reason"]) if row else ("pending", "")
+
+    def set_page_status(self, job_id: str, seq: int, status: str, reason: str = "") -> None:
+        """Where one page stands. The job's chain says nothing about a single page."""
+        from ..wire import PAGE_STATUSES
+
+        if status not in PAGE_STATUSES:
+            raise StoreError(f"{status!r} is not a page status")
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO pages (job_id, seq, status, reason, at) VALUES (?,?,?,?,?)",
+                (job_id, seq, status, reason, _iso(_now())),
+            )
+
+    def page_statuses(self, job_id: str) -> tuple[tuple[int, str, str], ...]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT seq, status, reason FROM pages WHERE job_id = ? ORDER BY seq", (job_id,)
+            ).fetchall()
+        return tuple((row["seq"], row["status"], row["reason"]) for row in rows)
 
     def fail(self, job_id: str, error: str) -> None:
         with self._connect() as db:
@@ -503,6 +593,9 @@ class Store:
         return cursor.rowcount
 
     def request_recapture(self, job_id: str, position: int, reason: str, dpr: int) -> None:
+        # A page waiting for a new screen has a status of its own, so the queue
+        # and the page agree about why it is not finished.
+        self.set_page_status(job_id, position, "awaiting_recapture", reason)
         with self._connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO recapture (job_id, position, reason, dpr, requested_at)"

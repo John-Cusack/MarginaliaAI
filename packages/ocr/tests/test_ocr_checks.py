@@ -8,6 +8,10 @@ contents does not know, and the reader's own chrome leaking into the text.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
 from marginalia_ocr.server import checks
 
 
@@ -68,3 +72,53 @@ def test_the_vocabulary_check_catches_a_confusion_the_readers_agreed_on():
     vocabulary = checks.book_vocabulary(["the debt was 48.2% " * 3])
     assert checks.unmatched_words("the debr was 48.2%", vocabulary)
     assert checks.unmatched_words("the debt was 48.2%", vocabulary) == ()
+
+
+FIXTURES = Path.home() / "Documents/kindle-reocr/fixtures"
+
+
+def fixture_toc(asin: str = "B00457X7VI") -> list[dict[str, object]]:
+    """The TOC out of a fixture tar, by name and nothing else.
+
+    Metadata only: the member list is filtered to ``toc.json`` and no other member
+    is opened - never glyphs, never tokens. The fixtures are the operator's own
+    captures, and this reads exactly one allowlisted member of one of them.
+    """
+    import tarfile
+
+    root = FIXTURES / asin
+    if not root.exists():
+        pytest.skip(f"no fixture for {asin}")
+    with tarfile.open(sorted(root.glob("*.tar"))[0]) as tar:
+        member = next(m for m in tar.getmembers() if m.name == "toc.json")
+        return json.loads(tar.extractfile(member).read().decode("utf-8", "replace"))
+
+
+def test_toc_json_has_the_shape_the_boundary_rule_needs():
+    entries = fixture_toc()
+    assert entries, "the fixture has a TOC"
+    assert all(isinstance(entry.get("label"), str) for entry in entries)
+    assert all(isinstance(entry.get("tocPositionId"), int) for entry in entries)
+
+
+def test_a_boundary_is_a_toc_entry_landing_inside_a_pages_range():
+    entries = fixture_toc()
+    positions = [int(entry["tocPositionId"]) for entry in entries]
+    low, high = min(positions), max(positions)
+    # Page ranges in the same id space as the TOC's own position ids - which space
+    # that is is the caller's business; the rule is the same in any of them.
+    pages = [(seq, low + index * 100, low + (index + 1) * 100 - 1) for index, seq in enumerate(range(15))]
+
+    boundaries = checks.toc_boundaries([(str(e["label"]), int(e["tocPositionId"])) for e in entries], pages)
+
+    assert boundaries, "no TOC entry landed in a page"
+    assert boundaries <= {seq for seq, _s, _e in pages}
+    assert low <= high
+
+
+def test_a_toc_boundary_is_what_a_note_restart_is_allowed_at():
+    """The one thing a boundary is for: a book restarts note numbering at a part,
+    and only there."""
+    numbers = [(0, 3, 1), (20, 23, 2), (500, 503, 1), (520, 523, 2)]
+    assert checks.note_sequence(numbers) == ((500, 503),)
+    assert checks.note_sequence(numbers, resets_at={500}) == ()

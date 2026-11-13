@@ -1,5 +1,13 @@
 """The independent checks (design 7.5): a failure marks a span or gaps the page.
 
+**The decision of record, because the design leaves it open** ("a failure marks
+the affected span, or gaps the page"): two checks gap the page and the rest mark
+spans. A **missing line** (`line_count_mismatch`) and a **chrome leak**
+(`chrome_leaks`) mean the page is not the page - a line of the book is absent, or
+the reader's own furniture is in the text - and neither can be repaired by marking
+one word, so the page is gapped and re-taken. Every other check marks the span it
+caught: the page still stands, one word of it is uncertain.
+
 They exist because agreement is not correctness. Three readers from the same
 family of errors can agree on a wrong word, and the checks are the only thing
 looking at the page that no reader produced: the layout, the dictionary, the
@@ -193,6 +201,28 @@ def chrome_leaks(text: str, markers: Iterable[str] = CHROME_MARKERS) -> tuple[tu
             spans.append((start, start + len(marker)))
             start = lowered.find(marker, start + 1)
     return tuple(sorted(spans))
+
+
+def toc_boundaries(
+    entries: Sequence[tuple[str, int]], pages: Sequence[tuple[int, int, int]]
+) -> frozenset[int]:
+    """Which pages a table of contents entry starts, by position id.
+
+    ``entries`` is ``(label, tocPositionId)`` - the shape `toc.json` really has,
+    read from the capture's own metadata - and ``pages`` is
+    ``(seq, start_id, end_id)`` **in the same id space**, because the caller knows
+    which space it is holding (a location, a structural position) and this rule is
+    the same in either. A boundary is an entry's position id landing inside a
+    page's range, and it is what `note_sequence` accepts as a legitimate restart:
+    note numbering restarts where the book says a part begins, and nowhere else.
+    """
+    boundaries: set[int] = set()
+    for _label, position in entries:
+        for seq, start, end in pages:
+            if start <= position <= end:
+                boundaries.add(seq)
+                break
+    return frozenset(boundaries)
 
 
 # --------------------------------------------------------------------------- #

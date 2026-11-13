@@ -7,7 +7,15 @@ punctuation, signs, decimals, accents).
 
 from __future__ import annotations
 
-from marginalia_ocr.server.align import Edit, classify_errors, normalize, overlaps
+from marginalia_ocr.server.align import (
+    AGREED,
+    DISPUTED,
+    Edit,
+    align_readings,
+    classify_errors,
+    normalize,
+    overlaps,
+)
 
 
 def kinds(truth: str, final: str) -> list[str]:
@@ -71,3 +79,63 @@ def test_overlaps_treats_an_empty_span_as_a_point_with_a_window():
     assert overlaps([(10, 20)], (20, 20)) is True, "a point at the edge of the edit"
     assert overlaps([(10, 20)], (5, 5)) is False
     assert overlaps([(10, 20)], (15, 25)) is True
+
+
+def test_alignment_is_per_word_and_resynchronizes():
+    """One disputed word is one disputed word, not the rest of the page.
+
+    A 200-word region where the readers disagree about one word must come back as
+    three segments - agreed, disputed, agreed - with the dispute exactly one word
+    wide. Without resynchronization one bad word drags every word after it.
+    """
+    words = [f"w{i}" for i in range(200)]
+    truth = " ".join(words)
+    readings = {
+        "tesseract": truth,
+        "easyocr": " ".join(["w0"] + ["W99"] + [f"w{i}" for i in range(1, 200)]),
+        "vlm": truth,
+    }
+    readings["easyocr"] = truth.replace("w99", "W99")
+
+    segments = align_readings(readings, primary="vlm")
+
+    disputed = [segment for segment in segments if segment.kind == DISPUTED]
+    assert len(disputed) == 1, f"{len(disputed)} disputes for one wrong word"
+    assert disputed[0].text.strip() == "w99", disputed[0].text
+    assert sum(len(segment.text.split()) for segment in segments if segment.kind == AGREED) == 199
+    assert [segment.kind for segment in segments] == [AGREED, DISPUTED, AGREED]
+
+
+def test_a_word_one_reader_saw_and_the_others_did_not_is_a_visible_dispute():
+    """An insertion is a dispute with a candidate, not an invisible difference."""
+    segments = align_readings(
+        {"tesseract": "the debt was 48.2%", "easyocr": "the debt was 48.2%", "vlm": "the debt was"},
+        primary="vlm",
+    )
+    disputed = [segment for segment in segments if segment.kind == DISPUTED]
+    assert disputed, "the extra token vanished"
+    candidate = dict(disputed[0].candidates)["easyocr"]
+    assert "48.2%" in candidate, candidate
+    assert disputed[0].text.strip() == "was"
+
+
+def test_an_empty_reading_is_a_candidate_not_silence():
+    """A reader that produced nothing is a disagreement, and the empty answer is
+    recorded as its candidate rather than treated as absence of an opinion."""
+    segments = align_readings(
+        {"tesseract": "the debt was 48.2%", "easyocr": "", "vlm": "the debt was 48.2%"},
+        primary="vlm",
+    )
+    assert len(segments) == 1 and segments[0].kind == DISPUTED
+    assert dict(segments[0].candidates)["easyocr"] == ""
+    assert dict(segments[0].candidates)["vlm"] == "the debt was 48.2%"
+
+
+def test_alignment_keeps_the_primarys_line_breaks():
+    """Normalization is for comparing; storage keeps the layout of the book."""
+    text = "The debt was 48.2%\nand the claim held.\n\nA new paragraph began."
+    segments = align_readings(
+        {"tesseract": text, "easyocr": text, "vlm": text}, primary="vlm"
+    )
+    assert len(segments) == 1
+    assert "\n" in segments[0].text and "\n\n" in segments[0].text

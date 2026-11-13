@@ -10,11 +10,27 @@ Everything that is not confirmed is marked, with its candidates and the reason,
 permanently. A mark is not a failure of the pipeline; it is the pipeline saying
 what it does not know, and the assessment is built from them.
 
-The tie-break chain is the design's, in order: re-read the region from 3x pixels;
-prefer a candidate that equals a *confirmed* occurrence elsewhere in the book;
-let the VLM choose **among the candidates**. The last one cannot introduce text:
-the chooser is an interface, its answer is checked against the candidate set, and
-an answer that is not one of them is refused rather than stored.
+The contract is **per word**, not per region: a 300-word region with one disputed
+word is one mark of one word, with the other 299 confirmed. So the work is done on
+the segments `align.align_readings` returns - agreed runs are confirmed (unless a
+check flags a span inside them, and then only that span is marked), and a disputed
+run is resolved on its own, from its own candidates.
+
+The tie-break chain is the design's, in order: re-read the region from 3x pixels
+(production is already 3x, so this means re-running the readers on the same stored
+pixels - a 2x screen goes into the recapture queue instead); prefer a candidate
+that equals a *confirmed* occurrence elsewhere in the book, and only when exactly
+one candidate qualifies; let the VLM choose **among the candidates**. The last one
+cannot introduce text: the chooser is an interface, its answer is checked against
+the candidate set, and an answer that is not one of them is refused rather than
+stored.
+
+**Storage keeps the primary reading's own whitespace and line breaks.** The
+normalization of 7.4 is for comparing and never for storing: collapsing the
+whitespace would throw away the paragraph and line structure of the book. The
+primary is the VLM (the best single-reader baseline Phase 0 measured), and where a
+disputed segment has no tie-break its text is the primary's - which the mark says,
+so the stored word is never silently one reader's guess among three.
 
 Tie-break output never enters the vocabulary. The vocabulary is what the book has
 *confirmed*, and a chosen candidate is precisely the case where we did not.
@@ -25,7 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from .align import normalize
+from .align import align_readings, normalize
 from .checks import WORD
 
 if TYPE_CHECKING:
@@ -108,7 +124,12 @@ class Vocabulary:
         )
 
     def contains(self, word: str) -> bool:
-        """Is this word one the book has confirmed? Casefolded, exact otherwise."""
+        """Is this word one the book has confirmed? Exact, because §7.4 says so.
+
+        Case is significant: "Margin" and "margin" are different words on the page
+        and in the book, and a vocabulary that folded them would bless a case
+        error as a word the book uses.
+        """
         return word in self.words
 
     @property
@@ -123,111 +144,184 @@ class Vocabulary:
         return vocabulary
 
 
-def candidates_from(readings: Mapping[str, str]) -> tuple[Candidate, ...]:
-    """The distinct readings, in the order the readers were given, with their names.
-
-    Empty readings are disagreements, not silence: a reader that produced nothing
-    while another produced text means the span is not confirmed, and the empty
-    answer is kept as a candidate so the mark says so.
-    """
-    grouped: dict[str, list[str]] = {}
-    for reader, text in readings.items():
-        grouped.setdefault(normalize(text), []).append(reader)
-    return tuple(
-        Candidate(text=text, readers=tuple(grouped[text])) for text in grouped
-    )
+def candidates_of(segment) -> tuple[Candidate, ...]:
+    """A disputed segment's candidates as `Candidate`s, in reader order."""
+    return tuple(Candidate(text=text, readers=(reader,)) for reader, text in segment.candidates)
 
 
-def confirm_region(
-    region_id: str,
+def confirm_readings(
     readings: Mapping[str, str],
     *,
+    primary: str = "vlm",
     checks: Sequence[tuple[str, tuple[tuple[int, int], ...]]] = (),
     gapping: Iterable[str] = ("line_count", "chrome"),
-    reread: Callable[[], str] | None = None,
+    reread: Callable[[object], str] | None = None,
     book: Vocabulary | None = None,
     chooser: VlmChooser | None = None,
 ) -> Confirmation:
-    """Confirm this region, or mark it and say why.
+    """Confirm a page's readings segment by segment, keeping the primary's layout.
 
-    ``readings`` is per reader. ``checks`` is what the independent checks found in
-    the *candidate* text, already in its coordinates. ``reread`` returns a fresh
-    reading of the region if one can be taken (3x pixels, design 7.4) - it is the
-    first tie-break, and it is a callable so the chain is testable without a
-    browser or a GPU.
+    ``checks`` are spans in the *primary* reading's coordinates, because that is
+    the text the checks were run on. ``reread`` is called per disputed segment.
     """
-    candidates = candidates_from(readings)
-    texts = [candidate.text for candidate in candidates]
-    unanimous = len(candidates) == 1 and candidates[0].text.strip() != ""
-
+    if not readings:
+        return Confirmation(text="", marks=(), gaps=(), confirmed_spans=())
+    primary = primary if primary in readings else next(iter(readings))
     gapping = tuple(gapping)
-    if unanimous:
-        text = candidates[0].text
-        failed = sorted(name for name, spans in checks if spans)
-        if not failed:
-            return Confirmation(text=text, marks=(), gaps=(), confirmed_spans=((0, len(text)),))
-        # The readers agree and a check objects: agreement is not correctness.
-        # A check that says the page is incomplete gaps it; the rest mark it.
-        if any(name in gapping for name in failed):
-            gap = Gap(
-                span=(0, len(text)),
-                reason="the readers agree but " + ", ".join(failed) + " says the page is not complete",
+    base = readings[primary]
+    segments = align_readings(readings, primary=primary)
+
+    # Every check span, mapped from the primary's coordinates into the stored text
+    # as the stored text is built - a tie-break can change a segment's length, and
+    # a mark that drifts off its own span is worse than no mark.
+    check_hits: list[tuple[str, tuple[int, int]]] = [
+        (name, span) for name, spans in checks for span in spans
+    ]
+    # A check that means "this page is not the page" gaps it whole: the page is
+    # re-taken, so nothing on it is confirmed, however well the readers agreed.
+    page_gapped = any(name in gapping for name, _span in check_hits)
+
+    out: list[str] = []
+    marks: list[Mark] = []
+    gaps: list[Gap] = []
+    confirmed: list[tuple[int, int]] = []
+    cursor = 0
+    length = 0  # the stored text's length so far, kept as we go
+
+    for segment in segments:
+        inter = base[cursor : segment.span[0]]
+        out.append(inter)
+        length += len(inter)
+        start = length
+
+        hits = [
+            (name, span)
+            for name, span in check_hits
+            if span[0] < segment.span[1] and segment.span[0] < span[1]
+        ]
+        if segment.agreed and not hits:
+            out.append(segment.text)
+            length += len(segment.text)
+            if not page_gapped:
+                confirmed.append((start, length))
+            cursor = segment.span[1]
+            continue
+
+        if segment.agreed:
+            out.append(segment.text)
+            names = sorted({name for name, _span in hits})
+            # The hit marks its own span; everything else in the segment is still
+            # confirmed. Marking the whole segment would turn one flagged word
+            # into a page of uncertainty - the defect this rewrite exists to fix.
+            if not page_gapped:
+                # Only the spans no check touched are confirmed. A gapping check
+                # means the page is re-taken, so none of it is confirmed at all.
+                cut = length
+                for span in sorted((span for _name, span in hits)):
+                    start_of_hit = length + (span[0] - segment.span[0])
+                    if start_of_hit > cut:
+                        confirmed.append((cut, start_of_hit))
+                    cut = max(cut, length + (span[1] - segment.span[0]))
+                if cut < length + len(segment.text):
+                    confirmed.append((cut, length + len(segment.text)))
+            length += len(segment.text)
+            for name, span in hits:
+                width = span[1] - span[0]
+                offset = start + (span[0] - segment.span[0])
+                mark_span = (offset, offset + max(width, 1))
+                if name in gapping:
+                    gaps.append(
+                        Gap(span=mark_span, reason=f"{name} says the page is not complete")
+                    )
+                else:
+                    marks.append(
+                        Mark(
+                            span=mark_span,
+                            kind="check",
+                            reason="the readers agree but " + ", ".join(names) + " objects",
+                            candidates=(Candidate(text=segment.text, source="agreed"),),
+                        )
+                    )
+            cursor = segment.span[1]
+            continue
+
+        # A dispute, resolved on its own candidates.
+        candidates = candidates_of(segment)
+        texts = [candidate.text for candidate in candidates]
+        chosen: str | None = None
+        resolved_by: str | None = None
+
+        if reread is not None and all(text.strip() for text in texts):
+            fresh = normalize(reread(segment))
+            match = next((text for text in texts if normalize(text) == fresh), None)
+            if match is not None:
+                chosen, resolved_by = match, "reread"
+
+        if chosen is None and book is not None:
+            # Distinct texts: two readers proposing the same qualifying word is
+            # one candidate, not two, and counting them separately would make the
+            # "exactly one" rule fail whenever two readers agreed with the book.
+            qualifying = sorted(
+                {
+                    text
+                    for text in texts
+                    if text.strip()
+                    and (words := WORD.findall(text))
+                    and all(book.contains(word) for word in words)
+                }
             )
-            return Confirmation(text=text, marks=(), gaps=(gap,), confirmed_spans=())
-        mark = Mark(
-            span=(0, len(text)),
-            kind="check",
-            reason="the readers agree but " + ", ".join(failed) + " objects",
-            candidates=candidates,
-        )
-        return Confirmation(text=text, marks=(mark,), gaps=(), confirmed_spans=())
+            if len(qualifying) == 1:
+                chosen, resolved_by = qualifying[0], "book"
 
-    # A disagreement. The chain runs in the design's order and each step is
-    # recorded, because "the VLM picked this" and "the book already confirmed
-    # this elsewhere" are different claims about the same text.
-    chosen: Candidate | None = None
-    resolved_by: str | None = None
+        if chosen is None and chooser is not None and all(text.strip() for text in texts):
+            answer = chooser.choose(segment_key(segment), texts)
+            if answer is not None:
+                match = next((text for text in texts if normalize(text) == normalize(answer)), None)
+                if match is not None:
+                    chosen, resolved_by = match, "vlm"
 
-    if reread is not None and all(text.strip() for text in texts):
-        fresh = Candidate(text=normalize(reread()), source="reread")
-        if fresh.text in texts:
-            chosen, resolved_by = Candidate(fresh.text, source="reread"), "reread"
+        if chosen is None:
+            # No tie-break applies. The stored word is the primary's - the named
+            # single reader Phase 0 measured best - and the mark says exactly that,
+            # so it is never read as a decision the pipeline made on evidence.
+            out.append(segment.text)
+            length += len(segment.text)
+            marks.append(
+                Mark(
+                    span=(start, length),
+                    kind="disagreement",
+                    reason=(
+                        "the readers disagree and no tie-break applies; "
+                        f"the stored text is the {primary} reader's, not confirmed"
+                    ),
+                    candidates=candidates,
+                )
+            )
+        else:
+            out.append(chosen)
+            length += len(chosen)
+            marks.append(
+                Mark(
+                    span=(start, length),
+                    kind=f"tiebreak:{resolved_by}",
+                    reason=f"resolved by {resolved_by}; not confirmed, and not added to the vocabulary",
+                    candidates=candidates,
+                )
+            )
+        cursor = segment.span[1]
 
-    if chosen is None and book is not None:
-        # A candidate the book has already confirmed elsewhere is the strongest
-        # evidence available: it is the book's own word, not a reader's guess.
-        in_book: list[Candidate] = []
-        for candidate in candidates:
-            words = WORD.findall(candidate.text)
-            if words and candidate.text.strip() and all(book.contains(word) for word in words):
-                in_book.append(Candidate(candidate.text, candidate.readers, source="book"))
-        if len(in_book) == 1:
-            chosen, resolved_by = in_book[0], "book"
-
-    if chosen is None and chooser is not None and all(text.strip() for text in texts):
-        answer = chooser.choose(region_id, texts)
-        if answer is not None and normalize(answer) in texts:
-            chosen, resolved_by = Candidate(normalize(answer), source="vlm"), "vlm"
-
-    if chosen is None:
-        mark = Mark(
-            span=(0, max((len(text) for text in texts), default=0)),
-            kind="disagreement",
-            reason="the readers disagree and no tie-break applies",
-            candidates=candidates,
-        )
-        return Confirmation(text=candidates[0].text if candidates else "", marks=(mark,), gaps=(), confirmed_spans=())
-
-    # Adopted, and still marked: a tie-break is a decision, not a confirmation.
-    mark = Mark(
-        span=(0, len(chosen.text)),
-        kind=f"tiebreak:{resolved_by}",
-        reason=f"resolved by {resolved_by}; not confirmed, and not added to the vocabulary",
-        candidates=candidates,
-    )
+    out.append(base[cursor:])
     return Confirmation(
-        text=chosen.text, marks=(mark,), gaps=(), confirmed_spans=(), resolved_by=resolved_by
+        text="".join(out),
+        marks=tuple(marks),
+        gaps=tuple(gaps),
+        confirmed_spans=tuple(confirmed),
     )
+
+
+def segment_key(segment) -> str:
+    """A stable name for a disputed segment, so the chooser can say where it looks."""
+    return f"{segment.span[0]}-{segment.span[1]}"
 
 
 def vocabulary_from_confirmations(confirmations: Iterable[Confirmation], *, minimum: int = 3) -> Vocabulary:
@@ -239,8 +333,10 @@ def vocabulary_from_confirmations(confirmations: Iterable[Confirmation], *, mini
     """
     vocabulary = Vocabulary(minimum=minimum)
     for confirmation in confirmations:
-        if confirmation.confirmed_spans:
-            vocabulary.add_confirmed(confirmation.text)
+        # The spans, not the text: a confirmation's stored text also carries its
+        # disputed segments, which are exactly the words the book did not confirm.
+        for start, end in confirmation.confirmed_spans:
+            vocabulary.add_confirmed(confirmation.text[start:end])
     return vocabulary
 
 

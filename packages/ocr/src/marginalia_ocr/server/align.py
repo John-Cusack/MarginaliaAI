@@ -27,7 +27,7 @@ from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping, Sequence
 
 OmissionWindow = 2  # chars: an omission is a point, a mark near it counts
 
@@ -250,3 +250,185 @@ def overlaps(intervals: Iterable[Interval], span: Interval, window: int = Omissi
         elif left < end and start < right:
             return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+# three readings, one sequence of agreed and disputed segments
+# --------------------------------------------------------------------------- #
+
+AGREED = "agreed"
+DISPUTED = "disputed"
+
+#: A token for alignment: a run of non-space characters. Punctuation stays
+#: attached, because §7.4 makes punctuation significant - "48.2%" and "482%"
+#: must not look like the same token.
+TOKEN = re.compile(r"\S+")
+
+
+@dataclass(frozen=True)
+class Token:
+    text: str
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One run of the page: every reader the same, or a dispute to resolve.
+
+    ``span`` and ``text`` are in the *primary* reading's coordinates and keep its
+    original whitespace and line breaks, because that is the text the pipeline
+    stores. Normalization is for comparing, never for storage: collapsing the
+    whitespace would throw away the paragraph and line structure of the book.
+
+    ``candidates`` is one entry per reader - ``(reader, text)`` - and an empty
+    string is a candidate like any other: a reader that produced nothing at a
+    place the others read something is a disagreement, not silence.
+    """
+
+    kind: str
+    span: tuple[int, int]
+    text: str
+    candidates: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def agreed(self) -> bool:
+        return self.kind == AGREED
+
+
+def tokens_of(text: str) -> tuple[Token, ...]:
+    return tuple(Token(match.group(0), match.start(), match.end()) for match in TOKEN.finditer(text))
+
+
+def _aligned_to_primary(
+    primary_tokens: Sequence[Token], other_tokens: Sequence[Token]
+) -> tuple[dict[int, tuple[int, int]], dict[int, tuple[int, int]]]:
+    """Where the other reading's text sits, by the primary index it belongs to.
+
+    Returns offsets into the *other* reading's own text, not its words: a
+    candidate has to be what that reader actually produced, with its own spacing,
+    or a candidate is a reconstruction rather than a reading. ``extra`` is the
+    text it has where the primary has nothing, attributed to the primary index it
+    follows, so a word one reader saw and nobody else did is a visible dispute.
+    """
+    matched: dict[int, tuple[int, int]] = {}
+    extra: dict[int, tuple[int, int]] = {}
+    matcher = SequenceMatcher(
+        None, [token.text for token in primary_tokens], [token.text for token in other_tokens]
+    )
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for offset in range(i2 - i1):
+                token = other_tokens[j1 + offset]
+                matched[i1 + offset] = (token.start, token.end)
+        elif tag == "insert":
+            if j1 < j2:
+                key = max(0, i1 - 1)
+                span = (other_tokens[j1].start, other_tokens[j2 - 1].end)
+                if key in extra:
+                    span = (min(extra[key][0], span[0]), max(extra[key][1], span[1]))
+                extra[key] = span
+        elif tag == "replace":
+            for offset, index in enumerate(range(i1, i2)):
+                if j1 + offset < j2:
+                    token = other_tokens[j1 + offset]
+                    matched[index] = (token.start, token.end)
+            for index in range(i1 + (j2 - j1), i2):
+                token = other_tokens[j2 - 1]
+                matched.setdefault(index, (token.start, token.end))
+    return matched, extra
+
+
+def align_readings(
+    readings: Mapping[str, str], *, primary: str | None = None
+) -> tuple[Segment, ...]:
+    """Align three (or more) readings into agreed and disputed segments.
+
+    Word granularity, and the alignment resynchronizes: a disagreement about one
+    word is a segment of one word, and the words after it are aligned again rather
+    than dragged along by the dispute - which is what keeps a single bad word from
+    marking the rest of the page uncertain.
+    """
+    if not readings:
+        return ()
+    primary = primary or next(iter(readings))
+    if primary not in readings:
+        raise ValueError(f"primary reader {primary!r} is not among the readings")
+    spine = tokens_of(readings[primary])
+
+    votes: list[dict[str, str]] = [{primary: token.text} for token in spine]
+    where: dict[str, dict[int, tuple[int, int]]] = {primary: {i: (t.start, t.end) for i, t in enumerate(spine)}}
+    extras: dict[str, dict[int, tuple[int, int]]] = {}
+    for reader, text in readings.items():
+        if reader == primary:
+            continue
+        matched, extra = _aligned_to_primary(spine, tokens_of(text))
+        where[reader] = matched
+        extras[reader] = extra
+        for index, vote in enumerate(votes):
+            vote[reader] = text[matched[index][0] : matched[index][1]] if index in matched else ""
+
+    segments: list[Segment] = []
+    index = 0
+    while index < len(spine):
+        agreed = _is_agreed(votes[index], readings) and not any(
+            index in extras.get(reader, {}) for reader in readings if reader != primary
+        )
+        end = index
+        while end + 1 < len(spine):
+            next_agreed = _is_agreed(votes[end + 1], readings) and not any(
+                end + 1 in extras.get(reader, {}) for reader in readings if reader != primary
+            )
+            if next_agreed != agreed:
+                break
+            end += 1
+        span = (spine[index].start, spine[end].end)
+        if agreed:
+            segments.append(Segment(kind=AGREED, span=span, text=readings[primary][span[0] : span[1]]))
+        else:
+            candidates = tuple(
+                (reader, _candidate_for(reader, readings, where, extras, index, end))
+                for reader in readings
+            )
+            segments.append(
+                Segment(
+                    kind=DISPUTED,
+                    span=span,
+                    text=readings[primary][span[0] : span[1]],
+                    candidates=candidates,
+                )
+            )
+        index = end + 1
+    return tuple(segments)
+
+
+def _is_agreed(vote: Mapping[str, str], readings: Mapping[str, str]) -> bool:
+    """Every reader the same after §7.4's normalization, and none of them empty."""
+    texts = [normalize(vote.get(reader, "")) for reader in readings]
+    return bool(texts) and texts[0] != "" and len(set(texts)) == 1
+
+
+def _candidate_for(
+    reader: str,
+    readings: Mapping[str, str],
+    where: Mapping[str, Mapping[int, tuple[int, int]]],
+    extras: Mapping[str, Mapping[int, tuple[int, int]]],
+    first: int,
+    last: int,
+) -> str:
+    """What this reader has for the disputed run, in its own words and spacing.
+
+    Sliced out of the reader's own text rather than rebuilt from words: the
+    candidate has to be something the reader produced, because the tie-break's
+    answer is checked against it and the mark records it.
+    """
+    text = readings[reader]
+    spans: list[tuple[int, int]] = []
+    for index in range(first, last + 1):
+        if index in where.get(reader, {}):
+            spans.append(where[reader][index])
+        if index in extras.get(reader, {}):
+            spans.append(extras[reader][index])
+    if not spans:
+        return ""
+    return text[min(span[0] for span in spans) : max(span[1] for span in spans)]

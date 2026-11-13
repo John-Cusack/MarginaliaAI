@@ -32,9 +32,28 @@ STATES = (
     "images_deleted",
     "final",
 )
+#: The linear chain a job walks. ``blocked`` is deliberately *not* part of it: a
+#: blocked job is not a step in the pipeline, it is a job stopped where it stands,
+#: with its images still on disk inside the cap, waiting for a reason to be fixed.
 State = Literal[
-    "captured", "read", "checked", "assembled", "audited", "bundle_written", "images_deleted", "final"
+    "captured",
+    "read",
+    "checked",
+    "assembled",
+    "audited",
+    "bundle_written",
+    "images_deleted",
+    "final",
+    "blocked",
 ]
+
+#: What a page's own status can be, which the job's chain does not carry. A page
+#: is not a job: one can be gapped while the job walks on, and one can be waiting
+#: for a re-capture while the rest of the book is finished.
+PageStatus = Literal[
+    "pending", "read", "confirmed", "marked", "gapped", "awaiting_recapture"
+]
+PAGE_STATUSES = ("pending", "read", "confirmed", "marked", "gapped", "awaiting_recapture")
 
 #: The bundle is derived-only and kept permanently, so its shape is a contract.
 BUNDLE_SCHEMA = 1

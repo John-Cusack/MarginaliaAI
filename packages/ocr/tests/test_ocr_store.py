@@ -245,3 +245,68 @@ def test_a_version_change_keeps_the_capture_rows(store: Store):
     assert len(captures) == 1, "the page still exists and its image is still claimed"
     assert captures[0].read_at is None, "the read is what the version change invalidates"
     assert captures[0].path.exists()
+
+
+def test_a_blocked_job_keeps_its_pages_and_says_why(store: Store):
+    """A book that cannot go on stops where it stands, with its images intact.
+
+    Design 9.5 has no failure state, so this is the one the operator asked for: it
+    holds the images inside the 14-day cap, can be retried, and is never final.
+    """
+    job_id = make_job(store)
+    commit(store, job_id, seq=0)
+    store.advance(job_id, "read")
+
+    store.block(job_id, "the audit failed twice; awaiting a decision")
+
+    assert store.state_of(job_id) == "blocked"
+    assert store.job(job_id)["blocked_reason"].startswith("the audit failed")
+    assert store.captures(job_id), "a blocked job keeps its pages"
+    with pytest.raises(StoreError):
+        store.advance(job_id, "checked")
+
+    assert store.unblock(job_id) == "read", "it resumes from where it stopped"
+    assert store.state_of(job_id) == "read"
+    store.advance(job_id, "checked")
+
+
+def test_a_block_needs_a_reason_and_never_touches_a_final_job(store: Store):
+    job_id = make_job(store)
+    commit(store, job_id, seq=0)
+    with pytest.raises(StoreError):
+        store.block(job_id, "   ")
+
+    for state in STATES[1:]:
+        if state == "images_deleted":
+            store.delete_images(job_id)
+        store.advance(job_id, state)
+    assert store.state_of(job_id) == "final"
+    with pytest.raises(StoreError):
+        store.block(job_id, "too late")
+
+
+def test_a_page_has_a_status_of_its_own(store: Store):
+    """The job's chain says nothing about one page: one can be gapped while the
+    job walks on, and one can be waiting for a screen while the rest is done."""
+    job_id = make_job(store)
+    commit(store, job_id, seq=0)
+    commit(store, job_id, seq=1)
+
+    assert store.page_status(job_id, 0) == ("pending", ""), "a committed page starts pending"
+
+    store.set_page_status(job_id, 0, "confirmed")
+    store.set_page_status(job_id, 1, "marked", "one word disputed, no tie-break applied")
+
+    assert store.page_status(job_id, 0) == ("confirmed", "")
+    assert store.page_status(job_id, 1) == ("marked", "one word disputed, no tie-break applied")
+    assert [status for _seq, status, _reason in store.page_statuses(job_id)] == ["confirmed", "marked"]
+
+    with pytest.raises(StoreError):
+        store.set_page_status(job_id, 0, "finished")
+
+
+def test_an_expired_page_is_marked_awaiting_recapture(store: Store):
+    job_id = make_job(store)
+    commit(store, job_id, seq=0)
+    store.request_recapture(job_id, 0, "image expired before the page was finalized", 3)
+    assert store.page_status(job_id, 0)[0] == "awaiting_recapture"

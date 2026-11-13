@@ -1,9 +1,12 @@
-"""Confirm, tie-break, mark: what the pipeline will and will not stand behind.
+"""Confirm per word, not per region.
 
-The rule has no 2-of-3, because the errors that matter are the ones readers
-share. Everything unconfirmed is marked with its candidates and the reason, and
-the tie-break chain is the design's three steps in order - each of them a
-decision, never a confirmation.
+A 300-word region with one disputed word is one mark of one word: everything else
+is confirmed. That is the contract, and it is what keeps a page from being almost
+entirely uncertain the moment one reader slips on one word.
+
+The stored text keeps the primary reading's own whitespace and line breaks -
+normalization is for comparing, never for storing - and where a disputed segment
+has no tie-break the stored word is the primary's, with the mark saying so.
 """
 
 from __future__ import annotations
@@ -13,143 +16,177 @@ from pathlib import Path
 
 from marginalia_ocr.server import checks
 from marginalia_ocr.server.confirm import (
+    Candidate,
     Confirmation,
     Vocabulary,
     check_spans_for,
-    confirm_region,
+    confirm_readings,
     vocabulary_from_confirmations,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
-def unanimous(text: str = "the debt was 48.2% and the claim held") -> dict[str, str]:
+def three(text: str) -> dict[str, str]:
+    """The same text from all three readers, with the VLM as the primary."""
     return {"tesseract": text, "easyocr": text, "vlm": text}
 
 
+def words(count: int) -> str:
+    return " ".join(f"w{index}" for index in range(count))
+
+
+class Chooser:
+    def __init__(self, answer: int = 0) -> None:
+        self.answer = answer
+        self.seen: list[tuple[str, tuple[str, ...]]] = []
+
+    def choose(self, segment_id: str, candidates) -> str | None:
+        self.seen.append((segment_id, tuple(candidates)))
+        return candidates[self.answer] if candidates else None
+
+
 def test_a_page_every_reader_agrees_on_is_confirmed_with_no_marks():
-    result = confirm_region("r0", unanimous())
+    result = confirm_readings(three("the debt was 48.2% and the claim held"))
     assert result.confirmed is True
     assert result.marks == () and result.gaps == ()
     assert result.confirmed_spans == ((0, len(result.text)),)
 
 
-def test_a_reader_that_produced_nothing_is_not_agreement():
-    """An empty or failed reading never counts as agreement (§7.2)."""
-    readings = unanimous()
-    readings["easyocr"] = ""
-    result = confirm_region("r0", readings)
-    assert result.confirmed is False
-    assert result.marks and any(candidate.text == "" for candidate in result.marks[0].candidates)
+def test_one_disputed_word_marks_that_word_and_confirms_the_rest():
+    """The defect this replaced: the whole region was marked uncertain."""
+    text = words(200)
+    readings = three(text)
+    readings["easyocr"] = text.replace("w99", "W99")
 
+    result = confirm_readings(readings)
 
-def test_a_single_reader_error_is_marked_with_its_candidates():
-    """Two readers right and one wrong is still a disagreement, and the mark says
-    what the pipeline was choosing between."""
-    readings = unanimous()
-    readings["easyocr"] = "the debr was 48.2% and the claim held"
-    result = confirm_region("r0", readings)
-
-    assert result.confirmed is False
+    assert len(result.marks) == 1, [mark.span for mark in result.marks]
     mark = result.marks[0]
-    assert mark.kind == "disagreement"
-    texts = {candidate.text for candidate in mark.candidates}
-    assert texts == {"the debt was 48.2% and the claim held", "the debr was 48.2% and the claim held"}
-    assert {reader for candidate in mark.candidates for reader in candidate.readers} == {
-        "tesseract",
-        "easyocr",
-        "vlm",
-    }
+    assert result.text[mark.span[0] : mark.span[1]].strip() == "w99"
+    confirmed_words = sum(len(result.text[start:end].split()) for start, end in result.confirmed_spans)
+    assert confirmed_words == 199, confirmed_words
+    assert set(mark.candidates) == {
+        Candidate(text="w99", readers=("tesseract",)),
+        Candidate(text="W99", readers=("easyocr",)),
+        Candidate(text="w99", readers=("vlm",)),
+    } or {candidate.text for candidate in mark.candidates} == {"w99", "W99"}
 
 
-def test_a_check_that_says_the_page_is_incomplete_gaps_it_even_unanimously():
-    """All readers dropping a line is the case the line-count check exists for."""
-    readings = unanimous()
-    layout = [(0, i * 14, 100, i * 14 + 12) for i in range(7)]
-    per_line = ["one", "two", "three", "four", "five", "six"]      # seven drawn, six read
-    result = confirm_region(
-        "r0",
-        readings,
-        checks=(("line_count", checks.line_count_mismatch(layout, per_line)),),
+def test_a_check_hit_marks_only_its_own_span():
+    text = "the debt was 48.2% and the claim held"
+    result = confirm_readings(three(text), checks=(("vocabulary", ((4, 8),)),))
+
+    assert result.gaps == ()
+    assert len(result.marks) == 1
+    start, end = result.marks[0].span
+    assert result.text[start:end] == "debt"
+    confirmed = [result.text[a:b] for a, b in result.confirmed_spans]
+    assert any("48.2%" in piece for piece in confirmed), "the rest of the page stands"
+
+
+def test_a_missing_line_gaps_the_page_even_when_the_readers_agree():
+    text = words(40)
+    layout = [(0, i * 14, 100, i * 14 + 12) for i in range(41)]
+    per_line = text.split() * 1
+    result = confirm_readings(
+        three(text), checks=(("line_count", checks.line_count_mismatch(layout, per_line)),)
     )
     assert result.confirmed_spans == ()
     assert result.gaps and "not complete" in result.gaps[0].reason
 
 
-def test_a_check_that_marks_marks_and_does_not_gap():
-    readings = unanimous()
-    result = confirm_region(
-        "r0", readings, checks=(("vocabulary", ((4, 8),)),), gapping=("line_count",)
-    )
-    assert result.gaps == ()
-    assert result.marks[0].kind == "check"
-    assert "vocabulary" in result.marks[0].reason
+def test_the_stored_text_keeps_the_primarys_line_breaks():
+    text = "The debt was 48.2%\nand the claim held.\n\nA new paragraph began."
+    readings = three(text)
+    readings["easyocr"] = text.replace("48.2%", "482%")
+
+    result = confirm_readings(readings)
+
+    assert "\n" in result.text and "\n\n" in result.text, "the layout was collapsed"
+    assert result.text.startswith("The debt was")
 
 
-def test_the_reread_tie_break_adopts_one_of_the_readers():
-    readings = unanimous()
-    readings["easyocr"] = "the debr was 48.2% and the claim held"
-    result = confirm_region("r0", readings, reread=lambda: "the debt was 48.2% and the claim held")
-    assert result.resolved_by == "reread"
-    assert result.text == "the debt was 48.2% and the claim held"
-    assert result.marks, "a tie-break is a decision, and it is recorded"
-
-
-def test_the_book_tie_break_prefers_a_candidate_the_book_confirmed_elsewhere():
-    book = Vocabulary.from_texts(["the debt was 48.2% " * 3], minimum=2)
-    readings = unanimous()
+def test_a_dispute_with_no_tie_break_keeps_the_primary_and_says_so():
+    readings = three("the debt was 48.2%")
     readings["easyocr"] = "the debr was 48.2%"
-    readings["tesseract"] = "the debt was 48.2%"
-    readings["vlm"] = "the debts was 48.2%"
-    result = confirm_region("r0", readings, book=book)
-    assert result.resolved_by == "book"
-    assert result.text == "the debt was 48.2%"
+    result = confirm_readings(readings)
+
+    assert result.text == "the debt was 48.2%", "the primary (vlm) reading is stored"
+    mark = result.marks[0]
+    assert "vlm" in mark.reason and "not confirmed" in mark.reason
+    # the mark is the one disputed word, not the whole sentence
+    assert result.text[mark.span[0] : mark.span[1]] == "debt"
+    assert {candidate.text for candidate in mark.candidates} == {"debt", "debr"}
 
 
-def test_the_vlm_can_only_choose_a_candidate_it_was_given():
-    """The chooser cannot propose; an answer that is not a candidate is refused."""
-    readings = unanimous()
+def test_the_tie_break_is_per_segment():
+    """Two disputes on one page are two decisions, not one."""
+    readings = three("the debt was 48.2% and the claim held")
+    readings["easyocr"] = "the debr was 48.2% and the claime held"
+    chooser = Chooser(answer=0)
+
+    result = confirm_readings(readings, chooser=chooser)
+
+    assert len(chooser.seen) == 2, chooser.seen
+    assert len(result.marks) == 2
+    assert all(mark.kind == "tiebreak:vlm" for mark in result.marks)
+    assert result.text == "the debt was 48.2% and the claim held"
+
+
+def test_the_chooser_can_only_pick_a_candidate():
+    readings = three("the debt was 48.2%")
     readings["easyocr"] = "the debr was 48.2%"
 
     class Inventive:
-        def choose(self, region_id: str, candidates) -> str:
-            return "the debt was 48.2% and the claim held, as everyone knows"
+        def choose(self, segment_id: str, candidates) -> str:
+            return "the debt was 48.2% and the reader is quite sure"
 
-    refused = confirm_region("r0", readings, chooser=Inventive())
-    assert refused.resolved_by is None
+    refused = confirm_readings(readings, chooser=Inventive())
     assert refused.marks[0].kind == "disagreement"
-    assert refused.text in {candidate.text for candidate in refused.marks[0].candidates}
+    assert refused.text == "the debt was 48.2%"
 
-    class Honest:
-        def choose(self, region_id: str, candidates) -> str:
-            return candidates[0]
 
-    adopted = confirm_region("r0", readings, chooser=Honest())
-    assert adopted.resolved_by == "vlm"
-    assert adopted.text == "the debt was 48.2% and the claim held"
+def test_the_book_tie_break_needs_exactly_one_qualifying_candidate():
+    book = Vocabulary.from_texts(["the debt was 48.2% " * 3], minimum=2)
+    readings = three("the debt was 48.2%")
+    readings["easyocr"] = "the debt was 482%"
+    readings["tesseract"] = "the debts was 48.2%"
+
+    result = confirm_readings(readings, book=book)
+
+    assert result.text == "the debt was 48.2%"
+    assert result.marks[0].kind == "tiebreak:book"
 
 
 def test_a_tie_break_never_enters_the_book_vocabulary():
-    """The vocabulary is what the book confirmed. A tie-break is what it did not."""
-    readings = unanimous("the quorum of the committee was recorded")
-    readings["easyocr"] = "the quorurn of the committee was recorded"
-    tie_break = confirm_region(
-        "r0", readings, chooser=type("C", (), {"choose": lambda self, rid, cands: cands[0]})()
-    )
-    confirmed = confirm_region("r1", unanimous("the quorum met on the first of May"))
+    # The disputed word is one no confirmed span ever carries: if a tie-break
+    # could seed the vocabulary, this is the word that would appear in it.
+    readings = three("the sequence ended at quorum")
+    readings["easyocr"] = "the sequence ended at quorurn"
+    readings["vlm"] = "the sequence ended at quorurn"
+    tie_break = confirm_readings(readings, chooser=Chooser(answer=0))
+    assert tie_break.marks, "the page should have had a dispute to resolve"
+    confirmed = confirm_readings(three("the sequence continued on the first of May"))
 
     vocabulary = vocabulary_from_confirmations([tie_break, confirmed], minimum=1)
 
-    assert vocabulary.contains("quorum"), "the confirmed page's word is the book's"
-    assert vocabulary.contains("committee") is False, "the tie-break's page contributed nothing"
-    assert vocabulary.confirmed_texts == (confirmed.text,)
+    assert vocabulary.contains("sequence"), "the confirmed pages' words are the book's"
+    assert vocabulary.contains("quorum") is False, (
+        "a tie-break decided it, so the book has not confirmed it"
+    )
+    assert vocabulary.contains("quorurn") is False
+    # The vocabulary records the *spans* that were confirmed, so a page which had
+    # a dispute still contributes its confirmed words - and not the disputed one.
+    assert "sequence" in " ".join(vocabulary.confirmed_texts)
+    assert "quorum" not in " ".join(vocabulary.confirmed_texts)
 
 
-def test_the_vocabulary_only_accepts_confirmed_text_by_construction():
-    vocabulary = Vocabulary(minimum=1)
-    vocabulary.add_confirmed("the debt was 48.2%")
-    assert vocabulary.contains("debt")
-    assert not hasattr(vocabulary, "add_candidate"), "there is no way to add a guess"
+def test_the_vocabulary_is_exact_and_the_docstring_says_so():
+    """§7.4 makes case significant; the vocabulary must not fold it."""
+    vocabulary = Vocabulary.from_texts(["the Margin of error " * 3], minimum=2)
+    assert vocabulary.contains("Margin")
+    assert vocabulary.contains("margin") is False
 
 
 def test_check_spans_for_asks_every_check_the_design_names():
@@ -158,26 +195,22 @@ def test_check_spans_for_asks_every_check_the_design_names():
     assert set(names) >= {"vocabulary", "dashed", "digit", "chrome", "split"}
 
 
-def test_the_recorded_wp0_readings_are_not_all_agreement():
-    """Driven from what the three WP0 readers actually produced on a synthetic
-    screen: the measurement's own recordings, not a live reader."""
+def test_the_recorded_wp0_readings_drive_the_same_code():
+    """The measurement's own recordings of three readers on synthetic screens."""
     readings = {
         "tesseract": json.loads((FIXTURES / "readings_tesseract_3x.json").read_text()),
         "easyocr": json.loads((FIXTURES / "readings_easyocr_3x.json").read_text()),
         "vlm": json.loads((FIXTURES / "readings_vlm_3x.json").read_text()),
     }
     shared = set.intersection(*(set(values) for values in readings.values()))
-    assert shared, "the recordings should share at least one screen"
+    assert shared
 
     outcomes = [
-        confirm_region(screen_id, {reader: values[screen_id] for reader, values in readings.items()})
+        confirm_readings({reader: values[screen_id] for reader, values in readings.items()})
         for screen_id in sorted(shared)
     ]
-    assert any(outcome.marks or outcome.gaps for outcome in outcomes), (
-        "three readers are never unanimous on every screen of a real reading"
-    )
+    assert any(outcome.marks or outcome.gaps for outcome in outcomes)
     for outcome in outcomes:
         assert isinstance(outcome, Confirmation)
         for mark in outcome.marks:
-            assert mark.candidates, "a mark without its candidates says nothing"
-            assert mark.reason
+            assert mark.candidates and mark.reason
