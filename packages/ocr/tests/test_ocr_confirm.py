@@ -214,3 +214,70 @@ def test_the_recorded_wp0_readings_drive_the_same_code():
         assert isinstance(outcome, Confirmation)
         for mark in outcome.marks:
             assert mark.candidates and mark.reason
+
+
+def test_a_blank_primary_does_not_swallow_the_other_readers():
+    """The bug this test exists for: {'vlm': '', 'tess': 'alpha beta gamma', ...}
+    returned stored text '' with no marks and no gaps - two readers' text gone."""
+    readings = {"vlm": "", "tesseract": "alpha beta gamma", "third": "alpha beta gamma"}
+    result = confirm_readings(readings, region_has_ink=True)
+
+    assert result.text == "alpha beta gamma", "the readers who did read were thrown away"
+    assert result.marks, "and the region was not even marked"
+    mark = result.marks[0]
+    assert "primary reader produced nothing" in mark.reason
+    assert {candidate.text for candidate in mark.candidates} == {"", "alpha beta gamma"}
+    assert result.confirmed_spans == (), "nothing about a region with a failed primary is confirmed"
+
+
+def test_every_reader_blank_on_an_inked_region_gaps_the_page():
+    """A blank reading is not a blank page: the inventory says there is ink."""
+    result = confirm_readings(
+        {"vlm": "", "tesseract": "", "third": ""}, region_has_ink=True
+    )
+    assert result.gaps and "inventory says has ink" in result.gaps[0].reason
+    assert result.confirmed_spans == ()
+
+
+def test_every_reader_blank_on_a_region_with_no_ink_is_just_empty():
+    result = confirm_readings({"vlm": "", "tesseract": "", "third": ""}, region_has_ink=False)
+    assert result.gaps == () and result.marks == ()
+
+
+def test_nothing_a_reader_saw_ever_disappears_unrecorded():
+    """The property, over random small readings with blanks, insertions and
+    omissions at the start and the end: every word any reader produced is either
+    in the stored text or in some mark's candidates."""
+    import random
+
+    rng = random.Random(20261113)
+    words = ["alpha", "beta", "gamma", "delta"]
+
+    def random_reading() -> str:
+        kept = [word for word in words if rng.random() > 0.25]
+        if rng.random() < 0.15:
+            kept = []
+        if kept and rng.random() < 0.2:
+            kept = ["extra"] + kept
+        if kept and rng.random() < 0.2:
+            kept = kept + ["tail"]
+        return " ".join(kept)
+
+    for _ in range(300):
+        readings = {reader: random_reading() for reader in ("vlm", "tesseract", "third")}
+        result = confirm_readings(readings, region_has_ink=any(readings.values()))
+
+        produced = {word for text in readings.values() for word in text.split()}
+        if not produced:
+            assert result.gaps or result.text == ""
+            continue
+
+        stored = set(result.text.split())
+        in_candidates = {
+            word
+            for mark in result.marks
+            for candidate in mark.candidates
+            for word in candidate.text.split()
+        }
+        missing = produced - stored - in_candidates
+        assert not missing, f"{missing} vanished; readings={readings}, stored={result.text!r}"

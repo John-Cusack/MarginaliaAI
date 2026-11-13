@@ -259,6 +259,11 @@ def overlaps(intervals: Iterable[Interval], span: Interval, window: int = Omissi
 AGREED = "agreed"
 DISPUTED = "disputed"
 
+#: The order a spine is chosen in when the named primary produced nothing. Fixed,
+#: not "whichever reader happens to be first in the dict": the fallback must be
+#: the same on every page or the stored text's provenance changes with a dict.
+PRIMARY_ORDER: tuple[str, ...] = ("vlm", "tesseract", "third")
+
 #: A token for alignment: a run of non-space characters. Punctuation stays
 #: attached, because §7.4 makes punctuation significant - "48.2%" and "482%"
 #: must not look like the same token.
@@ -329,13 +334,20 @@ def _aligned_to_primary(
                     span = (min(extra[key][0], span[0]), max(extra[key][1], span[1]))
                 extra[key] = span
         elif tag == "replace":
-            for offset, index in enumerate(range(i1, i2)):
-                if j1 + offset < j2:
-                    token = other_tokens[j1 + offset]
-                    matched[index] = (token.start, token.end)
-            for index in range(i1 + (j2 - j1), i2):
-                token = other_tokens[j2 - 1]
-                matched.setdefault(index, (token.start, token.end))
+            # Pair what can be paired, then keep the rest. A replace whose two
+            # sides differ in length is both a substitution and an insertion, and
+            # dropping the extra tokens is how a reader's words vanish: the
+            # candidates must carry every word that reader produced.
+            paired = min(i2 - i1, j2 - j1)
+            for offset in range(paired):
+                token = other_tokens[j1 + offset]
+                matched[i1 + offset] = (token.start, token.end)
+            if j2 - j1 > paired:
+                span = (other_tokens[j1 + paired].start, other_tokens[j2 - 1].end)
+                key = i1 + paired - 1 if paired else max(0, i1 - 1)
+                if key in extra:
+                    span = (min(extra[key][0], span[0]), max(extra[key][1], span[1]))
+                extra[key] = span
     return matched, extra
 
 
@@ -351,10 +363,13 @@ def align_readings(
     """
     if not readings:
         return ()
-    primary = primary or next(iter(readings))
-    if primary not in readings:
-        raise ValueError(f"primary reader {primary!r} is not among the readings")
-    spine = tokens_of(readings[primary])
+    named = primary or next(iter(readings))
+    if named not in readings:
+        raise ValueError(f"primary reader {named!r} is not among the readings")
+    # A blank primary must not swallow the other readers' text. The spine comes
+    # from the next non-blank reader in a fixed order, and the caller is told that
+    # the spine is not the primary's, so it can record why.
+    primary, spine = spine_reader(readings, named)
 
     votes: list[dict[str, str]] = [{primary: token.text} for token in spine]
     where: dict[str, dict[int, tuple[int, int]]] = {primary: {i: (t.start, t.end) for i, t in enumerate(spine)}}
@@ -400,6 +415,27 @@ def align_readings(
             )
         index = end + 1
     return tuple(segments)
+
+
+def spine_reader(
+    readings: Mapping[str, str], named: str
+) -> tuple[str, tuple[Token, ...]]:
+    """Which reading the spine comes from, and its tokens.
+
+    The named primary when it has text; otherwise the first non-blank reader in
+    ``PRIMARY_ORDER``. When every reading is blank the named primary's empty spine
+    is returned, and the caller has nothing to align - which is a gap, not a
+    confirmed empty page.
+    """
+    if tokens_of(readings.get(named, "")):
+        return named, tokens_of(readings[named])
+    for candidate in PRIMARY_ORDER:
+        if candidate in readings and tokens_of(readings[candidate]):
+            return candidate, tokens_of(readings[candidate])
+    for reader, text in readings.items():
+        if tokens_of(text):
+            return reader, tokens_of(text)
+    return named, ()
 
 
 def _is_agreed(vote: Mapping[str, str], readings: Mapping[str, str]) -> bool:

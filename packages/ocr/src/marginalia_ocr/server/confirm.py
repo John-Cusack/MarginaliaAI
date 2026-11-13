@@ -41,7 +41,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from .align import align_readings, normalize
+from .align import (
+    DISPUTED,
+    PRIMARY_ORDER,
+    Segment,
+    align_readings,
+    normalize,
+    spine_reader,
+)
 from .checks import WORD
 
 if TYPE_CHECKING:
@@ -158,6 +165,7 @@ def confirm_readings(
     reread: Callable[[object], str] | None = None,
     book: Vocabulary | None = None,
     chooser: VlmChooser | None = None,
+    region_has_ink: bool = False,
 ) -> Confirmation:
     """Confirm a page's readings segment by segment, keeping the primary's layout.
 
@@ -166,10 +174,47 @@ def confirm_readings(
     """
     if not readings:
         return Confirmation(text="", marks=(), gaps=(), confirmed_spans=())
-    primary = primary if primary in readings else next(iter(readings))
+    named = primary if primary in readings else next(iter(readings))
     gapping = tuple(gapping)
+
+    # Nothing to align. When the region inventory says a region has ink and every
+    # reader returned nothing for it, the page is not complete: a blank reading is
+    # not a blank page. When the region carries no ink, an empty reading is the
+    # truth and nothing more needs saying.
+    if not any(text.strip() for text in readings.values()):
+        if region_has_ink:
+            return Confirmation(
+                text="",
+                marks=(),
+                gaps=(
+                    Gap(
+                        span=(0, 0),
+                        reason="every reader produced nothing for a region the inventory says has ink",
+                    ),
+                ),
+                confirmed_spans=(),
+            )
+        return Confirmation(text="", marks=(), gaps=(), confirmed_spans=((0, 0),))
+
+    # A blank *primary* is not a blank page either: the spine falls back to the
+    # next reader in a fixed order, and the whole region is one dispute that says
+    # why - otherwise the text two readers did produce would vanish unrecorded.
+    spine_name, _tokens = spine_reader(readings, named)
+    primary_failed = not readings.get(named, "").strip()
+    primary = spine_name
     base = readings[primary]
     segments = align_readings(readings, primary=primary)
+    if primary_failed:
+        segments = (
+            Segment(
+                kind=DISPUTED,
+                span=(0, len(base)),
+                text=base,
+                candidates=tuple(
+                    (reader, text) for reader, text in readings.items()
+                ),
+            ),
+        )
 
     # Every check span, mapped from the primary's coordinates into the stored text
     # as the stored text is built - a tie-break can change a segment's length, and
@@ -281,21 +326,22 @@ def confirm_readings(
                     chosen, resolved_by = match, "vlm"
 
         if chosen is None:
-            # No tie-break applies. The stored word is the primary's - the named
-            # single reader Phase 0 measured best - and the mark says exactly that,
-            # so it is never read as a decision the pipeline made on evidence.
+            # No tie-break applies. The stored word is the spine reader's - the
+            # named single reader Phase 0 measured best - and the mark says exactly
+            # that, so it is never read as a decision the pipeline made on evidence.
             out.append(segment.text)
             length += len(segment.text)
-            marks.append(
-                Mark(
-                    span=(start, length),
-                    kind="disagreement",
-                    reason=(
-                        "the readers disagree and no tie-break applies; "
-                        f"the stored text is the {primary} reader's, not confirmed"
-                    ),
-                    candidates=candidates,
+            reason = (
+                "primary reader produced nothing; "
+                f"the stored text is the {primary} reader's, not confirmed"
+                if primary_failed
+                else (
+                    "the readers disagree and no tie-break applies; "
+                    f"the stored text is the {primary} reader's, not confirmed"
                 )
+            )
+            marks.append(
+                Mark(span=(start, length), kind="disagreement", reason=reason, candidates=candidates)
             )
         else:
             out.append(chosen)
