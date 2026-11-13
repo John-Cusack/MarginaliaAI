@@ -52,7 +52,9 @@ def sweep(store: Store, *, now: datetime | None = None, ttl_days: int = IMAGE_TT
 
     for capture in store.expired_captures(moment):
         capture.path.unlink(missing_ok=True)
-        store.forget_capture(capture.job_id, capture.seq)
+        # The row stays and is marked discarded. It is the record that this page
+        # was read under the old capture - exactly the results design 6 says to
+        # discard - and it is what lets a re-capture of the same sequence land.
         store.discard_captures_for(capture.job_id, capture.capture_id)
         report.expired_deleted += 1
         touched.add(capture.job_id)

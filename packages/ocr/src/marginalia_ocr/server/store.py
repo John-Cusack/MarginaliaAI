@@ -302,15 +302,25 @@ class Store:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             existing = db.execute(
-                "SELECT capture_id, image_sha256 FROM captures WHERE job_id = ? AND seq = ?",
+                "SELECT capture_id, image_sha256, discarded, path FROM captures WHERE job_id = ? AND seq = ?",
                 (job_id, seq),
             ).fetchone()
-            if existing is not None:
-                if existing["capture_id"] != capture_id or existing["image_sha256"] != image_sha256:
+            same_content = existing is not None and (
+                existing["capture_id"] == capture_id and existing["image_sha256"] == image_sha256
+            )
+            if existing is not None and not same_content:
+                # A re-capture of the same page is not a conflict: design 6 has the
+                # sweeper expire an unfinished page's image and the walk take it
+                # again under a new capture_id. What must not happen is *two* live
+                # captures claiming one sequence, so the old row is only replaced
+                # when it is already discarded or its image is already gone.
+                stale = bool(existing["discarded"]) or not Path(existing["path"]).exists()
+                if not stale:
                     db.execute("ROLLBACK")
                     path.unlink(missing_ok=True)
                     raise CaptureConflict(f"{job_id} seq {seq} already committed with other content")
-            else:
+                db.execute("DELETE FROM captures WHERE job_id = ? AND seq = ?", (job_id, seq))
+            if existing is None or not same_content:
                 db.execute(
                     "INSERT INTO captures (job_id, seq, capture_id, image_sha256, bytes_written,"
                     " path, committed_at, expire_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -433,7 +443,8 @@ class Store:
         moment = moment or _now()
         with self._connect() as db:
             rows = db.execute(
-                "SELECT * FROM captures WHERE expire_at <= ? ORDER BY expire_at", (_iso(moment),)
+                "SELECT * FROM captures WHERE expire_at <= ? AND discarded = 0 ORDER BY expire_at",
+                (_iso(moment),),
             ).fetchall()
         return tuple(
             Capture(

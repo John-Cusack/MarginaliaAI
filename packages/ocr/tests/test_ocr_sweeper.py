@@ -8,7 +8,11 @@ honest about what it did - counts, never images or text.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import (
+    UTC,
+    datetime,
+    timedelta,  # noqa: TC003
+)
 from typing import TYPE_CHECKING
 
 import pytest
@@ -97,3 +101,42 @@ def test_a_sweep_is_idempotent_and_leaves_no_empty_directories(store: Store):
     again = sweep(store, now=datetime.now(UTC) + timedelta(days=2))
     assert again.expired_deleted == 0 and again.debris_deleted == 0
     assert not (store.page_store / job_id).exists()
+
+
+def test_an_expired_page_can_be_captured_again_under_a_new_capture_id(store: Store):
+    """Expiry mid-book is a design case, not an error path (design 6).
+
+    The sweeper deletes the image of an unfinished page and the walk takes that
+    screen again. The new capture has a new `capture_id` and the same sequence,
+    which must replace the discarded one rather than be refused as a conflict -
+    otherwise the page could never be re-captured and the book could never
+    finish.
+    """
+    job_id = job_with_capture(store, ttl_days=0)
+    sweep(store, now=datetime.now(UTC) + timedelta(minutes=1))
+    assert store.recapture_requests(job_id) == ((0, "image expired before the page was finalized", 3),)
+
+    store.commit_capture(
+        job_id=job_id,
+        seq=0,
+        capture_id="c0-again",
+        image_sha256="b" * 64,
+        image_bytes=b"png again",
+    )
+    captures = store.captures(job_id)
+    assert [capture.capture_id for capture in captures] == ["c0-again"]
+    assert captures[0].path.read_bytes() == b"png again"
+    # the discarded one is still on record: the page was once read from it
+    assert [c.capture_id for c in store.captures(job_id, include_discarded=True)] == ["c0-again"]
+    store.forget_recapture(job_id, 0)
+    assert store.recapture_requests(job_id) == ()
+
+
+def test_a_live_capture_of_the_same_sequence_is_still_a_conflict(store: Store):
+    """Two live captures for one sequence would make 'the screen' ambiguous."""
+    job_id = job_with_capture(store)
+    with pytest.raises(Exception) as caught:
+        store.commit_capture(
+            job_id=job_id, seq=0, capture_id="other", image_sha256="b" * 64, image_bytes=b"png"
+        )
+    assert "already committed" in str(caught.value)
