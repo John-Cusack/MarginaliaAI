@@ -362,6 +362,37 @@ def page_specs() -> tuple[PageSpec, ...]:
             ),
         )
     )
+    # More table pages, so the cell-by-cell audit has a population worth a bound:
+    # the operator asked for at least thirty planted cell errors, and two table
+    # screens cannot carry them. Same shape as the first table, different sizes.
+    for index, (rows, columns) in enumerate(((3, 3), (4, 4), (6, 3), (7, 4), (5, 3), (8, 3)), start=1):
+        table_rows = tuple(
+            tuple(
+                f"{T.TABLE_ROWS[row % len(T.TABLE_ROWS)][column % len(T.TABLE_ROWS[0])]}"
+                for column in range(columns)
+            )
+            for row in range(rows)
+        )
+        specs.append(
+            PageSpec(
+                page_id=f"table-extra-{index}",
+                kind="table_page",
+                label=T.FOOTER_PAGE_TEMPLATE.format(page=200 + index, total=368),
+                label_kind="arabic",
+                position_start=2000 + index * 20,
+                position_end=2012 + index * 20,
+                running_head=T.RUNNING_HEADS[1],
+                bands=(
+                    TextBand(blocks=(prose[2],)),
+                    TableBand(
+                        caption=T.TABLE_CAPTION,
+                        number=f"{T.TABLE_NUMBER}.{index}",
+                        header=T.TABLE_HEADER[:columns],
+                        rows=table_rows,
+                    ),
+                ),
+            )
+        )
     return tuple(specs)
 
 

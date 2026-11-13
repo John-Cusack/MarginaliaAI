@@ -210,7 +210,9 @@ def test_split_word_page_breaks_a_word_with_a_hyphen(clean):
 
 
 def test_table_pages_carry_cells_and_canonical_markdown(clean):
-    screen = only(clean, "table_page")
+    # The corpus carries several table pages now (the cell audit needs a
+    # population); this test is about the first one's shape.
+    screen = next(s for s in clean if s.screen_id == "table@1x")
     table = next(region for region in screen.regions if region.kind == "table")
     assert table.cells[0] == T.TABLE_HEADER
     assert table.cells[1] == T.TABLE_ROWS[0]
