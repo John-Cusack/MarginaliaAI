@@ -1458,6 +1458,7 @@ server = [
     { name = "fastapi" },
     { name = "numpy" },
     { name = "pytesseract" },
+    { name = "python-multipart" },
     { name = "scipy" },
     { name = "uvicorn" },
 ]
@@ -1470,6 +1471,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=10.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pytesseract", marker = "extra == 'server'", specifier = ">=0.3" },
+    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.9" },
     { name = "scipy", marker = "extra == 'server'", specifier = ">=1.11" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.29" },
 ]
