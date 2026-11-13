@@ -8,6 +8,8 @@ honest about what it did - counts, never images or text.
 
 from __future__ import annotations
 
+import os
+import time
 from datetime import (
     UTC,
     datetime,
@@ -17,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from marginalia_ocr.server.store import IMAGE_TTL_DAYS, Store
-from marginalia_ocr.server.sweeper import sweep
+from marginalia_ocr.server.sweeper import RECONCILE_GRACE_SECONDS, sweep
 from marginalia_ocr.wire import STATES
 
 if TYPE_CHECKING:
@@ -84,8 +86,10 @@ def test_a_live_image_is_left_alone(store: Store):
 def test_reconciliation_deletes_a_file_no_capture_claims(store: Store):
     """Files appear in the page store only through a commit; anything else is debris."""
     job_id = job_with_capture(store)
-    debris = store.job_dir(job_id) / "000000-crash.part"
+    debris = store.job_dir(job_id) / "000000-crash.png"
     debris.write_bytes(b"half a screen")
+    old = time.time() - RECONCILE_GRACE_SECONDS - 60
+    os.utime(debris, (old, old))   # old: not an upload in flight
     keep = store.captures(job_id)[0].path
 
     report = sweep(store)
@@ -140,3 +144,35 @@ def test_a_live_capture_of_the_same_sequence_is_still_a_conflict(store: Store):
             job_id=job_id, seq=0, capture_id="other", image_sha256="b" * 64, image_bytes=b"png"
         )
     assert "already committed" in str(caught.value)
+
+
+def test_reconcile_leaves_part_files_and_fresh_uploads_alone(store: Store):
+    """The timer runs whenever it runs, including inside an upload.
+
+    Between the image being renamed into place and its row being committed, a
+    committed screen is indistinguishable from debris - so the reconcile has to
+    leave both half-written files and anything very recently written alone, or a
+    sweep can delete a screen the pack has already been told is durable.
+    """
+    from marginalia_ocr.server.sweeper import RECONCILE_GRACE_SECONDS
+
+    job_id = job_with_capture(store)
+    directory = store.job_dir(job_id)
+    half_written = directory / "000001-abc123.png.part"
+    half_written.write_bytes(b"mid-upload")
+    just_renamed = directory / f"000002-{'c' * 32}.png"
+    just_renamed.write_bytes(b"acked but not yet rowed")
+
+    report = sweep(store)
+
+    assert report.debris_deleted == 0
+    assert half_written.exists(), "a .part file is an upload in flight"
+    assert just_renamed.exists(), "a just-acked image must survive the sweep"
+
+    # past the grace, an unclaimed image is debris like any other
+    stale = time.time() - RECONCILE_GRACE_SECONDS - 60
+    os.utime(just_renamed, (stale, stale))
+    report = sweep(store)
+    assert report.debris_deleted == 1
+    assert not just_renamed.exists()
+    assert half_written.exists(), "still an upload in flight, still untouched"

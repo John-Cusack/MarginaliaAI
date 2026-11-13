@@ -158,6 +158,8 @@ def test_a_pipeline_version_change_invalidates_everything_but_final(store: Store
     undone = make_job(store, "A-wp1", asin="A")
     commit(store, undone, seq=0)
     store.advance(undone, "read")
+    store.mark_read(undone, 0)
+    assert store.captures(undone)[0].read_at is not None, "it was read under the old rules"
     kept = make_job(store, "B-wp1", asin="B")
     commit(store, kept, seq=0)
     for state in STATES[1:]:
@@ -168,7 +170,7 @@ def test_a_pipeline_version_change_invalidates_everything_but_final(store: Store
     changed = store.invalidate_for_pipeline_version("wp1", "wp2")
     assert changed == (undone,)
     assert store.state_of(undone) == "captured"
-    assert store.captures(undone) == (), "the pages are read again under the new rules"
+    assert store.captures(undone)[0].read_at is None, "the OLD result was invalidated"
     assert store.state_of(kept) == "final"
     assert store.job(kept)["pipeline_version"] == "wp1"
 
@@ -194,3 +196,52 @@ def test_the_database_is_written_in_wal_with_full_sync(tmp_path: Path):
     finally:
         db.close()
     assert os.path.exists(store.db_path)
+
+
+def test_a_conflicting_reupload_never_touches_the_live_image(store: Store):
+    """The check comes before the write, or the write destroys what it is checking.
+
+    A re-upload with the same capture_id and different bytes lands on the same
+    path. Writing first overwrites the live image, and then the conflict branch
+    unlinks it - leaving the committed row pointing at nothing, which is a page
+    the walk believes it has and cannot read.
+    """
+    job_id = make_job(store)
+    commit(store, job_id, seq=0, image=b"the committed screen")
+    live = store.captures(job_id)[0].path
+
+    with pytest.raises(CaptureConflict):
+        store.commit_capture(
+            job_id=job_id,
+            seq=0,
+            capture_id="capture-0",          # same id, different bytes
+            image_sha256="b" * 64,
+            image_bytes=b"a different screen",
+        )
+
+    assert live.exists(), "the live image was destroyed by a refused upload"
+    assert live.read_bytes() == b"the committed screen"
+    assert store.captures(job_id)[0].path.read_bytes() == b"the committed screen"
+    assert [p.name for p in live.parent.iterdir()] == [live.name], "no debris left behind"
+
+
+def test_a_version_change_keeps_the_capture_rows(store: Store):
+    """The rows are the record that a page exists; deleting them loses the page.
+
+    Its own docstring says the rows stay. Deleting them also makes the images
+    unclaimed, so the sweeper collects them as debris and the job sits at
+    `captured` with no pages and nothing queued to re-take.
+    """
+    job_id = make_job(store)
+    commit(store, job_id, seq=0)
+    store.advance(job_id, "read")
+    store.mark_read(job_id, 0)
+
+    changed = store.invalidate_for_pipeline_version("wp1", "wp2")
+
+    assert changed == (job_id,)
+    assert store.state_of(job_id) == "captured"
+    captures = store.captures(job_id)
+    assert len(captures) == 1, "the page still exists and its image is still claimed"
+    assert captures[0].read_at is None, "the read is what the version change invalidates"
+    assert captures[0].path.exists()

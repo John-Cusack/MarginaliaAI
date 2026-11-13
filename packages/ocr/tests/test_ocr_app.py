@@ -240,3 +240,88 @@ async def test_healthz_reports_the_bounds_it_will_enforce(settings: Settings):
     assert body["ok"] is True
     assert body["pixel_cap"] >= 9_500_000
     assert body["ttl_days"] == 14
+
+
+async def test_the_earliest_live_image_is_the_expiry_that_is_reported(settings: Settings):
+    """A resume decision reads this: the first image about to go, not the clock."""
+    store = Store(settings.db_path, settings.page_store)
+    async with client_for(create_app(store=store, settings=settings)) as client:
+        fresh = await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        assert fresh.images_expire_at is None or fresh.captures_committed == 0
+        first = await client.upload_screen(screen(png_bytes(), seq=0))
+        second = await client.upload_screen(screen(png_bytes(colour="grey"), seq=1))
+
+        status = await client.status()
+        expiries = [capture.expire_at for capture in store.captures(status.job_id)]
+        assert status.images_expire_at == min(expiries)
+        assert status.images_expire_at == first.images_expire_at
+        assert second.images_expire_at >= first.images_expire_at
+
+
+async def test_creating_the_same_job_twice_returns_the_same_job(settings: Settings):
+    """The pack re-creates its job on every resume; that is not an error."""
+    async with client_for(create_app(store=Store(settings.db_path, settings.page_store), settings=settings)) as client:
+        first = await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        await client.upload_screen(screen(png_bytes()))
+        again = await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        assert again.job_id == first.job_id
+        assert again.state == "captured"
+        assert again.captures_committed == 1, "the resumed job knows what it already has"
+
+
+async def test_creating_a_job_with_a_different_shape_is_a_conflict(settings: Settings):
+    async with client_for(create_app(store=Store(settings.db_path, settings.page_store), settings=settings)) as client:
+        await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        with pytest.raises(Exception) as caught:
+            await client.create_job("B004774792", dpr=2, pipeline_version="wp1")
+        assert "job_conflict" in str(caught.value)
+
+
+async def test_uploads_are_refused_once_the_book_is_past_capture(settings: Settings):
+    """A late image would sit on disk for 14 days behind a finished book."""
+    store = Store(settings.db_path, settings.page_store)
+    async with client_for(create_app(store=store, settings=settings)) as client:
+        await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        await client.upload_screen(screen(png_bytes(), seq=0))
+        await client.advance("read")
+
+        with pytest.raises(Exception) as caught:
+            await client.upload_screen(screen(png_bytes(), seq=1))
+        assert "not_accepting_uploads" in str(caught.value)
+
+
+async def test_an_upload_is_allowed_for_a_position_that_owes_a_recapture(settings: Settings):
+    store = Store(settings.db_path, settings.page_store)
+    async with client_for(create_app(store=store, settings=settings)) as client:
+        await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        await client.upload_screen(screen(png_bytes(), seq=0))
+        await client.advance("read")
+        store.request_recapture(client.job_id, 1, "image expired before the page was finalized", 3)
+
+        ack = await client.upload_screen(screen(png_bytes(colour="grey"), seq=1))
+        assert ack.committed is True
+
+
+async def test_an_oversized_body_is_refused_without_being_buffered(settings: Settings):
+    """The bound has to be on the read, not on the parse: the point is the memory.
+
+    A client that streams 4 GB at an endpoint that buffers first has already won
+    by the time validation runs, so the endpoint reads max_bytes + 1 and refuses
+    on that.
+    """
+    settings = Settings(
+        db_path=settings.db_path, page_store=settings.page_store, max_bytes=1024
+    )
+    app = create_app(store=Store(settings.db_path, settings.page_store), settings=settings)
+    async with client_for(app) as client:
+        await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        huge = screen(png_bytes(2000, 2000))
+        with pytest.raises(Exception) as caught:
+            await client.upload_screen(huge)
+        assert "too large" in str(caught.value)
+
+
+async def test_the_status_of_a_job_with_no_images_has_no_expiry(settings: Settings):
+    async with client_for(create_app(store=Store(settings.db_path, settings.page_store), settings=settings)) as client:
+        status = await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+        assert status.images_expire_at is None

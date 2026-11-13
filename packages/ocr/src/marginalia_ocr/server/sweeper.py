@@ -23,9 +23,18 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .paths import DEFAULT_ROOT
 from .store import IMAGE_TTL_DAYS, Store
 
 log = logging.getLogger("marginalia_ocr.sweeper")
+
+#: How long a file may sit unclaimed before it is debris. An upload writes its
+#: bytes to a uniquely named `.part`, renames it into place and only then commits
+#: the row; the timer runs whenever it runs, including inside that window, and a
+#: committed screen the pack has already been told is durable must not be
+#: collected as rubbish. Fifteen minutes is far longer than that window and far
+#: shorter than the 14-day cap this exists to enforce.
+RECONCILE_GRACE_SECONDS = 15 * 60
 
 
 @dataclass
@@ -77,10 +86,15 @@ def sweep(store: Store, *, now: datetime | None = None, ttl_days: int = IMAGE_TT
             capture.path.name for capture in store.captures(job_id, include_discarded=True)
         }
         for child in directory.iterdir():
-            if child.is_file() and child.name not in claimed:
-                child.unlink()
-                report.debris_deleted += 1
-                touched.add(job_id)
+            if not child.is_file() or child.name in claimed:
+                continue
+            if child.name.endswith(".part") or child.name.startswith("."):
+                continue  # an upload in flight, half written on purpose
+            if moment.timestamp() - child.stat().st_mtime < RECONCILE_GRACE_SECONDS:
+                continue  # renamed into place; its row may not be committed yet
+            child.unlink()
+            report.debris_deleted += 1
+            touched.add(job_id)
         if not any(directory.iterdir()):
             directory.rmdir()
 
@@ -91,8 +105,8 @@ def sweep(store: Store, *, now: datetime | None = None, ttl_days: int = IMAGE_TT
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="delete expired page images and reconcile the store")
-    parser.add_argument("--db", required=True, type=Path)
-    parser.add_argument("--page-store", required=True, type=Path)
+    parser.add_argument("--db", type=Path, default=DEFAULT_ROOT / "jobs.sqlite3")
+    parser.add_argument("--page-store", type=Path, default=DEFAULT_ROOT / "pages")
     parser.add_argument("--ttl-days", type=int, default=IMAGE_TTL_DAYS)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")

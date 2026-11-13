@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -168,6 +169,10 @@ class Store:
             raise UnknownJob(job_id)
         return row
 
+    def find_job(self, job_id: str) -> sqlite3.Row | None:
+        with self._connect() as db:
+            return db.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+
     def job_ids(self) -> tuple[str, ...]:
         with self._connect() as db:
             rows = db.execute("SELECT job_id FROM jobs ORDER BY created_at").fetchall()
@@ -237,9 +242,11 @@ class Store:
     def invalidate_for_pipeline_version(self, old: str, new: str) -> tuple[str, ...]:
         """A version change invalidates every non-final book's work.
 
-        The rows stay: what a reader produced under the old rules is evidence
-        about that reader. What changes is the job's state, which drops back to
-        `captured` so the pages are read again under the new rules.
+        The rows stay: they are the record that these pages exist, and their images
+        are still claimed by the store. What is invalidated is the *reading*, so
+        `read_at` is cleared and the job drops back to `captured` - deleting the
+        rows would make the images look like debris to the sweeper and leave the
+        job with no pages and nothing queued to re-take.
         """
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -253,7 +260,7 @@ class Store:
                     " bundle_sha256 = NULL WHERE job_id = ?",
                     (new, moment, row["job_id"]),
                 )
-                db.execute("DELETE FROM captures WHERE job_id = ?", (row["job_id"],))
+                db.execute("UPDATE captures SET read_at = NULL WHERE job_id = ?", (row["job_id"],))
             db.execute("COMMIT")
         return tuple(row["job_id"] for row in rows)
 
@@ -276,33 +283,26 @@ class Store:
         *,
         ttl_days: int = IMAGE_TTL_DAYS,
     ) -> Capture:
-        """Write the image durably, then record it. In that order, always.
+        """Check, then write, then record - and never the other order.
 
-        The file is fsynced and its directory fsynced before the row exists, so a
-        `CommitAck` is never sent for an image that a power cut can lose.
+        The check has to come first. A re-upload with the same `capture_id` and
+        different bytes lands on the same path, so writing first overwrites the
+        committed screen and the refusal then unlinks it, leaving a row that
+        points at nothing. The bytes go to a uniquely named `.part` file, and only
+        a check that passes lets `os.replace` put them in place.
+
+        The row is committed inside the same transaction that took the write lock,
+        which is what keeps two uploads of one sequence from interleaving.
         """
         self.job(job_id)
         directory = self.job_dir(job_id)
-        path = directory / f"{seq:06d}-{capture_id}.png"
-        temporary = path.with_suffix(".png.part")
-        with temporary.open("wb") as handle:
-            handle.write(image_bytes)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, path)
-        directory_fd = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        final_path = directory / f"{seq:06d}-{capture_id}.png"
 
-        moment = _now()
-        expire_at = moment + timedelta(days=ttl_days)
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             existing = db.execute(
-                "SELECT capture_id, image_sha256, discarded, path FROM captures WHERE job_id = ? AND seq = ?",
+                "SELECT capture_id, image_sha256, discarded, path, committed_at, expire_at"
+                " FROM captures WHERE job_id = ? AND seq = ?",
                 (job_id, seq),
             ).fetchone()
             same_content = existing is not None and (
@@ -311,16 +311,22 @@ class Store:
             if existing is not None and not same_content:
                 # A re-capture of the same page is not a conflict: design 6 has the
                 # sweeper expire an unfinished page's image and the walk take it
-                # again under a new capture_id. What must not happen is *two* live
-                # captures claiming one sequence, so the old row is only replaced
-                # when it is already discarded or its image is already gone.
+                # again under a new capture_id. Two *live* captures for one
+                # sequence would make "the screen" ambiguous, so the old row is
+                # only replaced when it is discarded or its image is already gone.
                 stale = bool(existing["discarded"]) or not Path(existing["path"]).exists()
                 if not stale:
                     db.execute("ROLLBACK")
-                    path.unlink(missing_ok=True)
                     raise CaptureConflict(f"{job_id} seq {seq} already committed with other content")
                 db.execute("DELETE FROM captures WHERE job_id = ? AND seq = ?", (job_id, seq))
+
+            already_stored = same_content and Path(existing["path"]).exists()
+            if not already_stored:
+                self._write_image(directory, final_path, image_bytes)
+
             if existing is None or not same_content:
+                moment = _now()
+                expire_at = moment + timedelta(days=ttl_days)
                 db.execute(
                     "INSERT INTO captures (job_id, seq, capture_id, image_sha256, bytes_written,"
                     " path, committed_at, expire_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -330,23 +336,43 @@ class Store:
                         capture_id,
                         image_sha256,
                         len(image_bytes),
-                        str(path),
+                        str(final_path),
                         _iso(moment),
                         _iso(expire_at),
                     ),
                 )
-            db.execute("UPDATE jobs SET updated_at = ? WHERE job_id = ?", (_iso(moment), job_id))
+            else:
+                moment = datetime.fromisoformat(existing["committed_at"])
+                expire_at = datetime.fromisoformat(existing["expire_at"])
+            db.execute("UPDATE jobs SET updated_at = ? WHERE job_id = ?", (_iso(_now()), job_id))
             db.execute("COMMIT")
+
         return Capture(
             job_id=job_id,
             seq=seq,
             capture_id=capture_id,
             image_sha256=image_sha256,
             bytes_written=len(image_bytes),
-            path=path,
+            path=final_path,
             committed_at=moment,
             expire_at=expire_at,
         )
+
+    @staticmethod
+    def _write_image(directory: Path, final_path: Path, image_bytes: bytes) -> None:
+        """Bytes to a unique `.part`, fsynced, then renamed into place."""
+        temporary = directory / f".{final_path.name}.{os.getpid()}.{uuid.uuid4().hex}.part"
+        with temporary.open("wb") as handle:
+            handle.write(image_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, final_path)
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
     def captures(self, job_id: str, *, include_discarded: bool = False) -> tuple[Capture, ...]:
         query = "SELECT * FROM captures WHERE job_id = ?"
@@ -370,6 +396,31 @@ class Store:
             )
             for row in rows
         )
+
+    def mark_read(self, job_id: str, seq: int) -> None:
+        """Record that a page was read under its current capture.
+
+        What a version change invalidates is the reading, so this is the flag it
+        clears: the page and its image stay, the result does not.
+        """
+        with self._connect() as db:
+            db.execute(
+                "UPDATE captures SET read_at = ? WHERE job_id = ? AND seq = ?",
+                (_iso(_now()), job_id, seq),
+            )
+
+    def earliest_expiry(self, job_id: str) -> datetime | None:
+        """The first image that will expire, or None when there are none.
+
+        A resume decision reads this: "how long do I have before a page's image
+        goes" is the earliest live capture, not the time of asking.
+        """
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT MIN(expire_at) AS soonest FROM captures WHERE job_id = ? AND discarded = 0",
+                (job_id,),
+            ).fetchone()
+        return datetime.fromisoformat(row["soonest"]) if row and row["soonest"] else None
 
     def last_committed_seq(self, job_id: str) -> int | None:
         with self._connect() as db:

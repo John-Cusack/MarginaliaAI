@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -38,6 +37,7 @@ from ..wire import (
     State,
     check_protocol,
 )
+from .paths import DEFAULT_ROOT
 from .pngcheck import (
     DEFAULT_MAX_BYTES,
     DEFAULT_PIXEL_CAP,
@@ -54,8 +54,8 @@ PROTOCOL_HEADER = "X-Ocr-Protocol"
 class Settings:
     """What the service is allowed to accept and how long it keeps it."""
 
-    db_path: Path = Path("/var/lib/marginalia-ocr/jobs.sqlite3")
-    page_store: Path = Path("/var/lib/marginalia-ocr/pages")
+    db_path: Path = DEFAULT_ROOT / "jobs.sqlite3"
+    page_store: Path = DEFAULT_ROOT / "pages"
     pixel_cap: int = DEFAULT_PIXEL_CAP
     max_bytes: int = DEFAULT_MAX_BYTES
     ttl_days: int = IMAGE_TTL_DAYS
@@ -63,7 +63,7 @@ class Settings:
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
         env = dict(os.environ if env is None else env)
-        root = Path(env.get("MARGINALIA_OCR_ROOT", "/var/lib/marginalia-ocr"))
+        root = Path(env.get("MARGINALIA_OCR_ROOT", str(DEFAULT_ROOT)))
         return cls(
             db_path=Path(env.get("MARGINALIA_OCR_DB", root / "jobs.sqlite3")),
             page_store=Path(env.get("MARGINALIA_OCR_PAGES", root / "pages")),
@@ -91,7 +91,9 @@ def _status(store: Store, job_id: str) -> JobStatus:
         state=row["state"],
         captures_committed=sum(1 for capture in captures if not capture.discarded),
         last_committed_position=store.last_committed_seq(job_id),
-        images_expire_at=datetime.now(UTC),
+        # The first image that will go, not the time of asking: a resume
+        # decision reads this.
+        images_expire_at=store.earliest_expiry(job_id),
         recapture=tuple(
             RecaptureRequest(position=position, reason=reason, dpr=dpr)
             for position, reason, dpr in store.recapture_requests(job_id)
@@ -149,6 +151,21 @@ def create_app(store: Store | None = None, settings: Settings | None = None) -> 
     ) -> JobStatus:
         require_protocol(x_ocr_protocol)
         job_id = f"{job.asin}-{job.pipeline_version}"
+        # The pack re-creates its job on every resume, so this is the ordinary
+        # path, not an error: an existing job answers with its status - including
+        # how many screens it already holds - unless the book's shape changed,
+        # which would make "the job" mean two different walks.
+        existing = store.find_job(job_id)
+        if existing is not None:
+            if existing["asin"] != job.asin or existing["dpr"] != job.dpr:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "job_conflict",
+                        "detail": f"{job_id} exists with asin={existing['asin']} dpr={existing['dpr']}",
+                    },
+                )
+            return _status(store, job_id)
         store.create_job(
             job_id=job_id,
             asin=job.asin,
@@ -175,7 +192,18 @@ def create_app(store: Store | None = None, settings: Settings | None = None) -> 
                 status_code=400,
                 detail={"error": "job_mismatch", "detail": f"body says {parsed.job_id}, path says {job_id}"},
             )
-        data = await image.read()
+        state = store.state_of(job_id)
+        owing = {position for position, _reason, _dpr in store.recapture_requests(job_id)}
+        if state != "captured" and parsed.seq not in owing:
+            # A screen accepted here would sit on disk for the rest of the 14-day
+            # cap behind a book that is already past it, and nothing would read it.
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "not_accepting_uploads", "state": state, "seq": parsed.seq},
+            )
+        # Bounded read: a client that streams 4 GB at an endpoint that buffers
+        # first has already won by the time validation runs.
+        data = await image.read(settings.max_bytes + 1)
         info = validate_image(
             data,
             declared_sha256=parsed.image_sha256,
