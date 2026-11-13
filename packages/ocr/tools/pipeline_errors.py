@@ -42,6 +42,18 @@ class AgreedError:
     kind: str
 
 
+def _absorbed(word: str, reading: str) -> bool:
+    """Whether ``word``'s letters were read as part of a longer word."""
+    folded = word.casefold()
+    if len(folded) < 2:
+        return False
+    for candidate in reading.split():
+        stripped = "".join(character for character in candidate.casefold() if character.isalnum())
+        if len(stripped) > len(folded) and folded in stripped:
+            return True
+    return False
+
+
 def _reader_answers(truth_words: list[_Word], reading: str) -> dict[int, str]:
     """Per truth word: what this reader said there, for words it got wrong.
 
@@ -99,7 +111,14 @@ def agreed_errors(
             continue
         text, names = max(winners, key=lambda item: len(item[1]))
         if text == "":
-            kind = "agreed_omission"
+            # An omission whose letters a reader absorbed into a neighbouring,
+            # longer word is not a gap: the ink was read, as one word where the
+            # text has two. That is a substitution-class error, and calling it an
+            # omission inflates a population of gaps that §7.3 would have marked.
+            absorbed = any(
+                _absorbed(word.text, readings[name]) for name in names
+            )
+            kind = "agreed_join" if absorbed else "agreed_omission"
         elif text.casefold() == word.text.casefold():
             # Every reader answered the same word in the other case. It is a real
             # error against the canonical text and its own class: the case policy

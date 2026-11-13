@@ -41,6 +41,7 @@ from .layout import (
     layout_page,
 )
 from .render import render_png
+from .seeded_errors import words_of
 
 if TYPE_CHECKING:
     from .degrade import Degrade
@@ -362,6 +363,24 @@ def page_specs() -> tuple[PageSpec, ...]:
         )
     )
     return tuple(specs)
+
+
+def line_boxes(screen: Screen) -> list[tuple[float, float, float, float]]:
+    """Every line rectangle on the screen, in reading order (the layout_data stand-in)."""
+    return [line.box for region in screen.regions for line in region.lines]
+
+
+def run_words(screen: Screen) -> list[tuple[str, int]]:
+    """Every run's word, in reading order, with the index of the line it sits on."""
+    sequence: list[tuple[str, int]] = []
+    line_index = 0
+    for region in screen.regions:
+        for line in region.lines:
+            for run in line.runs:
+                for word in words_of(run.text):
+                    sequence.append((word.text, line_index))
+            line_index += 1
+    return sequence
 
 
 def build_corpus(

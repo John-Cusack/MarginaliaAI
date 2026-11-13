@@ -23,6 +23,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+CONFUSIONS: tuple[tuple[str, str], ...] = (
+    ("rn", "m"),
+    ("cl", "d"),
+    ("li", "h"),
+    ("e", "c"),
+    ("1", "l"),
+    ("0", "O"),
+)
+
+
+def confuse_glyphs(text: str) -> str:
+    """Draw the confusable pairs as the other glyph, so readers substitute.
+
+    A word drawn this way is still *ink* and still read — as the wrong word. That
+    is the class of error a three-reader confirm step cannot catch and a drop
+    cannot teach, and it is the class the operator asked to have at least thirty
+    members of before its sensitivity means anything.
+    """
+    drawn = text
+    for source, replacement in CONFUSIONS:
+        drawn = drawn.replace(source, replacement)
+    return drawn
+
 
 @dataclass(frozen=True)
 class Degrade:
@@ -32,6 +55,10 @@ class Degrade:
     light: bool = True
     kern: float = -0.8
     blur: float = 0.3
+    # Glyph pairs drawn as one, so the error is a *wrong word*, not a dropped
+    # one: rn/m, cl/d, li/h, e/c, and the numeral/letter pairs every reader
+    # confuses. The operator's list, drawn at light ink and a smaller size.
+    confuse: bool = False
     ink: tuple[int, int, int] = (150, 150, 150)
 
     def record(self) -> dict[str, object]:
@@ -48,6 +75,8 @@ class Degrade:
         parts = []
         if self.small_caps:
             parts.append("caps")
+        if self.confuse:
+            parts.append("confuse")
         if self.light:
             parts.append("light")
         if self.kern:
@@ -58,6 +87,11 @@ class Degrade:
 
     def drawn(self, text: str, size: int) -> tuple[str, int]:
         """The text as it is drawn, and the size it is drawn at."""
-        if self.small_caps and text.isalpha():
-            return text.upper(), max(1, int(size * 0.82))
-        return text, size
+        drawn = text
+        if self.confuse:
+            drawn = confuse_glyphs(drawn)
+        if self.small_caps and drawn.isalpha():
+            return drawn.upper(), max(1, int(size * 0.82))
+        if self.confuse:
+            return drawn, max(1, int(size * 0.9))
+        return drawn, size

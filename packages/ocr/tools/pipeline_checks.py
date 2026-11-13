@@ -68,6 +68,118 @@ def catches(
     return any(check_start <= start and end <= check_end for check_start, check_end in unmatched)
 
 
+def line_texts(
+    truth: str,
+    run_words: Sequence[tuple[str, int]],
+    line_count: int,
+) -> tuple[list[int | None], tuple[str, ...]]:
+    """Attribute each truth word to the line it sits on, and join them per line.
+
+    The truth is assembled from the page's runs, so a SequenceMatcher over the two
+    word sequences maps most words exactly; a word it cannot place stays None and
+    is counted, never guessed. Returns (word → line, text per line).
+    """
+    from difflib import SequenceMatcher
+
+    truth_words = WORD.findall(truth)
+    lines: list[int | None] = [None] * len(truth_words)
+    matcher = SequenceMatcher(None, truth_words, [word for word, _line in run_words], autojunk=False)
+    for tag, i1, i2, j1, _j2 in matcher.get_opcodes():
+        if tag != "equal":
+            continue
+        for offset in range(i2 - i1):
+            lines[i1 + offset] = run_words[j1 + offset][1]
+    per_line: list[list[str]] = [[] for _ in range(line_count)]
+    for word, line in zip(truth_words, lines, strict=True):
+        if line is not None and 0 <= line < line_count:
+            per_line[line].append(word)
+    return lines, tuple(" ".join(words) for words in per_line)
+
+
+def coverage_failures(
+    line_boxes: Sequence[tuple[float, float, float, float]],
+    line_texts: Sequence[str],
+    *,
+    median_density: float,
+    short_ratio: float = 0.6,
+) -> tuple[int, ...]:
+    """Indices of lines that carry no text, or far less than their ink implies."""
+    failures: list[int] = []
+    for index, (box, text) in enumerate(zip(line_boxes, line_texts, strict=False)):
+        width = max(0.0, float(box[2]) - float(box[0]))
+        characters = len(text.strip())
+        if characters == 0:
+            failures.append(index)
+            continue
+        if median_density > 0 and width > 0:
+            expected = width * median_density
+            if characters < short_ratio * expected:
+                failures.append(index)
+    return tuple(failures)
+
+
+def character_density(word: str, box: tuple[float, float, float, float]) -> float:
+    """Characters per pixel of width for one recognised word."""
+    width = max(0.0, float(box[2]) - float(box[0]))
+    return len(word.strip()) / width if width else 0.0
+
+
+HYPHENS = {"-", "\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2015"}
+DASHES = {"\u2013", "\u2014", "\u2015"}
+
+
+def dashed(text: str) -> tuple[tuple[int, int], ...]:
+    """Spans of dash characters that are not hyphens between a word's parts.
+
+    A dash inside a word is a hyphen; one standing between words is a dash, and a
+    reader that turns a dash into a hyphen (or the reverse) has changed the text
+    without a visible cue in a diff.
+    """
+    span: list[tuple[int, int]] = []
+    for match in re.finditer("[" + "".join(sorted(HYPHENS)) + "]", text):
+        before = text[match.start() - 1] if match.start() else " "
+        after = text[match.end()] if match.end() < len(text) else " "
+        between_words = before.isspace() or after.isspace()
+        if between_words and match.group(0) in DASHES:
+            span.append((match.start(), match.end()))
+    return tuple(span)
+
+
+def implausible_numbers(text: str, *, min_digits: int = 3) -> tuple[tuple[int, int], ...]:
+    """Numbers a book page would not print: runs of digits longer than a number is.
+
+    A digit run of more than ``min_digits + 6`` characters is almost certainly a
+    reader joining separate numbers (or the page's own label into the text); the
+    check reports the span so it can be marked rather than stored.
+    """
+    span: list[tuple[int, int]] = []
+    for match in re.finditer(r"\d[\d,.\u2013-]*", text):
+        digits = sum(1 for character in match.group(0) if character.isdigit())
+        if digits > min_digits + 6:
+            span.append((match.start(), match.end()))
+    return tuple(span)
+
+
+def running_head_word(text: str, *, head_words: Sequence[str]) -> tuple[tuple[int, int], ...]:
+    """Spans where the candidate repeats the book's running head.
+
+    The header is chrome the candidate is not supposed to carry; a line that
+    repeats it is either a capture mistake or a misread line, and either way it
+    must not enter the text.
+    """
+    spans: list[tuple[int, int]] = []
+    lowered = text.casefold()
+    for word in head_words:
+        needle = word.casefold().strip()
+        if len(needle) < 4:
+            continue
+        start = lowered.find(needle)
+        while start >= 0:
+            spans.append((start, start + len(needle)))
+            start = lowered.find(needle, start + 1)
+    return tuple(spans)
+
+
 def system_dictionary(path: str = "/usr/share/dict/words") -> frozenset[str] | None:
     """A dictionary when the machine has one, case-folded. Optional by design."""
     from pathlib import Path

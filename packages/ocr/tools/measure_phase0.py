@@ -45,7 +45,10 @@ import pipeline_checks as checks  # noqa: E402
 from claude_cell_checker import check_cells  # noqa: E402
 from claude_diff_checker import check as claude_check  # noqa: E402
 from ocr_synth import cells as cellmod  # noqa: E402
-from ocr_synth import metrics  # noqa: E402
+from ocr_synth import (
+    corpus,  # noqa: E402
+    metrics,  # noqa: E402
+)
 from ocr_synth.corpus import Screen, build_corpus  # noqa: E402
 from ocr_synth.degrade import Degrade  # noqa: E402
 from ocr_synth.seeded_errors import SeededText, build_seeded, can_carry, revert  # noqa: E402
@@ -522,6 +525,82 @@ SYNTHETIC_COUNTS = {
 }
 
 
+def region_offsets(screen: Screen, page: SeededText) -> list[tuple[tuple[float, float, float, float], int, int]]:
+    """Each readable region's box, its candidate text start and end.
+
+    The candidate is the truth with the unmarked errors in it, so a truth offset
+    maps into the candidate by adding the length change of every planted error
+    that ends before it.
+    """
+    planted = sorted((error.truth_start, error.truth_end, error.final_end - error.final_start) for error in page.errors)
+
+    def candidate_at(truth_offset: int) -> int:
+        shift = 0
+        for truth_start, truth_end, delta in planted:
+            if truth_end <= truth_offset:
+                shift += delta - (truth_end - truth_start)
+            elif truth_start < truth_offset:
+                shift += delta - (truth_end - truth_offset)
+        return truth_offset + shift
+
+    offsets = []
+    for span in screen.spans:
+        region = screen.regions[span.region_index]
+        if region.kind != "single_column" and not region.lines:
+            continue
+        offsets.append((region.box, candidate_at(span.char_start), candidate_at(span.char_end)))
+    return offsets
+
+
+def region_auditor(images: dict[str, Path], model: str | None, directory: Path):
+    """The audit pass, one region at a time, as §9.2 prescribes.
+
+    A whole 3x page is a lot of text to compare at once; the design audits region
+    by region so the auditor is asked a question its answer can cover. The
+    detections come back in the screen's candidate coordinates.
+    """
+    ledger: list[dict[str, object]] = []
+
+    def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
+        from PIL import Image
+
+        detections: list[metrics.Detection] = []
+        with Image.open(images[screen.screen_id]) as page_image:
+            for index, (box, start, end) in enumerate(region_offsets(screen, page)):
+                text = page.final[start:end]
+                if not text.strip():
+                    continue
+                crop = page_image.crop(
+                    (int(box[0] * screen.dpr), int(box[1] * screen.dpr), int(box[2] * screen.dpr), int(box[3] * screen.dpr))
+                )
+                path = directory / f"{screen.screen_id}__r{index}.png"
+                crop.save(path)
+                result = claude_check(path, text, model=model)
+                ledger.append(
+                    {
+                        "screen": screen.screen_id,
+                        "region": index,
+                        "rejected": result.rejected,
+                        "differences": len(result.differences),
+                        "words_returned": result.raw_word_count,
+                        "cost_usd": result.cost_usd,
+                    }
+                )
+                for difference in result.differences:
+                    if not difference.located:
+                        continue
+                    detections.append(
+                        metrics.Detection(
+                            final_start=start + (difference.final_start or 0),
+                            final_end=start + (difference.final_end or 0),
+                            snippet=difference.snippet[:20],
+                        )
+                    )
+        return detections
+
+    return audit, ledger
+
+
 def claude_auditor(images: dict[str, Path], model: str | None):
     """The audit reader D1 asks about: Claude Code in headless mode, diff-only."""
     ledger: list[dict[str, object]] = []
@@ -678,7 +757,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--degrade",
         default=None,
-        choices=("light", "caps", "tight", "all"),
+        choices=("light", "caps", "tight", "all", "confuse"),
         help="rink the ink: the degraded-ink variant (small caps, light ink, tight kerning)",
     )
     parser.add_argument("--dpr", type=int, default=1)
@@ -700,6 +779,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="how many readers must agree on a mistake for it to count as pipeline-shaped",
     )
     parser.add_argument("--pages", default=None, help="how many screens the claude audit reads")
+    parser.add_argument(
+        "--no-audit-regions",
+        action="store_true",
+        help="audit the whole screen instead of region by region (§9.2 asks for region by region)",
+    )
     parser.add_argument(
         "--no-pipeline-checks",
         action="store_true",
@@ -739,6 +823,9 @@ DEGRADATIONS: dict[str, Degrade] = {
     "caps": Degrade(small_caps=True, light=False, kern=0.0, blur=0.0),
     "tight": Degrade(small_caps=False, light=False, kern=-1.0, blur=0.0),
     "all": Degrade(small_caps=True, light=True, kern=-0.8, blur=0.3),
+    # Confusions, not drops: pairs drawn as one glyph at light ink and a smaller
+    # size, so the readers answer the wrong word instead of nothing.
+    "confuse": Degrade(small_caps=False, light=True, kern=0.0, blur=0.2, confuse=True),
 }
 
 
@@ -895,7 +982,10 @@ def main(argv: list[str] | None = None) -> int:
                 image_path = Path(directory) / f"{screen.screen_id}.png"
                 image_path.write_bytes(screen.png)
                 images[screen.screen_id] = image_path
-            auditor, ledger = claude_auditor(images, args.claude_model)
+            if args.no_audit_regions:
+                auditor, ledger = claude_auditor(images, args.claude_model)
+            else:
+                auditor, ledger = region_auditor(images, args.claude_model, Path(directory))
             if args.adjudicate:
                 auditor = adjudicating(
                     auditor, images, args.claude_model, random.Random(args.adjudicate_seed), ledger
@@ -944,14 +1034,46 @@ def main(argv: list[str] | None = None) -> int:
                         screen.truth_text, readings, minimum=minimum
                     )
                     spans = {error.word_index: page_error.final_span for error, page_error in zip(first_errors, first_page.errors, strict=True)}
-                    unmatched = checks.unmatched_words(first_page.final, vocabulary, dictionary)
+                    boxes = corpus.line_boxes(screen)
+                    runs = corpus.run_words(screen)
+                    words_to_line, per_line_text = checks.line_texts(
+                        first_page.final, runs, len(boxes)
+                    )
+                    ink = sum(max(0.0, box[2] - box[0]) for box in boxes)
+                    density = len("".join(per_line_text)) / ink if ink else 0.0
+                    # §7.3: ink no reader turned into text is a gap, and a gap
+                    # blocks or marks the page. Those spans are not unmarked
+                    # errors, so they leave the population.
+                    failed = set(
+                        checks.coverage_failures(boxes, per_line_text, median_density=density)
+                    )
+                    check_spans = {
+                        "dash": checks.dashed(first_page.final),
+                        "digit": checks.implausible_numbers(first_page.final),
+                        "running_head": checks.running_head_word(
+                            first_page.final,
+                            head_words=[word for region in screen.chrome for word in region.text.split()],
+                        ),
+                        "vocabulary": checks.unmatched_words(first_page.final, vocabulary, dictionary),
+                    }
 
-                    def skip(error, spans=spans, unmatched=unmatched):
+                    def skip(error, spans=spans, words_to_line=words_to_line, failed=failed, check_spans=check_spans):
                         if error.kind == "agreed_case":
                             reason = "case"
-                        elif checks.catches(unmatched, spans[error.word_index]):
-                            reason = "independent_check"
                         else:
+                            line = words_to_line[error.word_index] if error.word_index < len(words_to_line) else None
+                            if line is not None and line in failed:
+                                reason = "coverage"
+                            else:
+                                reason = next(
+                                    (
+                                        name
+                                        for name, spanset in check_spans.items()
+                                        if checks.catches(spanset, spans[error.word_index])
+                                    ),
+                                    None,
+                                )
+                        if reason is None:
                             return False
                         excluded[reason] = excluded.get(reason, 0) + 1
                         return True
@@ -1007,6 +1129,9 @@ def main(argv: list[str] | None = None) -> int:
                 sensitivity["readers"] = sorted(extra)
                 sensitivity["minimum_agreement"] = int(args.pipeline_minimum)
                 sensitivity["excluded_by_reason"] = dict(sorted(excluded.items()))
+                sensitivity["cost_usd"] = round(
+                    sum(float(entry["cost_usd"] or 0) for entry in ledger), 4
+                )
                 sensitivity["independent_checks"] = (
                     "off" if args.no_pipeline_checks else f"book vocabulary ({len(vocabulary)} words)"
                     + (", system dictionary" if dictionary else "")
