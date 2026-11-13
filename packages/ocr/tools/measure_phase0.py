@@ -867,9 +867,17 @@ def main(argv: list[str] | None = None) -> int:
 
     # A remote reader answers per region; join its answers in reading order.
     external = json.loads(Path(args.external).read_text()) if args.external else None
+    external_raw: dict[str, str] | None = None
     if external is not None:
         # A remote reader's loops are guarded region by region, where the region
         # shape is known, and only what survives is joined into the screen text.
+        #
+        # The raw join is kept as well: when the external readings are the *audit
+        # reader's* own, the guard is the wrong filter - it strips the chrome and
+        # normalises the text the pipeline would store, and an auditor's reading
+        # is measured as the model produced it. Guarding it would invent
+        # differences on a perfect reading and hide differences that matter.
+        external_raw = _join_regions(external)
         external = _join_regions(_guard_external(external, screens))
     # An auditor's run names a label, not a local reader: with --external the
     # readings come from a file, and the pipeline and clean audits read nothing
@@ -921,7 +929,7 @@ def main(argv: list[str] | None = None) -> int:
                 images[screen.screen_id] = path
             auditor, ledger = claude_auditor(images, args.claude_model)
             sensitivity = sensitivity_report(selected, "claude (headless, diff-only)", auditor, counts=SYNTHETIC_COUNTS)
-            sensitivity["cost_usd"] = round(sum(float(entry["cost_usd"] or 0) for entry in ledger), 4)
+            sensitivity["cost_usd"] = round(sum(float(entry.get("cost_usd") or 0) for entry in ledger), 4)
             sensitivity["ledger"] = ledger
     elif args.audit == "cells":
         import tempfile
@@ -975,7 +983,7 @@ def main(argv: list[str] | None = None) -> int:
             "skipped_screens": 0,
             "mode": "per-cell",
             "false_cells": false_cells,
-            "cost_usd": round(sum(float(entry["cost_usd"] or 0) for entry in ledger), 4),
+            "cost_usd": round(sum(float(entry.get("cost_usd") or 0) for entry in ledger), 4),
             "ledger": ledger,
         }
     elif args.audit == "machinery":
@@ -995,10 +1003,20 @@ def main(argv: list[str] | None = None) -> int:
                 image_path = Path(directory) / f"{screen.screen_id}.png"
                 image_path.write_bytes(screen.png)
                 images[screen.screen_id] = image_path
-            if args.no_audit_regions:
+            if external is not None:
+                # A local model as the auditor. With --external its readings are in
+                # hand, so the auditor is the transcriber that diffs them against the
+                # candidate text: the LocalVlmTranscriber shape of design 9.2,
+                # measured by exactly the same seeded set the Claude auditor is.
+                label = f"{args.reader} as a local transcriber (diff against the candidate text)"
+                auditor = transcriber_auditor(external_raw or external, label)
+                ledger = []
+            elif args.no_audit_regions:
                 auditor, ledger = claude_auditor(images, args.claude_model)
             else:
                 auditor, ledger = region_auditor(images, args.claude_model, Path(directory))
+            if external is None:
+                label = "claude (headless, diff-only)"
             if args.adjudicate:
                 auditor = adjudicating(
                     auditor, images, args.claude_model, random.Random(args.adjudicate_seed), ledger
@@ -1103,7 +1121,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 if all(not page.errors for _, page, _ in built):
                     sensitivity = {
-                        "reader": "claude (headless, diff-only) on the readers' agreed errors",
+                        "reader": label + " on the readers' agreed errors",
                         "is_measurement": True,
                         "pages": len(built),
                         "planted": 0,
@@ -1131,7 +1149,7 @@ def main(argv: list[str] | None = None) -> int:
                 seeded_pages = [page for _, page, _ in built]
                 sensitivity = sensitivity_report(
                     selected,
-                    "claude (headless, diff-only) on the readers' agreed errors",
+                    label + " on the readers' agreed errors",
                     auditor,
                     seeded=seeded_pages,
                 )
@@ -1144,7 +1162,7 @@ def main(argv: list[str] | None = None) -> int:
                 sensitivity["minimum_agreement"] = int(args.pipeline_minimum)
                 sensitivity["excluded_by_reason"] = dict(sorted(excluded.items()))
                 sensitivity["cost_usd"] = round(
-                    sum(float(entry["cost_usd"] or 0) for entry in ledger), 4
+                    sum(float(entry.get("cost_usd") or 0) for entry in ledger), 4
                 )
                 # A rejected reply is a miss in this measurement, never agreement.
                 sensitivity["rejected_replies"] = sum(1 for entry in ledger if entry.get("rejected"))
@@ -1171,22 +1189,39 @@ def main(argv: list[str] | None = None) -> int:
                 # Every difference reported against the exact truth is a false
                 # alarm: there is no error on the page to have found.
                 reported = 0
-                for screen in screens:
-                    result = claude_check(images[screen.screen_id], screen.truth_text, model=args.claude_model)
-                    reported += len(result.differences)
-                    ledger.append(
-                        {
-                            "screen": screen.screen_id,
-                            "differences": len(result.differences),
-                            "unplaced": sum(1 for d in result.differences if not d.located),
-                            "words_returned": result.raw_word_count,
-                            "seconds": round(result.seconds, 2),
-                            "cost_usd": result.cost_usd,
-                            "rejected": result.rejected,
-                        }
-                    )
+                if external is not None:
+                    label = f"{args.reader} as a local transcriber (diff against the exact text)"
+                    auditor = transcriber_auditor(external_raw or external, label)
+                    for screen in screens:
+                        detections = auditor(
+                            screen, SeededText(screen.truth_text, screen.truth_text, ())
+                        )
+                        reported += len(detections)
+                        ledger.append(
+                            {
+                                "screen": screen.screen_id,
+                                "differences": len(detections),
+                                "snippets": [d.snippet for d in detections][:8],
+                            }
+                        )
+                else:
+                    label = "claude (headless, diff-only)"
+                    for screen in screens:
+                        result = claude_check(images[screen.screen_id], screen.truth_text, model=args.claude_model)
+                        reported += len(result.differences)
+                        ledger.append(
+                            {
+                                "screen": screen.screen_id,
+                                "differences": len(result.differences),
+                                "unplaced": sum(1 for d in result.differences if not d.located),
+                                "words_returned": result.raw_word_count,
+                                "seconds": round(result.seconds, 2),
+                                "cost_usd": result.cost_usd,
+                                "rejected": result.rejected,
+                            }
+                        )
                 sensitivity = {
-                    "reader": "claude (headless, diff-only) on clean pages",
+                    "reader": label + " on clean pages",
                     "is_measurement": True,
                     "pages": len(screens),
                     "false_alarms": reported,
@@ -1194,7 +1229,7 @@ def main(argv: list[str] | None = None) -> int:
                     "screens_with_a_false_alarm": sum(1 for entry in ledger if entry["differences"]),
                     "ledger": ledger,
                 }
-            sensitivity["cost_usd"] = round(sum(float(entry["cost_usd"] or 0) for entry in ledger), 4)
+            sensitivity["cost_usd"] = round(sum(float(entry.get("cost_usd") or 0) for entry in ledger), 4)
             sensitivity["ledger"] = ledger
     elif args.audit == "transcriber":
         label = f"{args.reader} as transcriber (diff against the candidate text)"
