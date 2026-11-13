@@ -623,6 +623,7 @@ def claude_auditor(images: dict[str, Path], model: str | None):
                 "differences": len(result.differences),
                 "unplaced": sum(1 for difference in result.differences if not difference.located),
                 "words_returned": result.raw_word_count,
+                "attempts": result.attempts,
                 "seconds": round(result.seconds, 2),
                 "cost_usd": result.cost_usd,
             }
@@ -1131,6 +1132,12 @@ def main(argv: list[str] | None = None) -> int:
                 sensitivity["excluded_by_reason"] = dict(sorted(excluded.items()))
                 sensitivity["cost_usd"] = round(
                     sum(float(entry["cost_usd"] or 0) for entry in ledger), 4
+                )
+                # A rejected reply is a miss in this measurement, never agreement.
+                sensitivity["rejected_replies"] = sum(1 for entry in ledger if entry.get("rejected"))
+                sensitivity["reask_attempts"] = sum(int(entry.get("attempts") or 1) for entry in ledger)
+                sensitivity["cost_per_screen_usd"] = round(
+                    float(sensitivity["cost_usd"]) / max(1, len(built)), 4
                 )
                 sensitivity["independent_checks"] = (
                     "off" if args.no_pipeline_checks else f"book vocabulary ({len(vocabulary)} words)"

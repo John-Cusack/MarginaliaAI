@@ -37,6 +37,12 @@ MAX_SNIPPET_WORDS = 8
 MAX_DIFFERENCES = 64
 DEFAULT_MODEL = None  # the CLI's own default; the caller may pin one
 
+# A difference is either a reading (the candidate's words and the image's, each at
+# most eight words) or, when the place differs too much to describe in eight
+# words, a *location only*: the line range that differs, with no reading at all.
+# The second form exists because a heavily degraded region provokes long answers,
+# and refusing the whole reply for one over-long reading threw away every
+# difference on the screen. It carries no text, so the diff-only rule holds.
 DIFFERENCE_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -48,9 +54,16 @@ DIFFERENCE_SCHEMA: dict[str, object] = {
                 "properties": {
                     "snippet": {"type": "string"},
                     "reading": {"type": "string"},
+                    "lines": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                    },
+                    "kind": {"type": "string", "enum": ["differs_extensively"]},
                     "confidence": {"type": "number"},
                 },
-                "required": ["snippet", "reading"],
+                "required": [],
             },
         }
     },
@@ -78,6 +91,10 @@ unambiguous) and `reading` (what the image actually shows there). Both are at \
 most 8 words. Never longer.
 - Do not transcribe the page. Do not summarise it. Do not quote more than 8 \
 consecutive words of it anywhere in your answer.
+- If a place differs so much that eight words cannot describe it, report it as \
+`{{"lines": [start, end], "kind": "differs_extensively"}}` — the character range \
+in the candidate text that differs, and no reading at all. Use it only when a \
+reading would run past eight words.
 - If the image and the candidate agree, return an empty list.
 - Return only the JSON object the schema describes. No prose.
 
@@ -113,6 +130,7 @@ class CheckResult:
     model: str | None = None
     rejected: str | None = None
     raw_word_count: int = 0
+    attempts: int = 1
     errors: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -120,8 +138,14 @@ def words(text: str) -> list[str]:
     return [word for word in re.split(r"\s+", text.strip()) if word]
 
 
-def validate(payload: object) -> tuple[Difference, ...]:
-    """Refuse anything that is not a diff-only answer."""
+def validate(payload: object, candidate_length: int | None = None) -> tuple[Difference, ...]:
+    """Refuse anything that is not a diff-only answer.
+
+    Two forms are accepted: a reading (the candidate's words and the image's, each
+    at most eight words) and a *location only* — a line range with no text at all,
+    for a place that differs too much to describe in eight words. The second form
+    keeps the diff-only cap intact while still letting the difference be found.
+    """
     if not isinstance(payload, dict) or "differences" not in payload:
         raise ResponseRejected("response is not an object with a 'differences' list")
     entries = payload["differences"]
@@ -133,6 +157,27 @@ def validate(payload: object) -> tuple[Difference, ...]:
     for entry in entries:
         if not isinstance(entry, dict):
             raise ResponseRejected("a difference is not an object")
+        if entry.get("kind") == "differs_extensively":
+            lines = entry.get("lines")
+            if (
+                not isinstance(lines, list)
+                or len(lines) != 2
+                or not all(isinstance(value, int) for value in lines)
+                or lines[0] < 0
+                or lines[1] <= lines[0]
+                or (candidate_length is not None and lines[1] > candidate_length)
+            ):
+                raise ResponseRejected("a differs_extensively difference needs a valid [start, end]")
+            out.append(
+                Difference(
+                    snippet="",
+                    reading="",
+                    confidence=None,
+                    final_start=lines[0],
+                    final_end=lines[1],
+                )
+            )
+            continue
         snippet, reading = entry.get("snippet"), entry.get("reading")
         if not isinstance(snippet, str) or not isinstance(reading, str):
             raise ResponseRejected("a difference needs string 'snippet' and 'reading'")
@@ -215,8 +260,44 @@ def check(
     model: str | None = DEFAULT_MODEL,
     timeout: float = 300.0,
     claude: str = "claude",
+    attempts: int = 2,
 ) -> CheckResult:
-    """Ask Claude where this screen and this candidate text differ."""
+    """Ask Claude where this screen and this candidate text differ.
+
+    A reply that fails validation is **never** "no differences". It is re-asked
+    once; if it fails again the result comes back with ``rejected`` set and the
+    caller decides what that means: the release gate counts it as a detection
+    (fail closed, the same rule as the adjudicator), and the sensitivity
+    measurement counts it as a miss. Both are honest; treating it as agreement
+    would not be.
+    """
+    last: CheckResult | None = None
+    for attempt in range(max(1, attempts)):
+        last = _check_once(image_path, candidate, model=model, timeout=timeout, claude=claude)
+        last = CheckResult(
+            differences=last.differences,
+            seconds=last.seconds,
+            cost_usd=last.cost_usd,
+            model=last.model,
+            raw_word_count=last.raw_word_count,
+            rejected=last.rejected,
+            attempts=attempt + 1,
+        )
+        if last.rejected is None:
+            return last
+    assert last is not None
+    return last
+
+
+def _check_once(
+    image_path: Path,
+    candidate: str,
+    *,
+    model: str | None = DEFAULT_MODEL,
+    timeout: float = 300.0,
+    claude: str = "claude",
+) -> CheckResult:
+    """One ask, one answer, validated or rejected."""
     command = [
         claude,
         "-p",
@@ -247,7 +328,10 @@ def check(
         return CheckResult(seconds=seconds, rejected=f"exit {completed.returncode}")
     try:
         payload, cost, used_model, raw_words = parse_envelope(completed.stdout)
-        differences = tuple(locate(difference, candidate) for difference in validate(payload))
+        differences = tuple(
+            locate(difference, candidate)
+            for difference in validate(payload, candidate_length=len(candidate))
+        )
     except (ResponseRejected, json.JSONDecodeError) as exc:
         return CheckResult(seconds=seconds, rejected=str(exc))
     return CheckResult(
