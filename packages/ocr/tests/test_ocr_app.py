@@ -325,3 +325,58 @@ async def test_the_status_of_a_job_with_no_images_has_no_expiry(settings: Settin
     async with client_for(create_app(store=Store(settings.db_path, settings.page_store), settings=settings)) as client:
         status = await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
         assert status.images_expire_at is None
+
+
+async def test_the_idle_watchdog_stops_the_service_after_quiet(settings: Settings):
+    """Started on demand, stopped when nobody is asking: a GPU host is not a
+    place to leave a process waiting."""
+    import asyncio
+    import time
+
+    from marginalia_ocr.server.app import create_app, idle_watchdog
+
+    fired: list[float] = []
+    app = create_app(
+        store=Store(settings.db_path, settings.page_store),
+        settings=Settings(
+            db_path=settings.db_path, page_store=settings.page_store, idle_exit_after=0.05
+        ),
+        on_idle=lambda: fired.append(time.monotonic()),
+    )
+    task = asyncio.create_task(idle_watchdog(app, interval=0.01, on_idle=lambda: fired.append(1.0)))
+    await asyncio.sleep(0.2)
+    assert fired, "an idle service never stopped itself"
+    task.cancel()
+
+
+async def test_the_idle_watchdog_leaves_a_busy_service_alone(settings: Settings):
+    import asyncio
+    import time
+
+    from marginalia_ocr.server.app import create_app, idle_watchdog
+
+    fired: list[int] = []
+    app = create_app(
+        store=Store(settings.db_path, settings.page_store),
+        settings=Settings(
+            db_path=settings.db_path, page_store=settings.page_store, idle_exit_after=0.3
+        ),
+        on_idle=lambda: fired.append(1),
+    )
+    task = asyncio.create_task(idle_watchdog(app, interval=0.01, on_idle=lambda: fired.append(1)))
+    try:
+        for _ in range(5):
+            app.state.last_request = time.monotonic()
+            await asyncio.sleep(0.05)
+        assert fired == [], "a service with work in flight stopped itself"
+    finally:
+        task.cancel()
+
+
+async def test_a_request_marks_the_service_busy(settings: Settings):
+    """The watchdog reads this clock, so a served request has to move it."""
+    app = create_app(store=Store(settings.db_path, settings.page_store), settings=settings)
+    before = app.state.last_request
+    async with client_for(app) as client:
+        await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
+    assert app.state.last_request > before

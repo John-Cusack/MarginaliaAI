@@ -1,0 +1,35 @@
+# marginalia-ocr.service — the verified-OCR service (systemd USER unit).
+#
+# Install on the GPU host at ~/.config/systemd/user/marginalia-ocr.service, then
+# `systemctl --user daemon-reload`. It is installed DISABLED on purpose, exactly
+# like marginalia-embed.service: the pack starts it on demand over ssh or
+# locally, and it exits by itself when nothing has asked it for work, so a fresh
+# boot shows 0 MB from this service. See docs/design/kindle-verified-ocr-architecture.md.
+#
+# Do NOT enable it: `systemctl --user disable marginalia-ocr.service`.
+# (Linger must stay on - `loginctl show-user john` -> Linger=yes - or user units
+# do not run without a login session. Already the case; just do not turn it off.)
+#
+# The idle exit is the service's own, not systemd's: after
+# MARGINALIA_OCR_IDLE_EXIT_AFTER seconds with no request the process asks itself
+# to stop, systemd sees a clean exit, and `Restart=on-failure` keeps it stopped
+# until the next run starts it. That mirrors the embed server's
+# --idle-exit-after 900, and it is why Restart must not become `always`.
+
+[Unit]
+Description=Marginalia verified-OCR service (region inventory + readers)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Loopback only: the pack reaches this over Tailscale or an ssh tunnel, and a
+# page store has no business on a public interface.
+ExecStart=/home/john/repos/MarginaliaAI/.venv/bin/uvicorn marginalia_ocr.server.app:app_from_env --host 127.0.0.1 --port 9883
+Environment=MARGINALIA_OCR_ROOT=%h/.local/share/marginalia-ocr
+Environment=MARGINALIA_OCR_IDLE_EXIT_AFTER=900
+# A clean idle exit (status 0) is not a failure: stay stopped until the next run.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

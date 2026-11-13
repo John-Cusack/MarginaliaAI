@@ -17,6 +17,11 @@ server = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "pytesseract>=0.3",
+    # The region inventory works on pixels: connected components, projections and
+    # the gutter. The client half stays light (httpx, pillow, pydantic), because
+    # the pack installs it too.
+    "numpy>=1.26",
+    "scipy>=1.11",
 ]
 
 [build-system]

@@ -46,3 +46,44 @@ def test_the_environment_can_still_move_the_store(tmp_path: Path):
     settings = Settings.from_env({"MARGINALIA_OCR_ROOT": str(tmp_path)})
     assert settings.db_path == tmp_path / "jobs.sqlite3"
     assert settings.page_store == tmp_path / "pages"
+
+
+SERVICE_UNIT = Path(__file__).resolve().parents[1] / "deploy" / "marginalia-ocr.service"
+
+
+def service_environment(name: str) -> str:
+    text = SERVICE_UNIT.read_text()
+    match = re.search(rf"Environment={name}=(\S+)", text)
+    assert match, f"{name} is not set in the unit"
+    return match.group(1)
+
+
+def test_the_service_unit_writes_the_same_root_as_the_sweeper():
+    """The service writes pages; the timer deletes them. One root, or the timer
+    sweeps an empty store while the images stay on disk."""
+    root = service_environment("MARGINALIA_OCR_ROOT").replace("%h", str(Path.home()))
+    assert Path(root) == Settings().page_store.parent
+    unit_root = unit_argument("--page-store").parent
+    assert Path(root) == unit_root
+
+
+def test_the_service_unit_starts_on_demand_and_exits_when_idle():
+    """Mirrors marginalia-embed.service: installed disabled, started by a run,
+    and stopped by its own idle exit - so Restart must not become always."""
+    text = SERVICE_UNIT.read_text()
+    assert "Restart=on-failure" in text
+    assert "Restart=always" not in text
+    assert int(service_environment("MARGINALIA_OCR_IDLE_EXIT_AFTER")) > 0
+    assert "--host 127.0.0.1" in text, "a page store does not belong on a public interface"
+
+
+def test_the_service_unit_runs_the_app_factory_that_exists():
+    """A typo in uvicorn's target is a unit that starts and immediately fails."""
+    from marginalia_ocr.server import app as app_module
+
+    text = SERVICE_UNIT.read_text()
+    target = re.search(r"ExecStart=\S+\s+(\S+)\s", text)
+    assert target, "no uvicorn target in ExecStart"
+    module_path, _, factory = target.group(1).partition(":")
+    assert module_path == "marginalia_ocr.server.app"
+    assert hasattr(app_module, factory)

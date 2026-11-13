@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,6 +60,9 @@ class Settings:
     pixel_cap: int = DEFAULT_PIXEL_CAP
     max_bytes: int = DEFAULT_MAX_BYTES
     ttl_days: int = IMAGE_TTL_DAYS
+    #: Stop after this many seconds with no request; 0 disables it. The service is
+    #: started on demand by the pack and must not hold a GPU host awake.
+    idle_exit_after: float = 900.0
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -70,6 +74,7 @@ class Settings:
             pixel_cap=int(env.get("MARGINALIA_OCR_PIXEL_CAP", DEFAULT_PIXEL_CAP)),
             max_bytes=int(env.get("MARGINALIA_OCR_MAX_BYTES", DEFAULT_MAX_BYTES)),
             ttl_days=int(env.get("MARGINALIA_OCR_TTL_DAYS", IMAGE_TTL_DAYS)),
+            idle_exit_after=float(env.get("MARGINALIA_OCR_IDLE_EXIT_AFTER", 900.0)),
         )
 
     def validate(self) -> Settings:
@@ -102,12 +107,66 @@ def _status(store: Store, job_id: str) -> JobStatus:
     )
 
 
-def create_app(store: Store | None = None, settings: Settings | None = None) -> FastAPI:
+async def idle_watchdog(app: FastAPI, *, interval: float = 5.0, on_idle=None):
+    """Stop the service once nothing has asked it for work.
+
+    Separate from the app so it can be tested without killing the test runner: the
+    default action is to ask systemd to stop us cleanly, which is what keeps the
+    GPU host free between books.
+    """
+    import asyncio
+    import signal
+
+    action = on_idle or (lambda: os.kill(os.getpid(), signal.SIGTERM))
+    while True:
+        await asyncio.sleep(interval)
+        idle_for = time.monotonic() - app.state.last_request
+        if idle_for >= app.state.settings.idle_exit_after:
+            app.state.idle_at = time.monotonic()
+            action()
+            return
+
+
+def lifespan_for(settings: Settings, on_idle=None):
+    """Start the idle watchdog with the service, and stop it with the service."""
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        task = (
+            asyncio.create_task(idle_watchdog(app, on_idle=on_idle))
+            if settings.idle_exit_after
+            else None
+        )
+        app.state.watchdog = task
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+
+    return lifespan
+
+
+def create_app(
+    store: Store | None = None, settings: Settings | None = None, on_idle=None
+) -> FastAPI:
     settings = (settings or Settings.from_env()).validate()
     store = store or Store(settings.db_path, settings.page_store)
-    app = FastAPI(title="marginalia-ai-ocr", version=PROTOCOL_VERSION)
+    app = FastAPI(
+        title="marginalia-ai-ocr", version=PROTOCOL_VERSION, lifespan=lifespan_for(settings, on_idle)
+    )
     app.state.store = store
     app.state.settings = settings
+    app.state.last_request = time.monotonic()
+    app.state.idle_at = None
+
+    @app.middleware("http")
+    async def _touch(request, call_next):
+        app.state.last_request = time.monotonic()
+        return await call_next(request)
+
 
     def require_protocol(header: str | None) -> None:
         try:
