@@ -22,7 +22,7 @@ and arabic, roman and Location-only footers.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from . import text as T
@@ -136,9 +136,19 @@ def _note_blocks(notes: tuple[tuple[int, str], ...]) -> tuple[Block, ...]:
     return tuple(blocks)
 
 
-def page_specs() -> tuple[PageSpec, ...]:
-    """The catalog, one spec per layout class."""
-    prose = tuple(Block(text=paragraph) for paragraph in T.PROSE)
+def page_specs(variant: int = 0) -> tuple[PageSpec, ...]:
+    """The catalog, one spec per layout class, optionally with varied prose.
+
+    ``variant`` rotates the *prose pool* the prose pages are built from, which is
+    what a gate about the share of clean screens needs: more pages of the same
+    classes rather than the same page counted twice. Variant 0 is byte-for-byte
+    what this always produced, so every earlier measurement still describes the
+    same screens. The pages that depend on specific words - the split-word page, a
+    table's cells, the TOC - are left alone, because their text is the point of
+    them.
+    """
+    pooled = T.PROSE if not variant else T.PROSE[variant % len(T.PROSE):] + T.PROSE[: variant % len(T.PROSE)]
+    prose = tuple(Block(text=paragraph) for paragraph in pooled)
     specs: list[PageSpec] = []
 
     specs.append(
@@ -393,6 +403,18 @@ def page_specs() -> tuple[PageSpec, ...]:
                 ),
             )
         )
+    if variant:
+        # A variant is a different page and says so: a screen id that repeats would
+        # make two pages look like one in every record and every count.
+        specs = [
+            replace(
+                spec,
+                page_id=f"{spec.page_id}-v{variant}",
+                position_start=spec.position_start + variant * 10_000,
+                position_end=spec.position_end + variant * 10_000,
+            )
+            for spec in specs
+        ]
     return tuple(specs)
 
 
@@ -421,11 +443,17 @@ def build_corpus(
     blur: float = 0.0,
     kinds: tuple[str, ...] | None = None,
     degrade: Degrade | None = None,
+    variants: int = 1,
 ) -> tuple[Screen, ...]:
-    """Lay out, rasterize and record every page at every DPR."""
+    """Lay out, rasterize and record every page at every DPR.
+
+    ``variants`` > 1 adds prose-varied variants of the same classes: a gate about
+    the share of clean screens needs more screens, and more *pages* is the only
+    honest way to get them.
+    """
     fonts, chosen = load_fonts(font)
     screens: list[Screen] = []
-    for spec in page_specs():
+    for spec in tuple(spec for variant in range(max(1, variants)) for spec in page_specs(variant)):
         if kinds is not None and spec.kind not in kinds:
             continue
         layout = layout_page(spec, fonts)

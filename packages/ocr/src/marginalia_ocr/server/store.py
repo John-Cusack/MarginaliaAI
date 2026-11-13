@@ -149,10 +149,23 @@ class Store:
                     kind TEXT NOT NULL,
                     box TEXT NOT NULL,
                     text TEXT NOT NULL,
+                    readers TEXT NOT NULL DEFAULT '{}',
                     empty INTEGER NOT NULL DEFAULT 0,
                     seconds REAL NOT NULL,
                     at TEXT NOT NULL,
                     PRIMARY KEY (job_id, seq, region_index)
+                );
+                CREATE TABLE IF NOT EXISTS marks (
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+                    seq INTEGER NOT NULL,
+                    ordinal INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    start INTEGER NOT NULL,
+                    end INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    candidates TEXT NOT NULL DEFAULT '[]',
+                    at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, seq, ordinal)
                 );
                 CREATE TABLE IF NOT EXISTS gaps (
                     job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
@@ -514,6 +527,7 @@ class Store:
         box: tuple[float, float, float, float],
         text: str,
         *,
+        readers: str = "{}",
         empty: bool = False,
         seconds: float = 0.0,
     ) -> None:
@@ -537,6 +551,31 @@ class Store:
             return tuple(
                 db.execute(
                     "SELECT * FROM readings WHERE job_id = ? ORDER BY seq, region_index", (job_id,)
+                ).fetchall()
+            )
+
+    def record_mark(
+        self,
+        job_id: str,
+        seq: int,
+        ordinal: int,
+        kind: str,
+        span: tuple[int, int],
+        reason: str,
+        candidates: str = "[]",
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO marks (job_id, seq, ordinal, kind, start, end, reason,"
+                " candidates, at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (job_id, seq, ordinal, kind, span[0], span[1], reason, candidates, _iso(_now())),
+            )
+
+    def marks(self, job_id: str) -> tuple[sqlite3.Row, ...]:
+        with self._connect() as db:
+            return tuple(
+                db.execute(
+                    "SELECT * FROM marks WHERE job_id = ? ORDER BY seq, ordinal", (job_id,)
                 ).fetchall()
             )
 

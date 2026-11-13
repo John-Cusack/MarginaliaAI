@@ -43,7 +43,6 @@ from typing import TYPE_CHECKING, Protocol
 
 from .align import (
     DISPUTED,
-    PRIMARY_ORDER,
     Segment,
     align_readings,
     normalize,

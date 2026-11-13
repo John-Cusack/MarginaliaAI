@@ -38,7 +38,9 @@ from ..wire import (
     State,
     check_protocol,
 )
+from .confirm import Vocabulary
 from .paths import DEFAULT_ROOT
+from .pipeline import read_page
 from .pngcheck import (
     DEFAULT_MAX_BYTES,
     DEFAULT_PIXEL_CAP,
@@ -46,7 +48,6 @@ from .pngcheck import (
     PngRejected,
     validate_image,
 )
-from .reading import read_page
 from .store import IMAGE_TTL_DAYS, CaptureConflict, Store, StoreError, UnknownJob
 
 PROTOCOL_HEADER = "X-Ocr-Protocol"
@@ -64,6 +65,16 @@ class Settings:
     #: Stop after this many seconds with no request; 0 disables it. The service is
     #: started on demand by the pack and must not hold a GPU host awake.
     idle_exit_after: float = 900.0
+    #: Which readers to run. The VLM needs the GPU extra and the lease; disabling
+    #: it here is how a host without a card still serves the other two.
+    readers: str = "vlm,tesseract,third"
+    #: Which reading is stored when the readers disagree and no tie-break applies.
+    #: Chosen by *measured prose word error rate*, not by which model was chosen in
+    #: Phase 0 for a different job: on the 3x synthetic set Tesseract's is 0.070 and
+    #: the VLM's was 4.349 before it was bounded, so the spine is Tesseract and the
+    #: mark names it either way.
+    primary: str = "tesseract"
+    read_note_links: bool = True
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -76,6 +87,9 @@ class Settings:
             max_bytes=int(env.get("MARGINALIA_OCR_MAX_BYTES", DEFAULT_MAX_BYTES)),
             ttl_days=int(env.get("MARGINALIA_OCR_TTL_DAYS", IMAGE_TTL_DAYS)),
             idle_exit_after=float(env.get("MARGINALIA_OCR_IDLE_EXIT_AFTER", 900.0)),
+            readers=env.get("MARGINALIA_OCR_READERS", "vlm,tesseract,third"),
+            primary=env.get("MARGINALIA_OCR_PRIMARY", "tesseract"),
+            read_note_links=env.get("MARGINALIA_OCR_NOTE_LINKS", "1") not in {"0", "false", ""},
         )
 
     def validate(self) -> Settings:
@@ -188,8 +202,31 @@ def lifespan_for(settings: Settings, on_idle=None):
     return lifespan
 
 
+def build_readers(settings: Settings):
+    """The three readers this host is configured to run, built lazily.
+
+    Imported here rather than at module scope: the VLM pulls in torch, and a host
+    serving only Tesseract must not need it.
+    """
+    from .pipeline import Readers
+    from .readers.tesseract import TesseractReader
+
+    wanted = {name.strip() for name in settings.readers.split(",") if name.strip()}
+    vlm = None
+    if "vlm" in wanted:
+        from .readers.vlm import VlmReader
+
+        vlm = VlmReader()
+    third = None
+    if "third" in wanted:
+        from .readers.third import EasyOcrReader
+
+        third = EasyOcrReader()
+    return Readers(vlm=vlm, tesseract=TesseractReader(), third=third)
+
+
 def create_app(
-    store: Store | None = None, settings: Settings | None = None, on_idle=None
+    store: Store | None = None, settings: Settings | None = None, on_idle=None, readers=None
 ) -> FastAPI:
     settings = (settings or Settings.from_env()).validate()
     store = store or Store(settings.db_path, settings.page_store)
@@ -201,6 +238,7 @@ def create_app(
     app.state.last_request = time.monotonic()
     app.state.idle_at = None
     app.state.work = InFlight()
+    app.state.readers = readers
 
     @app.middleware("http")
     async def _touch(request, call_next):
@@ -373,34 +411,69 @@ def create_app(
         require_protocol(x_ocr_protocol)
         store.job(job_id)
         unread = store.unread_captures(job_id)
-        regions_read = gaps = 0
+        readers = app.state.readers or build_readers(settings)
+        vocabulary = Vocabulary(minimum=2)
+        regions_read = gaps = marks = words = words_marked = 0
+        statuses: dict[str, int] = {}
         seconds = 0.0
         for capture in unread:
             data = capture.path.read_bytes()
             with app.state.work:
-                page = read_page(data, capture_id=capture.capture_id)
-            for index, item in enumerate(page.regions):
+                page = read_page(
+                    data,
+                    capture_id=capture.capture_id,
+                    readers=readers,
+                    vocabulary=vocabulary,
+                    primary=settings.primary,
+                    read_note_links=settings.read_note_links,
+                )
+            for index, region in enumerate(page.regions):
                 store.record_reading(
                     job_id,
                     capture.seq,
                     index,
-                    item.region.kind,
-                    item.region.box,
-                    item.reading.text,
-                    empty=item.reading.empty,
-                    seconds=item.reading.seconds,
+                    region.kind,
+                    region.box,
+                    region.text,
+                    readers=json.dumps(dict(region.readings)),
+                    empty=not region.text.strip(),
+                    seconds=0.0,
                 )
                 regions_read += 1
+            for ordinal, mark in enumerate(page.marks):
+                store.record_mark(
+                    job_id,
+                    capture.seq,
+                    ordinal,
+                    mark.kind,
+                    mark.span,
+                    mark.reason,
+                    json.dumps([{"text": c.text, "readers": list(c.readers)} for c in mark.candidates]),
+                )
+                marks += 1
             for gap in page.gaps:
-                store.record_gap(job_id, capture.seq, gap)
+                store.record_mark(
+                    job_id, capture.seq, 1000 + len(store.marks(job_id)), "gap", gap.span, gap.reason
+                )
+                store.record_gap(job_id, capture.seq, gap.span)
                 gaps += 1
+            store.set_page_status(job_id, capture.seq, page.status, page.reason)
             store.mark_read(job_id, capture.seq)
+            statuses[page.status] = statuses.get(page.status, 0) + 1
+            words += page.words
+            words_marked += page.words_marked
             seconds += page.seconds
+        if readers is not None and unread:
+            readers.unload()   # the GPU is shared: nothing stays resident
         return {
             "job_id": job_id,
             "read": len(unread),
             "regions": regions_read,
+            "marks": marks,
             "gaps": gaps,
+            "words": words,
+            "words_marked": words_marked,
+            "pages": statuses,
             "seconds": round(seconds, 3),
         }
 

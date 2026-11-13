@@ -262,7 +262,7 @@ DISPUTED = "disputed"
 #: The order a spine is chosen in when the named primary produced nothing. Fixed,
 #: not "whichever reader happens to be first in the dict": the fallback must be
 #: the same on every page or the stored text's provenance changes with a dict.
-PRIMARY_ORDER: tuple[str, ...] = ("vlm", "tesseract", "third")
+PRIMARY_ORDER: tuple[str, ...] = ("tesseract", "vlm", "third")
 
 #: A token for alignment: a run of non-space characters. Punctuation stays
 #: attached, because §7.4 makes punctuation significant - "48.2%" and "482%"

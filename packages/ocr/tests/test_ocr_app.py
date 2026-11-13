@@ -382,6 +382,14 @@ async def test_a_request_marks_the_service_busy(settings: Settings):
     assert app.state.last_request > before
 
 
+def stub_readers(text: str = "the debt was 48.2% and the claim held"):
+    """Three readers that agree, so an app test is about the store, not a model."""
+    from marginalia_ocr.server.pipeline import Readers
+    from test_ocr_pipeline import Stub
+
+    return Readers(vlm=Stub(text), tesseract=Stub(text), third=Stub(text))
+
+
 async def test_the_read_trigger_reads_every_screen_and_keeps_its_gaps(settings: Settings):
     """The minimal read path: inventory the page, read its regions, store both.
 
@@ -395,7 +403,9 @@ async def test_the_read_trigger_reads_every_screen_and_keeps_its_gaps(settings: 
 
     screens = build_corpus(dprs=(1,), kinds=("two_column_prose", "notes_page"))
     store = Store(settings.db_path, settings.page_store)
-    async with client_for(create_app(store=store, settings=settings)) as client:
+    async with client_for(
+        create_app(store=store, settings=settings, readers=stub_readers())
+    ) as client:
         await client.create_job("SYNTH1", dpr=1, pipeline_version="wp1")
         for seq, page in enumerate(screens):
             await client.upload_screen(screen(page.png, seq=seq))
@@ -465,7 +475,9 @@ async def test_the_status_counts_what_was_read_and_what_could_not_be(settings: S
 
     page = build_corpus(dprs=(1,), kinds=("two_column_prose",))[0]
     store = Store(settings.db_path, settings.page_store)
-    async with client_for(create_app(store=store, settings=settings)) as client:
+    async with client_for(
+        create_app(store=store, settings=settings, readers=stub_readers())
+    ) as client:
         await client.create_job("SYNTH2", dpr=1, pipeline_version="wp1")
         await client.upload_screen(screen(page.png, seq=0))
         before = await client.status()

@@ -110,3 +110,20 @@ def read_region(
         seconds=seconds,
         empty=not text.strip(),
     )
+
+
+class TesseractReader:
+    """The region function as a reader, so all three share one interface."""
+
+    def __init__(self, *, psm: int = DEFAULT_PSM, lang: str = "eng", command: str = "tesseract") -> None:
+        self.psm = psm
+        self.lang = lang
+        self.command = command
+
+    def read(self, image, box, *, region_id: str):
+        return read_region(
+            image, box, region_id=region_id, psm=self.psm, lang=self.lang, command=self.command
+        )
+
+    def unload(self) -> None:
+        """Nothing resident: Tesseract is a subprocess, not a model."""
