@@ -40,7 +40,7 @@ from ..wire import (
 )
 from .confirm import Vocabulary
 from .paths import DEFAULT_ROOT
-from .pipeline import read_page
+from .pipeline import ReaderFailed, preflight, read_page
 from .pngcheck import (
     DEFAULT_MAX_BYTES,
     DEFAULT_PIXEL_CAP,
@@ -412,21 +412,61 @@ def create_app(
         store.job(job_id)
         unread = store.unread_captures(job_id)
         readers = app.state.readers or build_readers(settings)
+        if unread:
+            # A reader that cannot load contributes silence to every page, and a
+            # run of N-1 readers is a different measurement than the gate was
+            # computed for. So the readers are asked to read once, before the job
+            # starts, and a reader that will not load stops the job with a reason
+            # instead of quietly emptying the pages it could not read.
+            verdicts = preflight(readers)
+            unavailable = tuple(verdict for verdict in verdicts if not verdict.ok)
+            if unavailable:
+                readers.unload()
+                reason = "; ".join(
+                    f"reader {v.reader} unavailable: {v.error}" for v in unavailable
+                )
+                store.block(job_id, reason)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "readers_unavailable",
+                        "reason": reason,
+                        "readers": [
+                            {"reader": v.reader, "error": v.error} for v in unavailable
+                        ],
+                    },
+                )
         vocabulary = Vocabulary(minimum=2)
         regions_read = gaps = marks = words = words_marked = 0
         statuses: dict[str, int] = {}
         seconds = 0.0
         for capture in unread:
             data = capture.path.read_bytes()
-            with app.state.work:
-                page = read_page(
-                    data,
-                    capture_id=capture.capture_id,
-                    readers=readers,
-                    vocabulary=vocabulary,
-                    primary=settings.primary,
-                    read_note_links=settings.read_note_links,
-                )
+            try:
+                with app.state.work:
+                    page = read_page(
+                        data,
+                        capture_id=capture.capture_id,
+                        readers=readers,
+                        vocabulary=vocabulary,
+                        primary=settings.primary,
+                        read_note_links=settings.read_note_links,
+                    )
+            except ReaderFailed as failed:
+                # The readers passed their preflight, so this is a reader that
+                # stopped working mid-book: stop the job rather than let the rest
+                # of the pages be read by two of three readers unmarked.
+                readers.unload()
+                store.block(job_id, f"reader {failed.reader} unavailable: {failed.error}")
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "reader_failed",
+                        "reader": failed.reader,
+                        "reason": str(failed),
+                        "seq": capture.seq,
+                    },
+                ) from failed
             for index, region in enumerate(page.regions):
                 store.record_reading(
                     job_id,

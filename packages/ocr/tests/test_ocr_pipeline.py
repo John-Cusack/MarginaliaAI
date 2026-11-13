@@ -11,7 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from marginalia_ocr.server.pipeline import Readers, read_page
+import pytest
+from marginalia_ocr.server.pipeline import ReaderFailed, Readers, read_page
 from marginalia_ocr.server.readers.tesseract import RegionReading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -73,28 +74,31 @@ def test_one_reader_apart_marks_the_word_it_differs_on():
     assert {"debt", "debr"} <= texts, texts
 
 
-def test_a_failed_vlm_does_not_take_the_other_readers_with_it():
-    """The silent loss, end to end: two readers read, the third has nothing, and
-    the page must still carry its text with a mark that says why."""
+def test_a_reader_that_raises_is_a_run_failure_not_an_empty_reading():
+    """An empty reading is legitimate only when the reader is loaded and ran.
+
+    A reader that raised contributed nothing, and the page must not be stored as
+    though that reader had looked and seen nothing: the caller blocks the job
+    instead, with the reader and the error in the reason.
+    """
     text = "the debt was 48.2% and the claim held"
-    outcome = read_page(
-        page_bytes(),
-        capture_id="c2",
-        readers=Readers(vlm=Stub(None, fails=True), tesseract=Stub(text), third=Stub(text)),
-        primary="vlm",
-        read_note_links=False,
-    )
-    assert outcome.text.strip(), "the readers who did read were thrown away"
-    assert outcome.status == "marked"
-    assert any("primary reader produced nothing" in mark.reason for mark in outcome.marks)
-    assert not any(region.status == "confirmed" for region in outcome.regions)
+    with pytest.raises(ReaderFailed) as raised:
+        read_page(
+            page_bytes(),
+            capture_id="c2",
+            readers=Readers(vlm=Stub(None, fails=True), tesseract=Stub(text), third=Stub(text)),
+            primary="vlm",
+            read_note_links=False,
+        )
+    assert raised.value.reader == "vlm"
+    assert "no model" in raised.value.error
 
 
-def test_every_reader_failing_gaps_the_page():
+def test_readers_that_load_and_answer_nothing_gap_the_page():
     outcome = read_page(
         page_bytes(),
         capture_id="c3",
-        readers=Readers(vlm=Stub(None, fails=True), tesseract=Stub(None), third=Stub(None, fails=True)),
+        readers=Readers(vlm=Stub(None), tesseract=Stub(None), third=Stub(None)),
         read_note_links=False,
     )
     assert outcome.status == "gapped"
@@ -120,9 +124,10 @@ def test_the_primary_reader_is_configuration_not_an_assumption():
     outcome = read_page(
         page_bytes(),
         capture_id="c5",
-        readers=Readers(vlm=Stub(None, fails=True), tesseract=Stub(agreed), third=Stub("other text")),
+        readers=Readers(vlm=Stub("a reading of its own"), tesseract=Stub(agreed), third=Stub("other text")),
         primary="tesseract",
         read_note_links=False,
     )
     assert agreed in outcome.text, "the configured primary's text is stored"
+    assert outcome.status != "gapped"
     assert any("the stored text is the tesseract reader's" in mark.reason for mark in outcome.marks) or outcome.marks
