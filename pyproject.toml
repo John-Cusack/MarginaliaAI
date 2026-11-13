@@ -11,7 +11,7 @@ dependencies = [
 
 [tool.uv]
 package = false
-default-groups = ["dev", "plugins"]
+default-groups = ["dev", "ocr", "plugins"]
 
 [dependency-groups]
 dev = [
@@ -23,6 +23,9 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
 ]
+ocr = [
+    "marginalia-ai-ocr[server]",
+]
 plugins = [
     "marginalia-ai-plugin-academic-journal>=0.2,<0.3",
     "marginalia-ai-plugin-logos[auth]>=0.2,<0.3",
@@ -30,9 +33,10 @@ plugins = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/core", "packages/sdk", "packages/plugins/history"]
+members = ["packages/core", "packages/ocr", "packages/sdk", "packages/plugins/history"]
 
 [tool.uv.sources]
 marginalia-ai = { workspace = true }
 marginalia-ai-sdk = { workspace = true }
 marginalia-ai-plugin-history = { workspace = true }
+marginalia-ai-ocr = { workspace = true }

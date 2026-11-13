@@ -1,0 +1,30 @@
+[project]
+name = "marginalia-ai-ocr"
+version = "0.1.0"
+description = "The verified-OCR service: page store, job store, v2 wire, GPU lease"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "pillow>=10.0",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+# The service half. Tesseract, Docling and the VLM runtime arrive with WP2; what
+# is here is the shape the plan's WP1 asks for: FastAPI, the stores, the sweeper
+# and the lease, with Tesseract as the only recognizer until WP2 adds the rest.
+server = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pytesseract>=0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/marginalia_ocr"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
