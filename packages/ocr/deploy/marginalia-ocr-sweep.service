@@ -19,8 +19,9 @@ Documentation=file:///home/john/repos/MarginaliaAI/docs/design/kindle-verified-o
 
 [Service]
 Type=oneshot
-# Adjust the interpreter path to the server's venv if it moves.
-ExecStart=/home/john/repos/MarginaliaAI/.venv/bin/python -m marginalia_ocr.server.sweeper \
+# The interpreter is the OCR checkout's own venv on the server, not the
+# MarginaliaAI one - see marginalia-ocr.service.
+ExecStart=/home/john/repos/marginalia-ocr-wp1/.venv/bin/python -m marginalia_ocr.server.sweeper \
     --db %h/.local/share/marginalia-ocr/jobs.sqlite3 \
     --page-store %h/.local/share/marginalia-ocr/pages
 Nice=10

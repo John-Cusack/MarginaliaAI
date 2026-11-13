@@ -46,6 +46,7 @@ from .pngcheck import (
     PngRejected,
     validate_image,
 )
+from .reading import read_page
 from .store import IMAGE_TTL_DAYS, CaptureConflict, Store, StoreError, UnknownJob
 
 PROTOCOL_HEADER = "X-Ocr-Protocol"
@@ -107,6 +108,39 @@ def _status(store: Store, job_id: str) -> JobStatus:
     )
 
 
+class InFlight:
+    """Work the service is doing, whether or not a request is arriving.
+
+    The idle exit used to look only at HTTP traffic, which is wrong the moment a
+    read runs in the background: a book mid-read sends no requests, so the service
+    would decide it was idle and stop itself with the page half done. WP2's
+    background stages register here; the watchdog will not leave while anything is
+    running.
+
+    Single-threaded by construction: everything that touches this runs on the
+    event loop.
+    """
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.last_change = time.monotonic()
+
+    def begin(self) -> InFlight:
+        self.count += 1
+        self.last_change = time.monotonic()
+        return self
+
+    def end(self) -> None:
+        self.count = max(0, self.count - 1)
+        self.last_change = time.monotonic()
+
+    def __enter__(self) -> InFlight:
+        return self.begin()
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.end()
+
+
 async def idle_watchdog(app: FastAPI, *, interval: float = 5.0, on_idle=None):
     """Stop the service once nothing has asked it for work.
 
@@ -120,7 +154,10 @@ async def idle_watchdog(app: FastAPI, *, interval: float = 5.0, on_idle=None):
     action = on_idle or (lambda: os.kill(os.getpid(), signal.SIGTERM))
     while True:
         await asyncio.sleep(interval)
-        idle_for = time.monotonic() - app.state.last_request
+        if app.state.work.count:
+            continue  # a read is running: not idle, whatever the requests say
+        busy_since = max(app.state.last_request, app.state.work.last_change)
+        idle_for = time.monotonic() - busy_since
         if idle_for >= app.state.settings.idle_exit_after:
             app.state.idle_at = time.monotonic()
             action()
@@ -161,11 +198,16 @@ def create_app(
     app.state.settings = settings
     app.state.last_request = time.monotonic()
     app.state.idle_at = None
+    app.state.work = InFlight()
 
     @app.middleware("http")
     async def _touch(request, call_next):
         app.state.last_request = time.monotonic()
-        return await call_next(request)
+        app.state.work.begin()
+        try:
+            return await call_next(request)
+        finally:
+            app.state.work.end()
 
 
     def require_protocol(header: str | None) -> None:
@@ -315,6 +357,50 @@ def create_app(
             ),
             bundle_sha256=row["bundle_sha256"],
         )
+
+    @app.post("/v2/jobs/{job_id}/read")
+    async def read_next(
+        job_id: str, x_ocr_protocol: str | None = Header(default=None)
+    ) -> dict[str, object]:
+        """Read every screen of this job whose reading is missing.
+
+        Synchronous on purpose for WP1 - the request is the unit of work, and the
+        tracker counts it - but the stage registers in-flight work of its own, so a
+        background read in WP2 cannot be mistaken for an idle service.
+        """
+        require_protocol(x_ocr_protocol)
+        store.job(job_id)
+        unread = store.unread_captures(job_id)
+        regions_read = gaps = 0
+        seconds = 0.0
+        for capture in unread:
+            data = capture.path.read_bytes()
+            with app.state.work:
+                page = read_page(data, capture_id=capture.capture_id)
+            for index, item in enumerate(page.regions):
+                store.record_reading(
+                    job_id,
+                    capture.seq,
+                    index,
+                    item.region.kind,
+                    item.region.box,
+                    item.reading.text,
+                    empty=item.reading.empty,
+                    seconds=item.reading.seconds,
+                )
+                regions_read += 1
+            for gap in page.gaps:
+                store.record_gap(job_id, capture.seq, gap)
+                gaps += 1
+            store.mark_read(job_id, capture.seq)
+            seconds += page.seconds
+        return {
+            "job_id": job_id,
+            "read": len(unread),
+            "regions": regions_read,
+            "gaps": gaps,
+            "seconds": round(seconds, 3),
+        }
 
     @app.post("/v2/jobs/{job_id}/advance", response_model=JobStatus)
     async def advance(

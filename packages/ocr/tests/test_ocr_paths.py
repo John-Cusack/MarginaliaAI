@@ -81,9 +81,33 @@ def test_the_service_unit_runs_the_app_factory_that_exists():
     """A typo in uvicorn's target is a unit that starts and immediately fails."""
     from marginalia_ocr.server import app as app_module
 
-    text = SERVICE_UNIT.read_text()
-    target = re.search(r"ExecStart=\S+\s+(\S+)\s", text)
-    assert target, "no uvicorn target in ExecStart"
-    module_path, _, factory = target.group(1).partition(":")
+    command = re.search(r"ExecStart=(.*)", SERVICE_UNIT.read_text()).group(1).split()
+    targets = [part for part in command[1:] if not part.startswith("-")]
+    assert targets, "no uvicorn target in ExecStart"
+    module_path, _, factory = targets[0].partition(":")
     assert module_path == "marginalia_ocr.server.app"
-    assert hasattr(app_module, factory)
+    assert hasattr(app_module, factory), factory
+
+
+def test_the_units_run_the_ocr_checkout_and_never_the_embed_venv():
+    """marginalia-embed runs from /home/john/repos/MarginaliaAI/.venv.
+
+    Pointing the OCR units at that venv would change the environment of a service
+    that is off-limits without John, so the paths are pinned here: a unit edited
+    by hand or by a careless search-and-replace fails a test instead of quietly
+    disturbing the embed server.
+    """
+    embed_venv = "/home/john/repos/MarginaliaAI/.venv"
+    for unit in (SERVICE_UNIT, UNIT):
+        text = unit.read_text()
+        executables = re.findall(r"ExecStart=(\S+)", text)
+        assert executables, unit.name
+        for executable in executables:
+            assert embed_venv not in executable, f"{unit.name} runs the embed venv"
+            assert executable.startswith("/home/john/repos/marginalia-ocr-wp1/"), executable
+
+
+def test_uvicorn_is_told_the_app_is_a_factory():
+    """uvicorn guesses, noisily, and a guess is not a contract."""
+    text = SERVICE_UNIT.read_text()
+    assert "uvicorn --factory marginalia_ocr.server.app:app_from_env" in text

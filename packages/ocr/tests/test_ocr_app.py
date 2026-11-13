@@ -380,3 +380,76 @@ async def test_a_request_marks_the_service_busy(settings: Settings):
     async with client_for(app) as client:
         await client.create_job("B004774792", dpr=3, pipeline_version="wp1")
     assert app.state.last_request > before
+
+
+async def test_the_read_trigger_reads_every_screen_and_keeps_its_gaps(settings: Settings):
+    """The minimal read path: inventory the page, read its regions, store both.
+
+    Synthetic screens, not Kindle ones, and no images or text in the log.
+    """
+    import sys
+    from pathlib import Path as _Path
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "tools"))
+    from ocr_synth.corpus import build_corpus
+
+    screens = build_corpus(dprs=(1,), kinds=("two_column_prose", "notes_page"))
+    store = Store(settings.db_path, settings.page_store)
+    async with client_for(create_app(store=store, settings=settings)) as client:
+        await client.create_job("SYNTH1", dpr=1, pipeline_version="wp1")
+        for seq, page in enumerate(screens):
+            await client.upload_screen(screen(page.png, seq=seq))
+
+        response = await client._client.post(
+            f"/v2/jobs/{client.job_id}/read", headers={PROTOCOL_HEADER: PROTOCOL_VERSION}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["read"] == 2
+        assert body["regions"] > 0
+
+        readings = store.readings(client.job_id)
+        assert readings, "the trigger read nothing"
+        assert all(row["kind"] != "chrome" for row in readings), "chrome was read as text"
+        assert any(row["text"].strip() for row in readings), "no text came out of a page of prose"
+        assert all(store.captures(client.job_id)[i].read_at is not None for i in range(2))
+
+        again = (
+            await client._client.post(
+                f"/v2/jobs/{client.job_id}/read", headers={PROTOCOL_HEADER: PROTOCOL_VERSION}
+            )
+        ).json()
+        assert again["read"] == 0, "a second read of the same screens is not a second read"
+
+
+async def test_the_watchdog_leaves_a_service_with_work_in_flight_alone(settings: Settings):
+    """A background read sends no requests, and must not be mistaken for idle.
+
+    Without this, the service stops itself mid-book: the read is running, the pack
+    is waiting, and the idle clock says nothing has happened for fifteen minutes.
+    """
+    import asyncio
+    import time
+
+    from marginalia_ocr.server.app import create_app, idle_watchdog
+
+    fired: list[int] = []
+    app = create_app(
+        store=Store(settings.db_path, settings.page_store),
+        settings=Settings(
+            db_path=settings.db_path, page_store=settings.page_store, idle_exit_after=0.05
+        ),
+        on_idle=lambda: fired.append(1),
+    )
+    app.state.work.begin()          # a read is running
+    app.state.last_request = time.monotonic() - 10  # and no requests are arriving
+    task = asyncio.create_task(idle_watchdog(app, interval=0.01, on_idle=lambda: fired.append(1)))
+    try:
+        await asyncio.sleep(0.2)
+        assert fired == [], "the service stopped itself with work in flight"
+
+        app.state.work.end()
+        await asyncio.sleep(0.2)
+        assert fired, "and then it never stopped, with the work done"
+    finally:
+        task.cancel()

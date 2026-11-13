@@ -132,6 +132,24 @@ class Store:
                     note TEXT,
                     PRIMARY KEY (job_id, ordinal)
                 );
+                CREATE TABLE IF NOT EXISTS readings (
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+                    seq INTEGER NOT NULL,
+                    region_index INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    box TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    empty INTEGER NOT NULL DEFAULT 0,
+                    seconds REAL NOT NULL,
+                    at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, seq, region_index)
+                );
+                CREATE TABLE IF NOT EXISTS gaps (
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+                    seq INTEGER NOT NULL,
+                    box TEXT NOT NULL,
+                    at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS recapture (
                     job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
                     position INTEGER NOT NULL,
@@ -396,6 +414,52 @@ class Store:
             )
             for row in rows
         )
+
+    def record_reading(
+        self,
+        job_id: str,
+        seq: int,
+        region_index: int,
+        kind: str,
+        box: tuple[float, float, float, float],
+        text: str,
+        *,
+        empty: bool = False,
+        seconds: float = 0.0,
+    ) -> None:
+        """One region's reading. Rewriting it is allowed: a version change re-reads."""
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO readings (job_id, seq, region_index, kind, box, text,"
+                " empty, seconds, at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (job_id, seq, region_index, kind, repr(tuple(box)), text, int(empty), seconds, _iso(_now())),
+            )
+
+    def record_gap(self, job_id: str, seq: int, box: tuple[float, float, float, float]) -> None:
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO gaps (job_id, seq, box, at) VALUES (?,?,?,?)",
+                (job_id, seq, repr(tuple(box)), _iso(_now())),
+            )
+
+    def readings(self, job_id: str) -> tuple[sqlite3.Row, ...]:
+        with self._connect() as db:
+            return tuple(
+                db.execute(
+                    "SELECT * FROM readings WHERE job_id = ? ORDER BY seq, region_index", (job_id,)
+                ).fetchall()
+            )
+
+    def gaps(self, job_id: str) -> tuple[tuple[int, str], ...]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT seq, box FROM gaps WHERE job_id = ? ORDER BY seq", (job_id,)
+            ).fetchall()
+        return tuple((row["seq"], row["box"]) for row in rows)
+
+    def unread_captures(self, job_id: str) -> tuple[Capture, ...]:
+        """Screens whose image is here and whose reading is missing or stale."""
+        return tuple(capture for capture in self.captures(job_id) if capture.read_at is None)
 
     def mark_read(self, job_id: str, seq: int) -> None:
         """Record that a page was read under its current capture.
