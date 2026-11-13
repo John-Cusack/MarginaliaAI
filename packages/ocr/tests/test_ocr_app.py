@@ -453,3 +453,27 @@ async def test_the_watchdog_leaves_a_service_with_work_in_flight_alone(settings:
         assert fired, "and then it never stopped, with the work done"
     finally:
         task.cancel()
+
+
+async def test_the_status_counts_what_was_read_and_what_could_not_be(settings: Settings):
+    """Counts, never text: the pack needs to know a read happened, not what it said."""
+    import sys
+    from pathlib import Path as _Path
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "tools"))
+    from ocr_synth.corpus import build_corpus
+
+    page = build_corpus(dprs=(1,), kinds=("two_column_prose",))[0]
+    store = Store(settings.db_path, settings.page_store)
+    async with client_for(create_app(store=store, settings=settings)) as client:
+        await client.create_job("SYNTH2", dpr=1, pipeline_version="wp1")
+        await client.upload_screen(screen(page.png, seq=0))
+        before = await client.status()
+        assert (before.readings, before.gaps) == (0, 0)
+
+        await client._client.post(
+            f"/v2/jobs/{client.job_id}/read", headers={PROTOCOL_HEADER: PROTOCOL_VERSION}
+        )
+        after = await client.status()
+        assert after.readings > 0
+        assert after.gaps == 0, "a clean synthetic page has no unplaceable ink"

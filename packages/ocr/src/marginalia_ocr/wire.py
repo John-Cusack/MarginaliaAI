@@ -118,6 +118,10 @@ class JobStatus(Wire):
     asin: str
     state: State
     captures_committed: int
+    # What the reader stage has produced so far: region readings stored, and the
+    # ink no region could account for. Counts, never text.
+    readings: int = 0
+    gaps: int = 0
     pages_marked: int = 0
     pages_gapped: int = 0
     last_committed_position: int | None = None

@@ -96,6 +96,8 @@ def _status(store: Store, job_id: str) -> JobStatus:
         asin=row["asin"],
         state=row["state"],
         captures_committed=sum(1 for capture in captures if not capture.discarded),
+        readings=len(store.readings(job_id)),
+        gaps=len(store.gaps(job_id)),
         last_committed_position=store.last_committed_seq(job_id),
         # The first image that will go, not the time of asking: a resume
         # decision reads this.
