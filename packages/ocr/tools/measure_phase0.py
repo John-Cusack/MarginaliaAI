@@ -1068,6 +1068,7 @@ def main(argv: list[str] | None = None) -> int:
                             head_words=[word for region in screen.chrome for word in region.text.split()],
                         ),
                         "vocabulary": checks.unmatched_words(first_page.final, vocabulary, dictionary),
+                        "split": checks.split_unknown(first_page.final, vocabulary),
                     }
 
                     def skip(error, spans=spans, words_to_line=words_to_line, failed=failed, check_spans=check_spans):

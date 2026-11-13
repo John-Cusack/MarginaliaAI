@@ -160,11 +160,38 @@ def build_pipeline_set(
     errors = agreed_errors(truth, readings, minimum=minimum)
     if skip is not None:
         errors = tuple(error for error in errors if not skip(error))
+    # A join is not a deletion: the readers *did* produce text there, fused with
+    # its neighbour. Storing it as a deletion left the candidate with a run of
+    # spaces and nothing for a check to flag — which is why 288 joins survived the
+    # vocabulary check. The pair is emitted as the fused token instead.
+    joined: set[int] = set()
+    for error in errors:
+        if error.kind == "agreed_join" and error.word_index > 0:
+            joined.add(error.word_index)
     truth_words = words_of(truth)
     emitter = _Emitter(truth)
     recorded: list[PlantedError] = []
     by_index = {error.word_index: error for error in errors}
     for index, word in enumerate(truth_words):
+        if index in joined:
+            # The absorber already carried this word's letters.
+            continue
+        fused = index + 1 in joined
+        if fused:
+            start, end = emitter.emit_token(word, word.text + truth_words[index + 1].text, keep_cursor=False)
+            recorded.append(
+                PlantedError(
+                    "agreed_join",
+                    start,
+                    end,
+                    word.text + truth_words[index + 1].text,
+                    word.start,
+                    truth_words[index + 1].end,
+                    f"{word.text} {truth_words[index + 1].text}",
+                    "readers agreed on one fused word for two",
+                )
+            )
+            continue
         error = by_index.get(index)
         if error is None:
             emitter.emit_token(word, word.text)

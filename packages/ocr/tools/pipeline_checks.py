@@ -180,6 +180,32 @@ def running_head_word(text: str, *, head_words: Sequence[str]) -> tuple[tuple[in
     return tuple(spans)
 
 
+def split_unknown(
+    text: str, vocabulary: frozenset[str], *, minimum: int = 3
+) -> tuple[tuple[int, int], ...]:
+    """Spans of unknown tokens that split into two words the book knows.
+
+    The fused token a tight-kern join produces (``ofthe``) is not a dictionary
+    word and the vocabulary check already flags it; this says *why*, and it also
+    catches the case that check misses — a fusion that happens to be spelled like
+    another word. The halves must be vocabulary words of at least ``minimum``
+    letters, so a lucky two-letter coincidence cannot flag a real word.
+
+    It never corrects anything: the token is marked, not rewritten.
+    """
+    spans: list[tuple[int, int]] = []
+    for match in WORD.finditer(text):
+        token = match.group(0).casefold()
+        if token in vocabulary:
+            continue
+        for cut in range(minimum, len(token) - minimum + 1):
+            head, tail = token[:cut], token[cut:]
+            if head in vocabulary and tail in vocabulary:
+                spans.append((match.start(), match.end()))
+                break
+    return tuple(spans)
+
+
 def system_dictionary(path: str = "/usr/share/dict/words") -> frozenset[str] | None:
     """A dictionary when the machine has one, case-folded. Optional by design."""
     from pathlib import Path
