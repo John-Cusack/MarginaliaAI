@@ -56,6 +56,12 @@ jobs:
       - name: In-tree pack tests
         run: uv run pytest packages/plugins -q
 
+      # The OCR service's tests were outside `testpaths` and outside this file,
+      # so they ran only when someone typed the path by hand. WP1's "done when"
+      # is that they pass in CI, which needs them named here.
+      - name: OCR service tests
+        run: uv run pytest packages/ocr/tests -q
+
 # Integration tests are deliberately absent. They run against a populated
 # corpus via `load_settings().db_url` and take ~19 minutes, most of it in
 # checks that scan every passage — so against the empty database a service
