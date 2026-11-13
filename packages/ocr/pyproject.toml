@@ -16,6 +16,10 @@ dependencies = [
 server = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    # The page upload is multipart: FastAPI's Form/File raise at request time
+    # without it, which is how the first deploy of this service failed to start
+    # under systemd with an otherwise complete venv.
+    "python-multipart>=0.0.9",
     "pytesseract>=0.3",
     # The region inventory works on pixels: connected components, projections and
     # the gutter. The client half stays light (httpx, pillow, pydantic), because

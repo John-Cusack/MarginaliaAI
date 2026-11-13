@@ -127,3 +127,18 @@ def test_the_service_does_not_take_a_port_another_service_is_using():
     assert port, "no port in ExecStart"
     assert port.group(1) == str(DEFAULT_PORT)
     assert port.group(1) not in {"9882", "9883"}
+
+
+def test_the_server_extra_declares_the_multipart_parser():
+    """FastAPI's Form/File need python-multipart at *request* time, not import time.
+
+    So a missing declaration survives every import test and every route-building
+    test, and only fails when the first upload arrives. It did: the first deploy
+    of this service under systemd died on startup with RuntimeError: Form data
+    requires "python-multipart", in a venv built from exactly these extras.
+    """
+    import tomllib
+
+    extra = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    requirements = extra["project"]["optional-dependencies"]["server"]
+    assert any(requirement.startswith("python-multipart") for requirement in requirements), requirements
