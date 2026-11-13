@@ -24,7 +24,7 @@ from ocr_synth.metrics import (
     score_page,
     tail_probability,
 )
-from ocr_synth.seeded_errors import build_seeded
+from ocr_synth.seeded_errors import PlantedError, SeededText, build_seeded
 
 PAGE = "\n\n".join((T.PROSE[1], T.PROSE[2]))
 
@@ -238,3 +238,76 @@ def test_a_partial_auditor_is_bounded_by_what_it_caught():
     assert set(result.by_kind) == {"real_word", "digit", "omission", "insertion", "punctuation", "order"}
     assert result.by_kind["real_word"] == (3, 3)
     assert result.by_kind["digit"][1] == 0
+
+
+def _one_seeded_page() -> SeededText:
+    """Truth 'the form of it', candidate 'the farm of it': one substitution."""
+    final = "the farm of it"
+    return SeededText(
+        truth="the form of it",
+        final=final,
+        errors=(
+            PlantedError(
+                kind="real_word",
+                final_start=4,
+                final_end=8,
+                final_text="farm",
+                truth_start=4,
+                truth_end=8,
+                truth_text="form",
+                note="planted",
+            ),
+        ),
+    )
+
+
+def test_a_detection_must_read_the_truth_to_count_as_one():
+    """Design 7.4, not span overlap: overlap alone is satisfied by noise.
+
+    An auditor that reports one difference covering the whole page overlaps every
+    planted span. Under overlap-only scoring it scores 1.0 and passes a gate it has
+    learned nothing about; under the strict definition it must read the truth at
+    the span, and this one reads the candidate back, so it finds nothing.
+    """
+    page = _one_seeded_page()
+
+    def reports_everything(_page):
+        return [Detection(0, len(_page.final), snippet=_page.final[:20], reading=_page.final)]
+
+    loose = audit_sensitivity("pathological", [page], reports_everything)
+    assert (loose.planted, loose.detected) == (1, 1), "overlap alone is trivially satisfied"
+
+    strict = audit_sensitivity("pathological", [page], reports_everything, strict=True)
+    assert (strict.planted, strict.detected) == (1, 0), "it never reads the truth"
+    assert strict.lower == 0.0
+
+
+def test_a_detection_that_reads_the_truth_counts_under_the_strict_definition():
+    page = _one_seeded_page()
+
+    def reads_the_truth(_page):
+        return [Detection(4, 8, snippet="form", reading="form")]
+
+    strict = audit_sensitivity("honest", [page], reads_the_truth, strict=True)
+    assert (strict.planted, strict.detected) == (1, 1)
+
+    def reads_something_else(_page):
+        return [Detection(4, 8, snippet="firm", reading="firm")]
+
+    other = audit_sensitivity("misread", [page], reads_something_else, strict=True)
+    assert other.detected == 0, "a difference at the span is not a finding of the error"
+
+
+def test_the_strict_definition_normalizes_the_reading_the_way_the_aligner_does():
+    """NFC, ligatures expanded, whitespace collapsed; case and punctuation matter."""
+    page = _one_seeded_page()
+
+    spaced = audit_sensitivity(
+        "spaced", [page], lambda _p: [Detection(4, 8, reading="  form  ")], strict=True
+    )
+    assert spaced.detected == 1, "whitespace is collapsed by the normalization"
+
+    cased = audit_sensitivity(
+        "cased", [page], lambda _p: [Detection(4, 8, reading="Form")], strict=True
+    )
+    assert cased.detected == 0, "case is significant in 7.4, so 'Form' is not the truth 'form'"

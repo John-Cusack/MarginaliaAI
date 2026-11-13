@@ -437,6 +437,10 @@ class Detection:
     final_end: int
     snippet: str = ""
     confidence: float | None = None
+    # What the auditor says is there, as it read it. A strict detection needs it:
+    # a difference that merely overlaps the planted span is satisfied by an
+    # auditor that reports everything, so the reading itself is the measurement.
+    reading: str = ""
 
     @property
     def span(self) -> Interval:
@@ -477,8 +481,14 @@ def audit_sensitivity(
     seeded: Sequence[SeededText],
     detect: Callable[[SeededText], Sequence[Detection]],
     alpha: float = 0.05,
+    strict: bool = False,
 ) -> SensitivityResult:
-    """Measure one audit reader's sensitivity on a predeclared seeded set."""
+    """Measure one audit reader's sensitivity on a predeclared seeded set.
+
+    ``strict`` is the definition design 7.4 implies: a detection is a difference
+    at the span that *reads the truth there*, after the same normalization the
+    aligner uses (NFC, ligatures expanded, whitespace collapsed).
+    """
     planted = 0
     detected = 0
     misses: list[PlantedError] = []
@@ -489,6 +499,18 @@ def audit_sensitivity(
         for error in page.errors:
             planted += 1
             hit = overlaps(spans, error.final_span)
+            if strict and hit:
+                # Design 7.4: a difference counts as finding the error only if the
+                # auditor reads the truth there, compared after the aligner's own
+                # normalization. Overlap alone is satisfied by reporting the whole
+                # page, which is how a pathological auditor scored 1.0.
+                wanted = normalize(error.truth_text)
+                hit = any(
+                    overlaps([detection.span], error.final_span)
+                    and detection.reading
+                    and normalize(detection.reading) == wanted
+                    for detection in detections
+                )
             detected += 1 if hit else 0
             if not hit:
                 misses.append(error)

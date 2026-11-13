@@ -301,11 +301,20 @@ def diff_auditor(readings: dict[str, str]) -> Callable[[Screen, SeededText], lis
     def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
         reading = readings[screen.screen_id]
         return [
-            metrics.Detection(edit.final_start, edit.final_end, snippet=edit.final_text[:20])
+            metrics.Detection(
+                edit.final_start, edit.final_end, snippet=edit.final_text[:20], reading=edit.truth_text
+            )
             for edit in metrics.classify_errors(reading, page.final)
         ]
 
     return audit
+
+
+# What each auditor read, per screen, in candidate coordinates. The consensus
+# measurement needs the reading itself, not just where a difference was; this is
+# how an auditor that answers region by region (Claude) can be compared with one
+# that answers with a transcript (a local VLM).
+AUDITOR_READINGS: dict[str, list[tuple[int, int, str]]] = {}
 
 
 def sensitivity_report(
@@ -314,6 +323,7 @@ def sensitivity_report(
     auditor: Callable[[Screen, SeededText], list[metrics.Detection]],
     counts: dict[str, int] | None = None,
     seeded: Sequence[SeededText] | None = None,
+    strict: bool = False,
 ) -> dict[str, object]:
     """Measure one auditor over a seeded set drawn from this screen set.
 
@@ -329,7 +339,9 @@ def sensitivity_report(
     if seeded is None:
         seeded = build_seeded(usable, counts)
     lookup = {id(page): screen for screen, page in zip(usable, seeded, strict=True)}
-    result = metrics.audit_sensitivity(name, seeded, lambda page: auditor(lookup[id(page)], page))
+    result = metrics.audit_sensitivity(
+        name, seeded, lambda page: auditor(lookup[id(page)], page), strict=strict
+    )
     return {
         "reader": name,
         "is_measurement": True,
@@ -339,6 +351,7 @@ def sensitivity_report(
         "sensitivity": round(result.sensitivity, 4),
         "lower": round(result.lower, 4),
         "by_kind": {kind: list(counts) for kind, counts in sorted(result.by_kind.items())},
+        "strict": strict,
         "seeded_reverts_to_truth": all(revert(page) == page.truth for page in seeded),
         "skipped_screens": len(screens) - len(usable),
     }
@@ -603,9 +616,13 @@ def region_auditor(images: dict[str, Path], model: str | None, directory: Path):
                             final_start=span[0],
                             final_end=span[1],
                             snippet=difference.snippet[:20],
+                            reading=difference.reading or "",
                         )
                     )
                     readings[screen.screen_id][span] = difference.reading or difference.snippet
+                    AUDITOR_READINGS.setdefault(screen.screen_id, []).append(
+                        (span[0], span[1], difference.reading or "")
+                    )
         return detections
 
     audit.readings = readings  # type: ignore[attr-defined]
@@ -627,6 +644,12 @@ def claude_auditor(images: dict[str, Path], model: str | None):
             for difference in result.differences
             if difference.located
         }
+        AUDITOR_READINGS.setdefault(screen.screen_id, [])
+        for difference in result.differences:
+            if difference.located:
+                AUDITOR_READINGS[screen.screen_id].append(
+                    (difference.final_start or 0, difference.final_end or 0, difference.reading or "")
+                )
         ledger.append(
             {
                 "screen": screen.screen_id,
@@ -702,8 +725,12 @@ def transcriber_auditor(readings: dict[str, str], name: str):
     """
 
     def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
+        # classify_errors(truth=reading, final=page.final): the detection's span is
+        # in candidate coordinates and edit.truth_text is what the auditor read.
         return [
-            metrics.Detection(edit.final_start, edit.final_end, snippet=edit.final_text[:20])
+            metrics.Detection(
+                edit.final_start, edit.final_end, snippet=edit.final_text[:20], reading=edit.truth_text
+            )
             for edit in metrics.classify_errors(readings[screen.screen_id], page.final)
         ]
 
@@ -767,6 +794,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="JSON of {screen_id: text} read elsewhere (e.g. the VLM on the GPU host)",
     )
     parser.add_argument("--kinds", default=None, help="comma-separated layout classes")
+    parser.add_argument(
+        "--save-auditor-readings",
+        default=None,
+        help="write the auditor's per-screen differences as [{start, end, reading}] JSON",
+    )
+    parser.add_argument(
+        "--strict-detection",
+        action="store_true",
+        help="a detection must read the truth at the span (design 7.4 normalization), "
+        "not merely overlap it",
+    )
     parser.add_argument(
         "--degrade",
         default=None,
@@ -1152,6 +1190,7 @@ def main(argv: list[str] | None = None) -> int:
                     label + " on the readers' agreed errors",
                     auditor,
                     seeded=seeded_pages,
+                    strict=args.strict_detection,
                 )
                 sensitivity["agreed_errors"] = sum(len(errors) for _, _, errors in built)
                 sensitivity["agreed_by_kind"] = {
@@ -1233,10 +1272,26 @@ def main(argv: list[str] | None = None) -> int:
             sensitivity["ledger"] = ledger
     elif args.audit == "transcriber":
         label = f"{args.reader} as transcriber (diff against the candidate text)"
-        sensitivity = sensitivity_report(screens, label, transcriber_auditor(readings, label), counts=SYNTHETIC_COUNTS)
+        sensitivity = sensitivity_report(
+            screens,
+            label,
+            transcriber_auditor(readings, label),
+            counts=SYNTHETIC_COUNTS,
+            strict=args.strict_detection,
+        )
 
     if args.save_readings:
         Path(args.save_readings).write_text(json.dumps(readings, indent=2), encoding="utf-8")
+    if args.save_auditor_readings:
+        Path(args.save_auditor_readings).write_text(
+            json.dumps(
+                {
+                    screen: [{"start": s, "end": e, "reading": r} for s, e, r in entries]
+                    for screen, entries in sorted(AUDITOR_READINGS.items())
+                },
+                indent=1,
+            )
+        )
     document = build_report(
         rows,
         sensitivity,
