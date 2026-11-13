@@ -327,6 +327,24 @@ An auditor that fails `s_L ≥ 0.5` on the pipeline-shaped set does not meet the
 gate, however well it does on planted errors: the errors a three-reader confirm
 step lets through are exactly the ones this set contains.
 
+The population the bound is taken over is the agreed errors that also survive the
+**independent checks** the design already plans (WP2): a span a dictionary or
+book-vocabulary check would mark is marked in production, so it is not an
+unmarked error and does not belong in `s_L`. Until WP2 exists, a book-vocabulary
+check stands in for it and is named in every report. Two classes are reported
+separately rather than folded in:
+
+- **case-only differences** (every reader answering the same word in the other
+  case) are their own class and are kept out of `s_L`; the case policy is an open
+  operator decision (2026-11-12), and this document's gate is not changed by it;
+- **errors the checks catch**, with their count, so the size of the population an
+  auditor is actually judged on is visible.
+
+Table screens are audited cell by cell (`--audit cells`): the candidate is the
+cell grid as labelled plain cell text, not the Markdown no reader produces, and
+the auditor reports differences per cell. That mode has its own `s_L`, measured
+on the synthetic table pages.
+
 ### 9.4 Per-book rule (predeclared, no extensions)
 
 - Sample **n = 60 screens** from the book's own captures, before reading the

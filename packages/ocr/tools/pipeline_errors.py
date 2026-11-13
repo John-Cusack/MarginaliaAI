@@ -22,6 +22,9 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 from ocr_synth.seeded_errors import PlantedError, SeededText, _Emitter, _Word, words_of
 
 if TYPE_CHECKING:
@@ -95,7 +98,15 @@ def agreed_errors(
         if not winners:
             continue
         text, names = max(winners, key=lambda item: len(item[1]))
-        kind = "agreed_omission" if text == "" else "agreed_substitution"
+        if text == "":
+            kind = "agreed_omission"
+        elif text.casefold() == word.text.casefold():
+            # Every reader answered the same word in the other case. It is a real
+            # error against the canonical text and its own class: the case policy
+            # is an operator decision, so it is counted and kept out of s_L.
+            kind = "agreed_case"
+        else:
+            kind = "agreed_substitution"
         agreed.append(
             AgreedError(
                 word_index=index,
@@ -113,14 +124,23 @@ def build_pipeline_set(
     readings: Mapping[str, str],
     *,
     minimum: int | None = None,
+    skip: Callable[[AgreedError], bool] | None = None,
 ) -> tuple[SeededText, tuple[AgreedError, ...]]:
     """The truth with the readers' agreed mistakes in it, as a seeded set.
 
     Built with the same forward emitter the planted sets use, so undoing every
     recorded span reproduces the page — the property that makes a seeded set
     usable for measuring anything at all.
+
+    ``skip`` decides which agreed errors are *planted*: an error the independent
+    checks would have marked anyway is not part of the population an auditor is
+    measured on, and a skipped error is left as the truth so the candidate text
+    is what the pipeline would actually have stored — the marked spans repaired,
+    the unmarked ones wrong.
     """
     errors = agreed_errors(truth, readings, minimum=minimum)
+    if skip is not None:
+        errors = tuple(error for error in errors if not skip(error))
     truth_words = words_of(truth)
     emitter = _Emitter(truth)
     recorded: list[PlantedError] = []

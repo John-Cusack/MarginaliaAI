@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import io
 
-from PIL import Image
-
 from ocr_synth.corpus import build_corpus
 from ocr_synth.degrade import Degrade
+from PIL import Image
 
 KINDS = ("two_column_prose",)
 DEGRADED = Degrade(small_caps=True, light=True, kern=-0.8, blur=0.3)

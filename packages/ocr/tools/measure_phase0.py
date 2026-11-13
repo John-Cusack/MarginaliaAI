@@ -41,7 +41,10 @@ if TYPE_CHECKING:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import claude_adjudicator as adjudicator  # noqa: E402
+import pipeline_checks as checks  # noqa: E402
+from claude_cell_checker import check_cells  # noqa: E402
 from claude_diff_checker import check as claude_check  # noqa: E402
+from ocr_synth import cells as cellmod  # noqa: E402
 from ocr_synth import metrics  # noqa: E402
 from ocr_synth.corpus import Screen, build_corpus  # noqa: E402
 from ocr_synth.degrade import Degrade  # noqa: E402
@@ -469,7 +472,11 @@ def build_report(
                 f"- planted {sensitivity['planted']}, detected {sensitivity['detected']}, "
                 f"sensitivity {sensitivity['sensitivity']}",
                 f"- one-sided 95% lower bound `s_L` = {lower} — gate needs `s_L` >= 0.5",
-                f"- seeded set reverts to the truth: {sensitivity['seeded_reverts_to_truth']}",
+                *(
+                    [f"- seeded set reverts to the truth: {sensitivity['seeded_reverts_to_truth']}"]
+                    if sensitivity.get("seeded_reverts_to_truth") is not None
+                    else []
+                ),
                 f"- screens skipped for lack of seeded material: {sensitivity.get('skipped_screens', 0)}",
                 f"- release bound at n = 60: {'infinite (no positive lower bound)' if bound == float('inf') else f'{bound:.4f}'}",
                 *(
@@ -478,11 +485,27 @@ def build_report(
                     else []
                 ),
                 "",
-                "| planted class | planted | detected |",
-                "|---|---|---|",
+                "",
+                "| class | n | detected | s_L |",
+                "|---|---:|---:|---:|",
             ]
             for kind, counts in sensitivity["by_kind"].items():  # type: ignore[union-attr]
-                lines.append(f"| {kind} | {counts[0]} | {counts[1]} |")
+                lower_kind = metrics.clopper_pearson_lower(int(counts[1]), int(counts[0]))
+                lines.append(f"| {kind} | {counts[0]} | {counts[1]} | {lower_kind:.4f} |")
+            if sensitivity.get("mode") == "per-cell":
+                lines.append(
+                    f"- mode: cell by cell, {sensitivity.get('pages')} table screens, "
+                    f"false cells {sensitivity.get('false_cells', 0)}"
+                )
+            if sensitivity.get("excluded_by_reason"):
+                excluded = sensitivity["excluded_by_reason"]
+                lines += [
+                    "",
+                    "- kept out of `s_L`: "
+                    + ", ".join(f"{count} {reason}" for reason, count in sorted(excluded.items())),  # type: ignore[union-attr]
+                ]
+            if sensitivity.get("independent_checks"):
+                lines.append(f"- independent checks: {sensitivity['independent_checks']}")
     return "\n".join(lines) + "\n"
 
 
@@ -662,7 +685,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--audit",
         default=None,
-        choices=("machinery", "stand-in", "claude", "transcriber", "pipeline", "clean"),
+        choices=("machinery", "stand-in", "claude", "transcriber", "pipeline", "clean", "cells"),
         help="machinery/stand-in are scoring-code self-checks; claude measures the real audit reader",
     )
     parser.add_argument("--claude-model", default=None, help="model id for the claude audit reader")
@@ -678,10 +701,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--pages", default=None, help="how many screens the claude audit reads")
     parser.add_argument(
+        "--no-pipeline-checks",
+        action="store_true",
+        help="measure over every agreed error, ignoring what the independent checks would mark",
+    )
+    parser.add_argument(
         "--adjudicate",
         action="store_true",
         help="a difference counts as a detection only after a second, independent look (D1(b))",
     )
+    parser.add_argument(
+        "--cells-per-table", type=int, default=3, help="planted errors per table screen"
+    )
+    parser.add_argument("--cells-seed", type=int, default=1729, help="seeded cell planting")
     parser.add_argument(
         "--adjudicate-seed",
         type=int,
@@ -742,7 +774,7 @@ def main(argv: list[str] | None = None) -> int:
     # An auditor's run names a label, not a local reader: with --external the
     # readings come from a file, and the pipeline and clean audits read nothing
     # locally at all (their readings arrive via --readings-json).
-    label_only = external is not None or args.audit in {"pipeline", "clean"}
+    label_only = external is not None or args.audit in {"pipeline", "clean", "cells"}
     reader = (lambda image: "") if label_only else reader_for(args.reader)
     rows: list[dict[str, object]] = []
     readings: dict[str, str] = {}
@@ -791,6 +823,61 @@ def main(argv: list[str] | None = None) -> int:
             sensitivity = sensitivity_report(selected, "claude (headless, diff-only)", auditor, counts=SYNTHETIC_COUNTS)
             sensitivity["cost_usd"] = round(sum(float(entry["cost_usd"] or 0) for entry in ledger), 4)
             sensitivity["ledger"] = ledger
+    elif args.audit == "cells":
+        import tempfile
+
+        # Tables are audited the way they are read: cell by cell, against the
+        # image, with the candidate grid as labelled plain cell text rather than
+        # as the Markdown no reader produces.
+        selected = [screen for screen in screens if any(region.kind == "table" for region in screen.regions)]
+        if not selected:
+            raise SystemExit("no table screens in this set; pass --kinds table_page,table_continuation")
+        rng = random.Random(args.cells_seed)
+        planted_total = detected_total = 0
+        false_cells = 0
+        ledger: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as directory:
+            for screen in selected:
+                cells = cellmod.table_cells(screen.regions)
+                grid, planted = cellmod.plant_cells(cells, per_table=int(args.cells_per_table), rng=rng)
+                path = Path(directory) / f"{screen.screen_id}.png"
+                path.write_bytes(screen.png)
+                result = check_cells(path, grid, model=args.claude_model)
+                reported = {(difference.row, difference.col) for difference in result.differences}
+                known = {(row, col) for row, col, _ in cells}
+                planted_total += len(planted)
+                detected_total += sum(1 for cell in planted if cell in reported)
+                false_cells += sum(1 for cell in reported if cell in known and cell not in planted)
+                ledger.append(
+                    {
+                        "screen": screen.screen_id,
+                        "cells": len(cells),
+                        "planted": len(planted),
+                        "reported": len(result.differences),
+                        "rejected": result.rejected,
+                        "words_returned": result.raw_word_count,
+                        "seconds": round(result.seconds, 2),
+                        "cost_usd": result.cost_usd,
+                    }
+                )
+        sensitivity = {
+            "reader": "claude (headless, diff-only, cell by cell)",
+            "is_measurement": True,
+            "pages": len(selected),
+            "planted": planted_total,
+            "detected": detected_total,
+            "sensitivity": round(detected_total / planted_total, 4) if planted_total else 0.0,
+            "lower": round(metrics.clopper_pearson_lower(detected_total, planted_total), 4),
+            "by_kind": {"cell": [planted_total, detected_total]},
+            # Detection here is per cell, so there is no span set to revert; the
+            # claim would be vacuous rather than true.
+            "seeded_reverts_to_truth": None,
+            "skipped_screens": 0,
+            "mode": "per-cell",
+            "false_cells": false_cells,
+            "cost_usd": round(sum(float(entry["cost_usd"] or 0) for entry in ledger), 4),
+            "ledger": ledger,
+        }
     elif args.audit == "machinery":
         sensitivity = sensitivity_report(screens, "machinery (planted spans by construction)", oracle_auditor)
     elif args.audit == "stand-in":
@@ -828,6 +915,13 @@ def main(argv: list[str] | None = None) -> int:
                             f"skipping {len(skipped)} screen(s) whose canonical text is derived: "
                             f"{sorted({s.kind for s in skipped})}"
                         )
+                # The population an auditor is measured on is the errors the
+                # readers agreed on AND the independent checks would not have
+                # marked: a span the checks catch is marked in production, and
+                # this measurement is about unmarked errors.
+                vocabulary = checks.book_vocabulary([screen.truth_text for screen in screens])
+                dictionary = checks.system_dictionary()
+                excluded: dict[str, int] = {}
                 built = []
                 for screen in screens:
                     readings = {
@@ -839,8 +933,31 @@ def main(argv: list[str] | None = None) -> int:
                         readings["vlm"] = readings.pop(args.reader)
                     if len(readings) < 2:
                         continue
+                    minimum = int(args.pipeline_minimum)
+                    if args.no_pipeline_checks:
+                        seeded_page, errors = build_pipeline_set(
+                            screen.truth_text, readings, minimum=minimum
+                        )
+                        built.append((screen, seeded_page, errors))
+                        continue
+                    first_page, first_errors = build_pipeline_set(
+                        screen.truth_text, readings, minimum=minimum
+                    )
+                    spans = {error.word_index: page_error.final_span for error, page_error in zip(first_errors, first_page.errors, strict=True)}
+                    unmatched = checks.unmatched_words(first_page.final, vocabulary, dictionary)
+
+                    def skip(error, spans=spans, unmatched=unmatched):
+                        if error.kind == "agreed_case":
+                            reason = "case"
+                        elif checks.catches(unmatched, spans[error.word_index]):
+                            reason = "independent_check"
+                        else:
+                            return False
+                        excluded[reason] = excluded.get(reason, 0) + 1
+                        return True
+
                     seeded_page, errors = build_pipeline_set(
-                        screen.truth_text, readings, minimum=int(args.pipeline_minimum)
+                        screen.truth_text, readings, minimum=minimum, skip=skip
                     )
                     built.append((screen, seeded_page, errors))
                 if not built:
@@ -889,6 +1006,19 @@ def main(argv: list[str] | None = None) -> int:
                 }
                 sensitivity["readers"] = sorted(extra)
                 sensitivity["minimum_agreement"] = int(args.pipeline_minimum)
+                sensitivity["excluded_by_reason"] = dict(sorted(excluded.items()))
+                sensitivity["independent_checks"] = (
+                    "off" if args.no_pipeline_checks else f"book vocabulary ({len(vocabulary)} words)"
+                    + (", system dictionary" if dictionary else "")
+                )
+                sensitivity["by_class"] = {
+                    kind: {
+                        "n": planted,
+                        "detected": caught,
+                        "s_L": round(metrics.clopper_pearson_lower(caught, planted), 4),
+                    }
+                    for kind, (planted, caught) in sorted(sensitivity.get("by_kind", {}).items())
+                }
             else:
                 # Every difference reported against the exact truth is a false
                 # alarm: there is no error on the page to have found.
