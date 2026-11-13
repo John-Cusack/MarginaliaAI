@@ -553,6 +553,9 @@ def region_offsets(screen: Screen, page: SeededText) -> list[tuple[tuple[float, 
 
 
 def region_auditor(images: dict[str, Path], model: str | None, directory: Path):
+    # The auditor's own reading per place, in the screen's candidate coordinates.
+    # Without it the adjudication step has one reading instead of two and cannot
+    # adjudicate anything; that is what turned every detection into a drop.
     """The audit pass, one region at a time, as §9.2 prescribes.
 
     A whole 3x page is a lot of text to compare at once; the design audits region
@@ -560,11 +563,13 @@ def region_auditor(images: dict[str, Path], model: str | None, directory: Path):
     detections come back in the screen's candidate coordinates.
     """
     ledger: list[dict[str, object]] = []
+    readings: dict[str, dict[tuple[int, int], str]] = {}
 
     def audit(screen: Screen, page: SeededText) -> list[metrics.Detection]:
         from PIL import Image
 
         detections: list[metrics.Detection] = []
+        readings[screen.screen_id] = {}
         with Image.open(images[screen.screen_id]) as page_image:
             for index, (box, start, end) in enumerate(region_offsets(screen, page)):
                 text = page.final[start:end]
@@ -582,6 +587,9 @@ def region_auditor(images: dict[str, Path], model: str | None, directory: Path):
                         "region": index,
                         "rejected": result.rejected,
                         "differences": len(result.differences),
+                        "downgraded": sum(
+                            1 for difference in result.differences if difference.downgraded
+                        ),
                         "words_returned": result.raw_word_count,
                         "cost_usd": result.cost_usd,
                     }
@@ -589,15 +597,18 @@ def region_auditor(images: dict[str, Path], model: str | None, directory: Path):
                 for difference in result.differences:
                     if not difference.located:
                         continue
+                    span = (start + (difference.final_start or 0), start + (difference.final_end or 0))
                     detections.append(
                         metrics.Detection(
-                            final_start=start + (difference.final_start or 0),
-                            final_end=start + (difference.final_end or 0),
+                            final_start=span[0],
+                            final_end=span[1],
                             snippet=difference.snippet[:20],
                         )
                     )
+                    readings[screen.screen_id][span] = difference.reading or difference.snippet
         return detections
 
+    audit.readings = readings  # type: ignore[attr-defined]
     return audit, ledger
 
 
@@ -621,6 +632,7 @@ def claude_auditor(images: dict[str, Path], model: str | None):
                 "screen": screen.screen_id,
                 "rejected": result.rejected,
                 "differences": len(result.differences),
+                "downgraded": sum(1 for difference in result.differences if difference.downgraded),
                 "unplaced": sum(1 for difference in result.differences if not difference.located),
                 "words_returned": result.raw_word_count,
                 "attempts": result.attempts,
@@ -1135,6 +1147,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 # A rejected reply is a miss in this measurement, never agreement.
                 sensitivity["rejected_replies"] = sum(1 for entry in ledger if entry.get("rejected"))
+                sensitivity["downgraded_differences"] = sum(
+                    int(entry.get("downgraded") or 0) for entry in ledger
+                )
                 sensitivity["reask_attempts"] = sum(int(entry.get("attempts") or 1) for entry in ledger)
                 sensitivity["cost_per_screen_usd"] = round(
                     float(sensitivity["cost_usd"]) / max(1, len(built)), 4

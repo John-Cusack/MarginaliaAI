@@ -91,10 +91,12 @@ unambiguous) and `reading` (what the image actually shows there). Both are at \
 most 8 words. Never longer.
 - Do not transcribe the page. Do not summarise it. Do not quote more than 8 \
 consecutive words of it anywhere in your answer.
-- If a place differs so much that eight words cannot describe it, report it as \
-`{{"lines": [start, end], "kind": "differs_extensively"}}` — the character range \
-in the candidate text that differs, and no reading at all. Use it only when a \
-reading would run past eight words.
+- **If your reading of a place would run past eight words, you MUST use the \
+location-only form**: `{{"lines": [start, end], "kind": "differs_extensively"}}`, \
+the character range in the candidate text that differs, and no reading at all. A \
+reading longer than eight words is discarded and the difference is recorded from \
+its location, so the form costs you nothing and costs the answer nothing. Use the \
+reading form whenever eight words or fewer can describe the place.
 - If the image and the candidate agree, return an empty list.
 - Return only the JSON object the schema describes. No prose.
 
@@ -114,6 +116,9 @@ class Difference:
     confidence: float | None = None
     final_start: int | None = None
     final_end: int | None = None
+    # True when this difference arrived as a reading over the eight-word cap and
+    # was reduced to its location. The reading's text is not kept anywhere.
+    downgraded: bool = False
 
     @property
     def located(self) -> bool:
@@ -181,15 +186,26 @@ def validate(payload: object, candidate_length: int | None = None) -> tuple[Diff
         snippet, reading = entry.get("snippet"), entry.get("reading")
         if not isinstance(snippet, str) or not isinstance(reading, str):
             raise ResponseRejected("a difference needs string 'snippet' and 'reading'")
-        for label, value in (("snippet", snippet), ("reading", reading)):
-            if len(words(value)) > MAX_SNIPPET_WORDS:
-                raise ResponseRejected(f"{label} runs past {MAX_SNIPPET_WORDS} words")
+        if len(words(snippet)) > MAX_SNIPPET_WORDS:
+            # The snippet is the *location* of the difference; without a usable
+            # one there is nothing to place, so this is structural.
+            raise ResponseRejected(f"snippet runs past {MAX_SNIPPET_WORDS} words")
+        downgraded = False
+        if len(words(reading)) > MAX_SNIPPET_WORDS:
+            # The reading is the image side, and the operator's rule: an
+            # individual reading over the cap is downgraded to a location-only
+            # difference. Its location is the snippet's place in the candidate;
+            # the over-long text is discarded here and never stored, logged or
+            # scored. The rest of the reply stays valid.
+            reading = ""
+            downgraded = True
         confidence = entry.get("confidence")
         out.append(
             Difference(
                 snippet=snippet,
                 reading=reading,
                 confidence=float(confidence) if isinstance(confidence, (int, float)) else None,
+                downgraded=downgraded,
             )
         )
     return tuple(out)
@@ -218,7 +234,12 @@ def _text_volume(payload: object) -> int:
     total = 0
     for entry in payload["differences"]:
         if isinstance(entry, dict):
-            total += len(words(str(entry.get("snippet", "")))) + len(words(str(entry.get("reading", ""))))
+            # Volume of what is *kept*: a downgraded reading is not stored, so it
+            # is not counted either.
+            total += len(words(str(entry.get("snippet", ""))))
+            reading_words = words(str(entry.get("reading", "")))
+            if len(reading_words) <= MAX_SNIPPET_WORDS:
+                total += len(reading_words)
     return total
 
 

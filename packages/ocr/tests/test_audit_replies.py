@@ -39,10 +39,30 @@ def test_a_bad_location_is_rejected(lines):
         checker.validate(payload, candidate_length=100)
 
 
-def test_the_eight_word_cap_still_applies_to_readings():
+def test_an_over_long_snippet_is_structural_and_rejected():
+    """The snippet *is* the location; without a usable one there is nothing to place."""
     payload = {"differences": [{"snippet": " ".join(["w"] * 9), "reading": "x"}]}
     with pytest.raises(checker.ResponseRejected):
         checker.validate(payload, candidate_length=100)
+
+
+def test_an_over_long_reading_is_downgraded_not_rejected():
+    """The operator's rule: discard the text, keep the location, keep the reply.
+
+    No over-long text is stored, logged or scored, so the cap is not loosened —
+    the difference simply arrives as a location instead of a reading.
+    """
+    payload = {
+        "differences": [
+            {"snippet": "the debt was", "reading": " ".join(["w"] * 12)},
+            {"snippet": "short one", "reading": "brief one"},
+        ]
+    }
+    first, second = checker.validate(payload, candidate_length=100)
+    assert first.downgraded is True
+    assert first.reading == "", "the over-long reading is discarded"
+    assert first.snippet == "the debt was", "its location is kept"
+    assert second.downgraded is False and second.reading == "brief one"
 
 
 def _stub(monkeypatch, replies: list[str]):
