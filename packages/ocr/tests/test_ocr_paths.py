@@ -111,3 +111,19 @@ def test_uvicorn_is_told_the_app_is_a_factory():
     """uvicorn guesses, noisily, and a guess is not a contract."""
     text = SERVICE_UNIT.read_text()
     assert "uvicorn --factory marginalia_ocr.server.app:app_from_env" in text
+
+
+def test_the_service_does_not_take_a_port_another_service_is_using():
+    """9882 is marginalia-embed, 9883 is the v1 Kindle OCR service.
+
+    Both are other people's processes on the same host, and one of them is
+    running. A careless edit here would collide at the first bind.
+    """
+    from marginalia_ocr.server.paths import DEFAULT_PORT
+
+    assert DEFAULT_PORT not in {9882, 9883}
+    text = SERVICE_UNIT.read_text()
+    port = re.search(r"--port (\d+)", text)
+    assert port, "no port in ExecStart"
+    assert port.group(1) == str(DEFAULT_PORT)
+    assert port.group(1) not in {"9882", "9883"}

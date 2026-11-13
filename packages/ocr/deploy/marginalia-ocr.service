@@ -25,10 +25,14 @@ Wants=network-online.target
 # Loopback only, and no auth, because the pack reaches it through an `ssh -L`
 # tunnel from the laptop; a page store has no business on a public interface.
 #
+# The port is 9884: 9882 is marginalia-embed and 9883 is the v1 Kindle OCR
+# service, which is running and off-limits. A test pins this so the three cannot
+# collide by a careless edit.
+#
 # The interpreter is a checkout of this branch with its own venv, never the
 # MarginaliaAI venv: marginalia-embed runs from that one and changing it is
 # off-limits without John. A test pins this path so it cannot drift silently.
-ExecStart=/home/john/repos/marginalia-ocr-wp1/.venv/bin/uvicorn --factory marginalia_ocr.server.app:app_from_env --host 127.0.0.1 --port 9883
+ExecStart=/home/john/repos/marginalia-ocr-wp1/.venv/bin/uvicorn --factory marginalia_ocr.server.app:app_from_env --host 127.0.0.1 --port 9884
 Environment=MARGINALIA_OCR_ROOT=%h/.local/share/marginalia-ocr
 Environment=MARGINALIA_OCR_IDLE_EXIT_AFTER=900
 # A clean idle exit (status 0) is not a failure: stay stopped until the next run.
