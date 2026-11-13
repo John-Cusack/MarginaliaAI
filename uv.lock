@@ -1456,7 +1456,9 @@ dependencies = [
 [package.optional-dependencies]
 server = [
     { name = "fastapi" },
+    { name = "numpy" },
     { name = "pytesseract" },
+    { name = "scipy" },
     { name = "uvicorn" },
 ]
 
@@ -1464,9 +1466,11 @@ server = [
 requires-dist = [
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "numpy", marker = "extra == 'server'", specifier = ">=1.26" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pytesseract", marker = "extra == 'server'", specifier = ">=0.3" },
+    { name = "scipy", marker = "extra == 'server'", specifier = ">=1.11" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.29" },
 ]
 provides-extras = ["server"]
