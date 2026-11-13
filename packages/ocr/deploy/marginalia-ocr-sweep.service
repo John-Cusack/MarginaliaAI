@@ -1,0 +1,27 @@
+# marginalia-ocr-sweep.service — delete expired page images (systemd USER unit).
+#
+# Install on the GPU host at ~/.config/systemd/user/ beside its .timer, then
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now marginalia-ocr-sweep.timer
+# Linger must stay on (`loginctl show-user john` -> Linger=yes) or a user timer
+# does not run without a login session; that is already the case.
+#
+# Retention is a timer on purpose (design 6): the OCR service exits when idle, so
+# it cannot be the thing that guarantees the 14-day image cap. This unit is the
+# only thing that deletes an expired image, and it reconciles on every run,
+# because after a crash the disk is the only record of what survived.
+#
+# It never logs an image or any text: it deletes files and writes counts.
+
+[Unit]
+Description=Marginalia OCR page-image sweeper (14-day hard cap)
+Documentation=file:///home/john/repos/MarginaliaAI/docs/design/kindle-verified-ocr-architecture.md
+
+[Service]
+Type=oneshot
+# Adjust the interpreter path to the server's venv if it moves.
+ExecStart=/home/john/repos/MarginaliaAI/.venv/bin/python -m marginalia_ocr.server.sweeper \
+    --db %h/.local/share/marginalia-ocr/jobs.sqlite3 \
+    --page-store %h/.local/share/marginalia-ocr/pages
+Nice=10
+IOSchedulingClass=idle

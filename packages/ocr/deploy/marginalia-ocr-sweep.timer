@@ -1,0 +1,19 @@
+# marginalia-ocr-sweep.timer — run the sweeper four times a day.
+#
+# A timer rather than a daemon: the sweeper is quick, idempotent and safe to run
+# at any time, and a missed run (host asleep, service down) is caught up by
+# Persistent=true at the next boot. RandomizedDelaySec keeps it off the exact
+# minute of every other cron-like job on the host.
+
+[Unit]
+Description=Run the Marginalia OCR sweeper every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:17:00
+Persistent=true
+RandomizedDelaySec=300
+AccuracySec=1min
+Unit=marginalia-ocr-sweep.service
+
+[Install]
+WantedBy=timers.target
