@@ -215,3 +215,6 @@ __marimo__/
 scratch/
 #   Browser session dumps from the Playwright MCP server; regenerated per run.
 .playwright-mcp/
+
+# Kindle page captures are never committed (licensed content; transient only)
+kindle-*.png
