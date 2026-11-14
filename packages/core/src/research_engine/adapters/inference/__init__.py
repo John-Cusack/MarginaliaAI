@@ -3,6 +3,7 @@
 from research_engine.adapters.inference.gpu_host import (
     GpuHostError,
     ensure_gpu_host_ready,
+    watch_gpu_host,
 )
 from research_engine.adapters.inference.routing import (
     InferenceBackends,
@@ -16,5 +17,6 @@ __all__ = [
     "Workload",
     "build_inference",
     "ensure_gpu_host_ready",
+    "watch_gpu_host",
 ]
 
